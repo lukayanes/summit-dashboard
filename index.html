@@ -82,6 +82,9 @@
       font-weight: 600;
       color: #333;
       border-bottom: 2px solid #e0e0e0;
+      position: sticky;
+      top: 0;
+      z-index: 10;
     }
 
     td {
@@ -89,8 +92,12 @@
       border-bottom: 1px solid #f0f0f0;
     }
 
-    tr:hover {
+    tbody tr:nth-child(even) {
       background-color: #fafafa;
+    }
+
+    tbody tr:hover {
+      background-color: #f0f0f0;
     }
 
     .badge {
@@ -165,32 +172,153 @@
     .tab-content.active {
       display: block;
     }
+
+    .sort-arrow {
+      margin-left: 4px;
+      font-size: 11px;
+      opacity: 0.5;
+    }
+
+    .sort-arrow.active {
+      opacity: 1;
+    }
+
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #2E75B6;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
   </style>
 </head>
 <body>
   <!-- Header -->
   <div class="navy-header text-white p-6 shadow-lg flex items-center gap-5">
     <img src="images/throne trans 2.png" alt="Summit Group Logo" style="height: 60px; width: auto;">
-    <div>
+    <div style="flex: 1;">
       <h1 class="text-3xl font-bold">SUMMIT GROUP ACQUISITIONS</h1>
       <p class="text-sm text-gray-300 mt-1">Deal Pipeline KPI Dashboard</p>
+    </div>
+    <div style="text-align: right;">
+      <div id="dataSource" style="font-size: 11px; color: #8899aa; margin-bottom: 4px;">Loading...</div>
+      <button onclick="refreshData()" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 6px 14px; border-radius: 4px; font-size: 12px; cursor: pointer;">Refresh Data</button>
     </div>
   </div>
 
   <!-- Tab Navigation -->
   <div class="px-6 pt-6 flex gap-1 flex-wrap">
-    <button class="tab-button active" onclick="switchTab('executive')">Executive Dashboard</button>
+    <button class="tab-button active" onclick="switchTab('ledger')">Deal Ledger</button>
+    <button class="tab-button" onclick="switchTab('executive')">Executive Dashboard</button>
     <button class="tab-button" onclick="switchTab('pipeline')">Pipeline Analytics</button>
     <button class="tab-button" onclick="switchTab('team')">Team Scorecard</button>
     <button class="tab-button" onclick="switchTab('monthly')">Monthly Trends</button>
     <button class="tab-button" onclick="switchTab('roi')">Marketing ROI</button>
+    <button class="tab-button" onclick="switchTab('pipelineflow')">Pipeline Flow</button>
   </div>
 
   <!-- Main Content Area -->
   <div class="p-6">
 
+    <!-- DEAL LEDGER TAB (NEW) -->
+    <div id="ledger" class="tab-content active">
+      <div class="mb-6 bg-white rounded-lg shadow-md p-4">
+        <div style="display: grid; grid-template-columns: 1fr auto; gap: 16px; margin-bottom: 16px;">
+          <div>
+            <input type="text" id="ledgerSearchBox" placeholder="Search all columns..." style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+          </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px;">
+          <div>
+            <label style="font-size: 12px; font-weight: 600; color: #666;">Status</label>
+            <select id="filterStatus" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+              <option value="">All</option>
+              <option value="Under Contract">Under Contract</option>
+              <option value="Listed/Posted">Listed/Posted</option>
+              <option value="Closed - Won">Closed - Won</option>
+              <option value="Closed - Lost">Closed - Lost</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 600; color: #666;">Strategy</label>
+            <select id="filterStrategy" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+              <option value="">All</option>
+              <option value="Novation">Novation</option>
+              <option value="Cash">Cash</option>
+              <option value="Subject-to">Subject-to</option>
+              <option value="Seller Finance">Seller Finance</option>
+              <option value="Listing Agent">Listing Agent</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 600; color: #666;">Market</label>
+            <select id="filterMarket" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+              <option value="">All</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 600; color: #666;">Disposition</label>
+            <select id="filterDispo" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+              <option value="">All</option>
+              <option value="Aubrey">Aubrey</option>
+              <option value="Luka">Luka</option>
+              <option value="Brennen">Brennen</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 600; color: #666;">Acquisition</label>
+            <select id="filterAcq" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+              <option value="">All</option>
+              <option value="Aubrey">Aubrey</option>
+              <option value="Luka">Luka</option>
+              <option value="Brennen">Brennen</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-title" style="background-color: #2E75B6;">All Deals</div>
+      <div class="section-body">
+        <div id="ledgerSummaryRow" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; padding: 12px; background-color: #f9f9f9; border-radius: 4px;"></div>
+        <div class="table-container">
+          <table id="ledgerTable">
+            <thead>
+              <tr>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('#')"># <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('id')">Name <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('address')">Address <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('market')">Market <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('acq')">Acquisition <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('dispo')">Disposition <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('status')">Status <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('strategy')">Strategy <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('exit')">Exit <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('ucDate')">UC Date <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('closeDate')">Close Date <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('contract')">Contract Price <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('listed')">Listed Price <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('buyer')">Buyer Price <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('repairs')">Repairs <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('potential')">Potential Profit <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('final')">Final Profit <span class="sort-arrow"></span></th>
+              </tr>
+            </thead>
+            <tbody id="ledgerTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- EXECUTIVE DASHBOARD TAB -->
-    <div id="executive" class="tab-content active">
+    <div id="executive" class="tab-content">
       <div id="execKPIs" class="grid gap-4 mb-6" style="grid-template-columns: repeat(8, 1fr);"></div>
       <div id="execKPIs2" class="grid gap-4 mb-6" style="grid-template-columns: repeat(8, 1fr);"></div>
 
@@ -336,11 +464,169 @@
       </div>
     </div>
 
+    <!-- PIPELINE FLOW TAB (NEW) -->
+    <div id="pipelineflow" class="tab-content">
+      <div class="mb-6 bg-white rounded-lg shadow-md p-4">
+        <div style="display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: flex-end;">
+          <div>
+            <label style="font-size: 12px; font-weight: 600; color: #666; display: block; margin-bottom: 6px;">GHL Pipeline Worker URL</label>
+            <input type="text" id="pipelineWorkerUrl" placeholder="https://your-worker.example.com" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+          </div>
+          <button onclick="connectPipelineWorker()" style="padding: 10px 20px; background-color: #2E75B6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">Connect</button>
+        </div>
+      </div>
+
+      <div id="pipelineFlowContent">
+        <div style="text-align: center; padding: 40px; color: #666;">
+          <p>Connect your GHL pipeline by entering your Worker API URL above</p>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <script>
-    // ==================== DATA ====================
-    const DEALS = [
+    // ==================== GOOGLE SHEETS INTEGRATION ====================
+    const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSwypHrZcGSLGA0Ddb-a7GJwAOApyQGwqKW9xf7TNhaxfTnypAlM8W7KWyu9S3iN4JL2oYheTxvK_Kw/pub?gid=0&single=true&output=csv';
+
+    let DEALS = []; // Will be populated from Google Sheet
+
+    function parseCSV(csv) {
+      const lines = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < csv.length; i++) {
+        const ch = csv[i];
+        if (ch === '"') { inQuotes = !inQuotes; current += ch; }
+        else if (ch === '\n' && !inQuotes) { lines.push(current); current = ''; }
+        else { current += ch; }
+      }
+      if (current.trim()) lines.push(current);
+
+      const rows = lines.map(line => {
+        const cells = [];
+        let cell = '';
+        let q = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          if (ch === '"') { q = !q; }
+          else if (ch === ',' && !q) { cells.push(cell.trim()); cell = ''; }
+          else { cell += ch; }
+        }
+        cells.push(cell.trim());
+        return cells;
+      });
+      return rows;
+    }
+
+    function parseNum(val) {
+      if (!val || val === '' || val === '-' || val === 'N/A') return null;
+      const n = parseFloat(val.replace(/[$,]/g, ''));
+      return isNaN(n) ? null : n;
+    }
+
+    function parseDate(val) {
+      if (!val || val === '') return null;
+      // Handle M/D/YYYY or MM/DD/YYYY format
+      const parts = val.split('/');
+      if (parts.length === 3) {
+        const m = parts[0].padStart(2, '0');
+        const d = parts[1].padStart(2, '0');
+        const y = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+        return y + '-' + m + '-' + d;
+      }
+      // Handle YYYY-MM-DD
+      if (val.match(/^\d{4}-\d{2}-\d{2}/)) return val.substring(0, 10);
+      return val;
+    }
+
+    function deriveMonth(dateStr) {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      if (isNaN(d)) return '';
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const y = String(d.getFullYear()).slice(-2);
+      return m + '-' + y;
+    }
+
+    async function fetchDealsFromSheet() {
+      try {
+        const resp = await fetch(SHEET_CSV_URL);
+        if (!resp.ok) throw new Error('Failed to fetch sheet: ' + resp.status);
+        const csv = await resp.text();
+        const rows = parseCSV(csv);
+
+        // Find header row (skip title rows — look for "Deal ID")
+        let headerIdx = -1;
+        for (let i = 0; i < Math.min(rows.length, 10); i++) {
+          if (rows[i].some(c => c.toLowerCase().includes('deal id'))) { headerIdx = i; break; }
+        }
+        if (headerIdx === -1) throw new Error('Could not find header row with "Deal ID"');
+
+        const headers = rows[headerIdx].map(h => h.toLowerCase().trim());
+        const colIdx = (name) => headers.findIndex(h => h.includes(name));
+
+        // Map columns
+        const iId = colIdx('deal id');
+        const iAddr = colIdx('property address');
+        const iMarket = colIdx('market');
+        const iAcq = colIdx('acq owner');
+        const iDispo = colIdx('disposition owner');
+        const iStatus = colIdx('deal status');
+        const iStrategy = colIdx('strategy');
+        const iExit = colIdx('exit type');
+        const iUcDate = colIdx('under contract');
+        const iCloseDate = colIdx('close date');
+        const iMonth = colIdx('month');
+        const iContract = colIdx('contract price');
+        const iListed = colIdx('listed');
+        const iBuyer = colIdx('buyer price');
+        const iRepairs = colIdx('repairs');
+        const iPotential = colIdx('potential profit');
+        const iFinal = colIdx('final profit');
+        const iNotes = colIdx('notes');
+
+        const deals = [];
+        for (let i = headerIdx + 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || r.length < 3) continue;
+          const name = r[iId] || '';
+          if (!name || name.trim() === '') continue;
+
+          const ucDate = parseDate(r[iUcDate]);
+          const closeDate = parseDate(r[iCloseDate]);
+          const month = (iMonth >= 0 && r[iMonth]) ? r[iMonth] : deriveMonth(closeDate || ucDate);
+
+          deals.push({
+            id: name,
+            address: r[iAddr] || '',
+            market: r[iMarket] || '',
+            acq: r[iAcq] || '',
+            dispo: r[iDispo] || '',
+            status: r[iStatus] || '',
+            strategy: r[iStrategy] || '',
+            exit: r[iExit] || '',
+            ucDate: ucDate,
+            closeDate: closeDate,
+            month: month,
+            contract: parseNum(r[iContract]),
+            listed: parseNum(r[iListed]),
+            buyer: parseNum(r[iBuyer]),
+            repairs: parseNum(r[iRepairs]),
+            potential: parseNum(r[iPotential]),
+            final: parseNum(r[iFinal]),
+            notes: (iNotes >= 0 ? r[iNotes] : '') || ''
+          });
+        }
+        return deals;
+      } catch (err) {
+        console.error('Error fetching Google Sheet:', err);
+        return null;
+      }
+    }
+
+    // ==================== FALLBACK DATA ====================
+    const FALLBACK_DEALS = [
       {id:"James Jones",address:"1330 Pipkin Street, Beaumont, TX",market:"TX",acq:"Brennen",dispo:"Aubrey",status:"Under Contract",strategy:"Novation",exit:"Assignment",ucDate:"2026-04-12",closeDate:"2026-06-11",month:"04-26",contract:30000,listed:null,buyer:null,repairs:null,potential:null,final:null},
       {id:"Sierra Radford",address:"970539 S Highway 18, Chandler, OK",market:"OK",acq:"Brennen",dispo:"Aubrey",status:"Under Contract",strategy:"Novation",exit:"Assignment",ucDate:"2026-03-26",closeDate:"2026-06-24",month:"03-26",contract:55000,listed:null,buyer:null,repairs:null,potential:null,final:null},
       {id:"Stephen Nortier",address:"1555 Knapp St NE, Grand Rapids, MI",market:"MI",acq:"Brennen",dispo:"Aubrey",status:"Under Contract",strategy:"Novation",exit:"Assignment",ucDate:"2026-03-18",closeDate:"2026-06-16",month:"03-26",contract:569000,listed:null,buyer:null,repairs:null,potential:null,final:null},
@@ -393,8 +679,11 @@
     ];
 
     // ==================== UTILITIES ====================
-    const TODAY = new Date('2026-04-13');
+    const TODAY = new Date();
     let chartsCache = {};
+    let ledgerSortColumn = null;
+    let ledgerSortAsc = true;
+    let ledgerFilteredDeals = [];
 
     const fmt = (n) => {
       if (n === null || n === undefined) return '$0';
@@ -415,6 +704,14 @@
     const daysAgo = (dateStr) => {
       const d = new Date(dateStr);
       return Math.floor((TODAY - d) / (1000 * 60 * 60 * 24));
+    };
+
+    const formatDate = (dateStr) => {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${m}/${day}/${d.getFullYear()}`;
     };
 
     const createKpiCard = (label, value, color, onClick = null) => {
@@ -641,6 +938,277 @@
       }
     };
 
+    // ==================== DEAL LEDGER FUNCTIONS ====================
+    const populateLedgerFilters = () => {
+      const markets = [...new Set(DEALS.map(d => d.market))].sort();
+      const marketSelect = document.getElementById('filterMarket');
+      markets.forEach(market => {
+        const option = document.createElement('option');
+        option.value = market;
+        option.textContent = market;
+        marketSelect.appendChild(option);
+      });
+    };
+
+    const applyLedgerFilters = () => {
+      const searchTerm = document.getElementById('ledgerSearchBox').value.toLowerCase();
+      const statusFilter = document.getElementById('filterStatus').value;
+      const strategyFilter = document.getElementById('filterStrategy').value;
+      const marketFilter = document.getElementById('filterMarket').value;
+      const dispoFilter = document.getElementById('filterDispo').value;
+      const acqFilter = document.getElementById('filterAcq').value;
+
+      ledgerFilteredDeals = DEALS.filter(d => {
+        const matchSearch = !searchTerm || 
+          d.id.toLowerCase().includes(searchTerm) ||
+          d.address.toLowerCase().includes(searchTerm) ||
+          d.market.toLowerCase().includes(searchTerm) ||
+          d.acq.toLowerCase().includes(searchTerm) ||
+          d.dispo.toLowerCase().includes(searchTerm) ||
+          d.status.toLowerCase().includes(searchTerm) ||
+          d.strategy.toLowerCase().includes(searchTerm) ||
+          (d.contract && d.contract.toString().includes(searchTerm)) ||
+          (d.listed && d.listed.toString().includes(searchTerm)) ||
+          (d.buyer && d.buyer.toString().includes(searchTerm));
+
+        const matchStatus = !statusFilter || d.status === statusFilter;
+        const matchStrategy = !strategyFilter || d.strategy === strategyFilter;
+        const matchMarket = !marketFilter || d.market === marketFilter;
+        const matchDispo = !dispoFilter || d.dispo === dispoFilter;
+        const matchAcq = !acqFilter || d.acq === acqFilter;
+
+        return matchSearch && matchStatus && matchStrategy && matchMarket && matchDispo && matchAcq;
+      });
+
+      renderLedgerTable();
+    };
+
+    const sortLedgerTable = (column) => {
+      if (ledgerSortColumn === column) {
+        ledgerSortAsc = !ledgerSortAsc;
+      } else {
+        ledgerSortColumn = column;
+        ledgerSortAsc = true;
+      }
+
+      ledgerFilteredDeals.sort((a, b) => {
+        let aVal = a[column === '#' ? 'id' : column];
+        let bVal = b[column === '#' ? 'id' : column];
+
+        if (column === 'ucDate' || column === 'closeDate') {
+          aVal = new Date(aVal || '1900-01-01');
+          bVal = new Date(bVal || '1900-01-01');
+        } else if (['contract', 'listed', 'buyer', 'repairs', 'potential', 'final'].includes(column)) {
+          aVal = aVal || 0;
+          bVal = bVal || 0;
+        }
+
+        if (aVal < bVal) return ledgerSortAsc ? -1 : 1;
+        if (aVal > bVal) return ledgerSortAsc ? 1 : -1;
+        return 0;
+      });
+
+      renderLedgerTable();
+      updateSortArrows(column);
+    };
+
+    const updateSortArrows = (column) => {
+      document.querySelectorAll('#ledgerTable .sort-arrow').forEach(arrow => {
+        arrow.classList.remove('active');
+        arrow.textContent = '';
+      });
+      const th = [...document.querySelectorAll('#ledgerTable th')].find(h => h.textContent.includes(
+        column === '#' ? '#' : 
+        column === 'id' ? 'Name' :
+        column === 'address' ? 'Address' :
+        column === 'market' ? 'Market' :
+        column === 'acq' ? 'Acquisition' :
+        column === 'dispo' ? 'Disposition' :
+        column === 'status' ? 'Status' :
+        column === 'strategy' ? 'Strategy' :
+        column === 'exit' ? 'Exit' :
+        column === 'ucDate' ? 'UC Date' :
+        column === 'closeDate' ? 'Close Date' :
+        column === 'contract' ? 'Contract Price' :
+        column === 'listed' ? 'Listed Price' :
+        column === 'buyer' ? 'Buyer Price' :
+        column === 'repairs' ? 'Repairs' :
+        column === 'potential' ? 'Potential Profit' :
+        column === 'final' ? 'Final Profit' : ''
+      ));
+      if (th) {
+        const arrow = th.querySelector('.sort-arrow');
+        if (arrow) {
+          arrow.classList.add('active');
+          arrow.textContent = ledgerSortAsc ? '▲' : '▼';
+        }
+      }
+    };
+
+    const renderLedgerTable = () => {
+      // Summary row
+      let summaryHtml = '';
+      const totalDeals = ledgerFilteredDeals.length;
+      const totalContract = ledgerFilteredDeals.reduce((s, d) => s + (d.contract || 0), 0);
+      const totalListed = ledgerFilteredDeals.reduce((s, d) => s + (d.listed || 0), 0);
+      const totalBuyer = ledgerFilteredDeals.reduce((s, d) => s + (d.buyer || 0), 0);
+      const totalRepairs = ledgerFilteredDeals.reduce((s, d) => s + (d.repairs || 0), 0);
+      const totalPotential = ledgerFilteredDeals.reduce((s, d) => s + (d.potential || 0), 0);
+      const totalFinal = ledgerFilteredDeals.reduce((s, d) => s + (d.final || 0), 0);
+
+      summaryHtml += `
+        <div>${totalDeals} deals</div>
+        <div>Contract: ${fmt(totalContract)}</div>
+        <div>Listed: ${fmt(totalListed)}</div>
+        <div>Buyer: ${fmt(totalBuyer)}</div>
+        <div>Repairs: ${fmt(totalRepairs)}</div>
+        <div>Potential Profit: ${fmt(totalPotential)}</div>
+        <div>Final Profit: ${fmt(totalFinal)}</div>
+      `;
+      document.getElementById('ledgerSummaryRow').innerHTML = summaryHtml;
+
+      // Table rows
+      let tableHtml = '';
+      ledgerFilteredDeals.forEach((deal, idx) => {
+        let statusClass = 'badge ';
+        if (deal.status.includes('Under Contract')) statusClass += 'badge-uc';
+        else if (deal.status.includes('Listed')) statusClass += 'badge-listed';
+        else if (deal.status.includes('Won')) statusClass += 'badge-won';
+        else if (deal.status.includes('Lost')) statusClass += 'badge-lost';
+
+        tableHtml += `
+          <tr>
+            <td style="font-weight: 500;">${idx + 1}</td>
+            <td style="font-weight: 500;">${deal.id}</td>
+            <td style="font-size: 12px; color: #666;">${deal.address}</td>
+            <td style="font-weight: 500;">${deal.market}</td>
+            <td>${deal.acq}</td>
+            <td>${deal.dispo}</td>
+            <td><span class="${statusClass}">${deal.status}</span></td>
+            <td>${deal.strategy}</td>
+            <td>${deal.exit}</td>
+            <td>${formatDate(deal.ucDate)}</td>
+            <td>${formatDate(deal.closeDate)}</td>
+            <td style="font-weight: 500; text-align: right;">${fmt(deal.contract)}</td>
+            <td style="font-weight: 500; text-align: right;">${deal.listed ? fmt(deal.listed) : '-'}</td>
+            <td style="font-weight: 500; text-align: right;">${deal.buyer ? fmt(deal.buyer) : '-'}</td>
+            <td style="font-weight: 500; text-align: right;">${deal.repairs ? fmt(deal.repairs) : '-'}</td>
+            <td style="font-weight: 500; text-align: right;">${deal.potential ? fmt(deal.potential) : '-'}</td>
+            <td style="font-weight: 500; text-align: right; color: #10b981;">${deal.final ? fmt(deal.final) : '-'}</td>
+          </tr>
+        `;
+      });
+      document.getElementById('ledgerTableBody').innerHTML = tableHtml;
+    };
+
+    // ==================== PIPELINE FLOW FUNCTIONS ====================
+    let pipelineWorkerUrl = '';
+
+    const connectPipelineWorker = async () => {
+      pipelineWorkerUrl = document.getElementById('pipelineWorkerUrl').value.trim();
+      if (!pipelineWorkerUrl) {
+        alert('Please enter a Worker URL');
+        return;
+      }
+
+      const content = document.getElementById('pipelineFlowContent');
+      content.innerHTML = '<div class="spinner"></div><p style="text-align: center; margin-top: 20px;">Loading pipeline data...</p>';
+
+      try {
+        const response = await fetch(`${pipelineWorkerUrl}/api/pipeline-stats`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const data = await response.json();
+        renderPipelineFlow(data);
+      } catch (error) {
+        content.innerHTML = `
+          <div style="padding: 20px; background-color: #ffebee; border-radius: 8px; color: #c62828;">
+            <p style="margin: 0 0 12px 0; font-weight: 600;">Error loading pipeline data</p>
+            <p style="margin: 0 0 16px 0; font-size: 14px;">${error.message}</p>
+            <button onclick="document.getElementById('pipelineWorkerUrl').focus()" style="padding: 8px 16px; background-color: #c62828; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">Retry</button>
+          </div>
+        `;
+      }
+    };
+
+    const renderPipelineFlow = (data) => {
+      const content = document.getElementById('pipelineFlowContent');
+      
+      // Create HTML for stage funnel
+      let funnelHtml = '<div style="margin-bottom: 32px;"><div class="section-title" style="background-color: #2E75B6;">Pipeline Stage Funnel</div><div class="section-body"><div class="chart-container"><canvas id="pipelineStageChart"></canvas></div></div></div>';
+      
+      // Create HTML for stage value
+      funnelHtml += '<div style="margin-bottom: 32px;"><div class="section-title" style="background-color: #548235;">Stage Value</div><div class="section-body"><div class="chart-container"><canvas id="pipelineValueChart"></canvas></div></div></div>';
+      
+      // Create HTML for summary table
+      funnelHtml += `
+        <div style="margin-bottom: 32px;"><div class="section-title" style="background-color: #ED7D31;">Pipeline Summary</div><div class="section-body"><div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Stage</th>
+                <th>Count</th>
+                <th>Total Value</th>
+                <th>Avg Value</th>
+                <th>Avg Days</th>
+              </tr>
+            </thead>
+            <tbody id="pipelineSummaryTable"></tbody>
+          </table>
+        </div></div></div>
+      `;
+      
+      content.innerHTML = funnelHtml;
+
+      // Populate summary table
+      let summaryTableHtml = '';
+      data.stages.forEach(stage => {
+        summaryTableHtml += `
+          <tr>
+            <td style="font-weight: 500;">${stage.name}</td>
+            <td>${stage.count}</td>
+            <td style="font-weight: 500;">${fmt(stage.totalValue)}</td>
+            <td style="font-weight: 500;">${fmt(stage.avgValue)}</td>
+            <td>${stage.avgDays.toFixed(0)} days</td>
+          </tr>
+        `;
+      });
+      document.getElementById('pipelineSummaryTable').innerHTML = summaryTableHtml;
+
+      // Render charts
+      destroyChart('pipelineStageChart');
+      destroyChart('pipelineValueChart');
+
+      const stageCtx = document.getElementById('pipelineStageChart').getContext('2d');
+      chartsCache['pipelineStageChart'] = new Chart(stageCtx, {
+        type: 'bar',
+        data: {
+          labels: data.stages.map(s => s.name),
+          datasets: [{
+            label: 'Count',
+            data: data.stages.map(s => s.count),
+            backgroundColor: '#2E75B6'
+          }]
+        },
+        options: {responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: {legend: {display: false}}}
+      });
+
+      const valueCtx = document.getElementById('pipelineValueChart').getContext('2d');
+      chartsCache['pipelineValueChart'] = new Chart(valueCtx, {
+        type: 'bar',
+        data: {
+          labels: data.stages.map(s => s.name),
+          datasets: [{
+            label: 'Total Value',
+            data: data.stages.map(s => s.totalValue),
+            backgroundColor: '#548235'
+          }]
+        },
+        options: {responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: {legend: {display: false}}}
+      });
+    };
+
+    // ==================== TAB SWITCHING ====================
     const renderExecutiveTab = () => {
       const metrics = calculateMetrics();
 
@@ -930,11 +1498,21 @@
       closeDrillDown('team');
 
       // Render content
-      if (tab === 'executive') renderExecutiveTab();
-      else if (tab === 'pipeline') renderPipelineTab();
-      else if (tab === 'team') renderTeamTab();
-      else if (tab === 'monthly') renderMonthlyTab();
-      else if (tab === 'roi') renderROITab();
+      if (tab === 'ledger') {
+        renderLedgerTab();
+      } else if (tab === 'executive') {
+        renderExecutiveTab();
+      } else if (tab === 'pipeline') {
+        renderPipelineTab();
+      } else if (tab === 'team') {
+        renderTeamTab();
+      } else if (tab === 'monthly') {
+        renderMonthlyTab();
+      } else if (tab === 'roi') {
+        renderROITab();
+      } else if (tab === 'pipelineflow') {
+        // Pipeline flow already has its controls, no additional render needed
+      }
 
       // Give charts time to render
       setTimeout(() => {
@@ -942,9 +1520,57 @@
       }, 100);
     };
 
+    const renderLedgerTab = () => {
+      populateLedgerFilters();
+      renderLedgerTable();
+      
+      // Add event listeners for filters
+      document.getElementById('ledgerSearchBox').addEventListener('input', applyLedgerFilters);
+      document.getElementById('filterStatus').addEventListener('change', applyLedgerFilters);
+      document.getElementById('filterStrategy').addEventListener('change', applyLedgerFilters);
+      document.getElementById('filterMarket').addEventListener('change', applyLedgerFilters);
+      document.getElementById('filterDispo').addEventListener('change', applyLedgerFilters);
+      document.getElementById('filterAcq').addEventListener('change', applyLedgerFilters);
+    };
+
+    // ==================== REFRESH ====================
+    async function refreshData() {
+      document.getElementById('dataSource').textContent = 'Refreshing...';
+      const sheetDeals = await fetchDealsFromSheet();
+      if (sheetDeals && sheetDeals.length > 0) {
+        DEALS = sheetDeals;
+        ledgerFilteredDeals = [...DEALS];
+        const now = new Date();
+        document.getElementById('dataSource').textContent = 'Live from Google Sheets | ' + DEALS.length + ' deals | Updated ' + now.toLocaleTimeString();
+        // Re-render current tab
+        const activeTab = document.querySelector('.tab-content.active');
+        if (activeTab) switchTab(activeTab.id);
+      } else {
+        document.getElementById('dataSource').textContent = 'Refresh failed — using cached data';
+      }
+    }
+
     // ==================== INITIALIZE ====================
-    document.addEventListener('DOMContentLoaded', () => {
-      renderExecutiveTab();
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Show loading state
+      const ledgerBody = document.getElementById('ledgerTableBody');
+      if (ledgerBody) ledgerBody.innerHTML = '<tr><td colspan="17" style="text-align:center;padding:40px;color:#666;font-size:16px;">Loading deals from Google Sheets...</td></tr>';
+
+      // Fetch live data from Google Sheet
+      const sheetDeals = await fetchDealsFromSheet();
+      if (sheetDeals && sheetDeals.length > 0) {
+        DEALS = sheetDeals;
+        const now = new Date();
+        document.getElementById('dataSource').textContent = 'Live from Google Sheets | ' + DEALS.length + ' deals | Updated ' + now.toLocaleTimeString();
+        console.log('Loaded ' + DEALS.length + ' deals from Google Sheets');
+      } else {
+        DEALS = FALLBACK_DEALS;
+        document.getElementById('dataSource').textContent = 'Offline mode — using cached data (' + DEALS.length + ' deals)';
+        console.warn('Using fallback data — could not fetch from Google Sheets');
+      }
+      ledgerFilteredDeals = [...DEALS];
+
+      renderLedgerTab();
     });
   </script>
 </body>
