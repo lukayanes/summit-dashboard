@@ -1321,10 +1321,11 @@
     const renderPipelineFlow = (data) => {
       const content = document.getElementById('pipelineFlowContent');
 
-      // Flatten the Worker's nested pipeline → stages structure into a flat stages array
-      const stages = [];
+      // Parse pipelines into structured array
+      const allPipelines = [];
       if (data.pipelines) {
         Object.values(data.pipelines).forEach(pipeline => {
+          const stages = [];
           if (pipeline.stages) {
             Object.values(pipeline.stages).forEach(stage => {
               stages.push({
@@ -1336,116 +1337,190 @@
               });
             });
           }
+          allPipelines.push({
+            id: pipeline.id,
+            name: pipeline.name,
+            totalOpportunities: pipeline.totalOpportunities || 0,
+            totalValue: pipeline.totalValue || 0,
+            stages
+          });
         });
-      } else if (data.stages) {
-        // Also support flat stages format
-        data.stages.forEach(s => stages.push(s));
       }
 
-      if (stages.length === 0) {
-        let debugHtml = '<div style="padding:20px;text-align:center;color:#666;">';
-        debugHtml += '<p style="font-weight:600;margin-bottom:12px;">No pipeline stages found.</p>';
-        if (data.debug) {
-          debugHtml += '<div style="text-align:left;background:#f5f5f5;padding:16px;border-radius:8px;font-size:13px;max-width:600px;margin:0 auto;">';
-          debugHtml += `<p><strong>Pipelines found:</strong> ${data.debug.pipelineCount}</p>`;
-          debugHtml += `<p><strong>Stages in pipelines:</strong> ${data.debug.stageCount}</p>`;
-          debugHtml += `<p><strong>Total opportunities:</strong> ${data.debug.opportunityCount}</p>`;
-          debugHtml += `<p><strong>Unmatched opportunities:</strong> ${data.debug.unmatchedCount}</p>`;
-          if (data.debug.unmatchedStageIds && data.debug.unmatchedStageIds.length > 0) {
-            debugHtml += `<p><strong>Unmatched stage IDs:</strong> ${data.debug.unmatchedStageIds.join(', ')}</p>`;
-          }
-          if (data.debug.stageIds && data.debug.stageIds.length > 0) {
-            debugHtml += `<p><strong>Known stage IDs:</strong> ${data.debug.stageIds.join(', ')}</p>`;
-          }
-          if (data.debug.sampleOpp) {
-            debugHtml += `<p><strong>Sample opp keys:</strong> ${data.debug.sampleOppKeys.join(', ')}</p>`;
-            debugHtml += `<p><strong>Sample stageId:</strong> ${data.debug.sampleOpp.stageId || 'null'}</p>`;
-            debugHtml += `<p><strong>Sample pipelineStageId:</strong> ${data.debug.sampleOpp.pipelineStageId || 'null'}</p>`;
-          }
-          debugHtml += '</div>';
-        }
-        debugHtml += '</div>';
-        content.innerHTML = debugHtml;
+      if (allPipelines.length === 0) {
+        content.innerHTML = '<div style="padding:20px;text-align:center;color:#666;">No pipelines found. Check your GHL Worker connection.</div>';
         return;
       }
 
-      // Summary stats
-      const totalOpps = stages.reduce((s, st) => s + st.count, 0);
-      const totalVal = stages.reduce((s, st) => s + st.totalValue, 0);
+      // Sort: Active Leads first, then by opportunity count descending
+      const pipelineOrder = ['active leads', 'almost got em', 'cash deals', 'novation deals', 'dead'];
+      allPipelines.sort((a, b) => {
+        const aIdx = pipelineOrder.findIndex(p => a.name.toLowerCase().includes(p));
+        const bIdx = pipelineOrder.findIndex(p => b.name.toLowerCase().includes(p));
+        const aRank = aIdx >= 0 ? aIdx : 99;
+        const bRank = bIdx >= 0 ? bIdx : 99;
+        if (aRank !== bRank) return aRank - bRank;
+        return b.totalOpportunities - a.totalOpportunities;
+      });
 
-      // Create HTML
+      // Global summary KPIs
+      const totalOpps = allPipelines.reduce((s, p) => s + p.totalOpportunities, 0);
+      const totalVal = allPipelines.reduce((s, p) => s + p.totalValue, 0);
+      const totalStages = allPipelines.reduce((s, p) => s + p.stages.length, 0);
+
       let html = '';
 
-      // KPI summary cards
+      // Top-level KPIs
       html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;">';
       html += `<div class="kpi-card"><div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px;text-transform:uppercase;">Total Opportunities</div><div style="font-size:24px;font-weight:bold;color:#2E75B6;">${totalOpps.toLocaleString()}</div></div>`;
-      html += `<div class="kpi-card"><div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px;text-transform:uppercase;">Pipeline Value</div><div style="font-size:24px;font-weight:bold;color:#548235;">${fmt(totalVal)}</div></div>`;
-      html += `<div class="kpi-card"><div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px;text-transform:uppercase;">Stages</div><div style="font-size:24px;font-weight:bold;color:#ED7D31;">${stages.length}</div></div>`;
-      html += `<div class="kpi-card"><div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px;text-transform:uppercase;">Avg per Stage</div><div style="font-size:24px;font-weight:bold;color:#7030A0;">${Math.round(totalOpps / stages.length)}</div></div>`;
+      html += `<div class="kpi-card"><div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px;text-transform:uppercase;">Total Pipeline Value</div><div style="font-size:24px;font-weight:bold;color:#548235;">${fmt(totalVal)}</div></div>`;
+      html += `<div class="kpi-card"><div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px;text-transform:uppercase;">Pipelines</div><div style="font-size:24px;font-weight:bold;color:#ED7D31;">${allPipelines.length}</div></div>`;
+      html += `<div class="kpi-card"><div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px;text-transform:uppercase;">Total Stages</div><div style="font-size:24px;font-weight:bold;color:#7030A0;">${totalStages}</div></div>`;
       html += '</div>';
 
-      // Stage funnel chart
-      html += '<div style="margin-bottom:32px;"><div class="section-title" style="background-color:#2E75B6;">Pipeline Stage Funnel</div><div class="section-body"><div class="chart-container"><canvas id="pipelineStageChart"></canvas></div></div></div>';
+      // Pipeline color scheme
+      const pipelineColors = {
+        'active leads': { header: '#2E75B6', bar: '#2E75B6', barAlt: '#5B9BD5' },
+        'almost got em': { header: '#ED7D31', bar: '#ED7D31', barAlt: '#F4A261' },
+        'cash deals': { header: '#548235', bar: '#548235', barAlt: '#70AD47' },
+        'novation deals': { header: '#7030A0', bar: '#7030A0', barAlt: '#9B59B6' },
+        'dead': { header: '#C00000', bar: '#C00000', barAlt: '#E74C3C' },
+      };
+      const defaultColor = { header: '#1B2A4A', bar: '#1B2A4A', barAlt: '#3D5A80' };
 
-      // Stage value chart
-      html += '<div style="margin-bottom:32px;"><div class="section-title" style="background-color:#548235;">Stage Value</div><div class="section-body"><div class="chart-container"><canvas id="pipelineValueChart"></canvas></div></div></div>';
+      // Render each pipeline as its own section
+      allPipelines.forEach((pipeline, pIdx) => {
+        const colorKey = pipelineOrder.find(p => pipeline.name.toLowerCase().includes(p));
+        const colors = pipelineColors[colorKey] || defaultColor;
+        const isActiveLeads = pipeline.name.toLowerCase().includes('active leads');
+        const stageChartId = `pipelineChart_${pIdx}`;
+        const valueChartId = `pipelineValueChart_${pIdx}`;
 
-      // Summary table
-      html += `
-        <div style="margin-bottom:32px;"><div class="section-title" style="background-color:#ED7D31;">Pipeline Summary</div><div class="section-body"><div class="table-container">
-          <table>
-            <thead><tr><th>Stage</th><th>Count</th><th>Total Value</th><th>Avg Value</th><th>Avg Days</th></tr></thead>
-            <tbody id="pipelineSummaryTable"></tbody>
-          </table>
-        </div></div></div>`;
+        // Pipeline header with KPI cards
+        html += `<div style="margin-bottom:32px;${isActiveLeads ? 'border:2px solid ' + colors.header + ';border-radius:12px;padding:16px;background:linear-gradient(135deg,rgba(46,117,182,0.03),rgba(46,117,182,0.08));' : ''}">`;
+
+        // Pipeline title bar
+        html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">`;
+        html += `<div style="display:flex;align-items:center;gap:12px;">`;
+        if (isActiveLeads) {
+          html += `<div style="background:${colors.header};color:white;padding:4px 10px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Primary</div>`;
+        }
+        html += `<h2 style="margin:0;font-size:${isActiveLeads ? '22px' : '18px'};font-weight:700;color:${colors.header};">${pipeline.name}</h2>`;
+        html += `</div>`;
+        html += `<div style="display:flex;gap:16px;font-size:13px;color:#666;">`;
+        html += `<span><strong>${pipeline.totalOpportunities}</strong> opps</span>`;
+        html += `<span><strong>${fmt(pipeline.totalValue)}</strong> value</span>`;
+        html += `<span><strong>${pipeline.stages.length}</strong> stages</span>`;
+        html += `</div></div>`;
+
+        if (pipeline.stages.length === 0) {
+          html += `<div style="padding:16px;text-align:center;color:#999;font-size:14px;">No opportunities in this pipeline</div>`;
+        } else if (isActiveLeads) {
+          // Active Leads gets full treatment: stage KPI cards + funnel chart + value chart + table
+
+          // Stage KPI cards in a flowing grid
+          html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px;">`;
+          pipeline.stages.forEach(stage => {
+            html += `<div class="kpi-card" style="padding:12px;">`;
+            html += `<div style="font-size:10px;font-weight:600;color:#888;text-transform:uppercase;margin-bottom:6px;">${stage.name}</div>`;
+            html += `<div style="font-size:22px;font-weight:bold;color:${colors.header};">${stage.count}</div>`;
+            html += `<div style="font-size:11px;color:#666;margin-top:4px;">${fmt(stage.totalValue)} &middot; ${(stage.avgDays || 0).toFixed(0)}d avg</div>`;
+            html += `</div>`;
+          });
+          html += '</div>';
+
+          // Funnel chart + Value chart side by side
+          html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">`;
+          html += `<div><div class="section-title" style="background-color:${colors.header};">Stage Funnel</div><div class="section-body"><div class="chart-container"><canvas id="${stageChartId}"></canvas></div></div></div>`;
+          html += `<div><div class="section-title" style="background-color:${colors.barAlt};">Stage Value</div><div class="section-body"><div class="chart-container"><canvas id="${valueChartId}"></canvas></div></div></div>`;
+          html += `</div>`;
+
+          // Detailed table
+          html += `<div><div class="section-title" style="background-color:${colors.header};">Stage Breakdown</div><div class="section-body"><div class="table-container">`;
+          html += `<table><thead><tr><th>Stage</th><th>Count</th><th>Total Value</th><th>Avg Value</th><th>Avg Days in Stage</th></tr></thead><tbody>`;
+          pipeline.stages.forEach(stage => {
+            html += `<tr><td style="font-weight:500;">${stage.name}</td><td>${stage.count}</td><td style="font-weight:500;">${fmt(stage.totalValue)}</td><td>${fmt(stage.avgValue)}</td><td>${(stage.avgDays || 0).toFixed(0)} days</td></tr>`;
+          });
+          html += `</tbody></table></div></div></div>`;
+
+        } else {
+          // Secondary pipelines: compact funnel chart + summary table
+          html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">`;
+          html += `<div><div class="section-title" style="background-color:${colors.header};">Stage Funnel</div><div class="section-body"><div class="chart-container" style="height:200px;"><canvas id="${stageChartId}"></canvas></div></div></div>`;
+          html += `<div><div class="section-title" style="background-color:${colors.header};">Stage Breakdown</div><div class="section-body"><div class="table-container" style="max-height:260px;overflow-y:auto;">`;
+          html += `<table><thead><tr><th>Stage</th><th>Count</th><th>Value</th><th>Avg Days</th></tr></thead><tbody>`;
+          pipeline.stages.forEach(stage => {
+            html += `<tr><td style="font-weight:500;">${stage.name}</td><td>${stage.count}</td><td>${fmt(stage.totalValue)}</td><td>${(stage.avgDays || 0).toFixed(0)}d</td></tr>`;
+          });
+          html += `</tbody></table></div></div></div>`;
+          html += `</div>`;
+        }
+
+        html += '</div>'; // close pipeline wrapper
+      });
 
       content.innerHTML = html;
 
-      // Populate summary table
-      let summaryTableHtml = '';
-      stages.forEach(stage => {
-        summaryTableHtml += `
-          <tr>
-            <td style="font-weight: 500;">${stage.name}</td>
-            <td>${stage.count}</td>
-            <td style="font-weight: 500;">${fmt(stage.totalValue)}</td>
-            <td style="font-weight: 500;">${fmt(stage.avgValue)}</td>
-            <td>${(stage.avgDays || 0).toFixed(0)} days</td>
-          </tr>
-        `;
-      });
-      document.getElementById('pipelineSummaryTable').innerHTML = summaryTableHtml;
+      // Render charts for each pipeline
+      allPipelines.forEach((pipeline, pIdx) => {
+        if (pipeline.stages.length === 0) return;
+        const colorKey = pipelineOrder.find(p => pipeline.name.toLowerCase().includes(p));
+        const colors = pipelineColors[colorKey] || defaultColor;
+        const isActiveLeads = pipeline.name.toLowerCase().includes('active leads');
+        const stageChartId = `pipelineChart_${pIdx}`;
+        const valueChartId = `pipelineValueChart_${pIdx}`;
 
-      // Render charts
-      destroyChart('pipelineStageChart');
-      destroyChart('pipelineValueChart');
+        // Funnel chart
+        const stageEl = document.getElementById(stageChartId);
+        if (stageEl) {
+          destroyChart(stageChartId);
+          chartsCache[stageChartId] = new Chart(stageEl.getContext('2d'), {
+            type: 'bar',
+            data: {
+              labels: pipeline.stages.map(s => s.name),
+              datasets: [{
+                label: 'Opportunities',
+                data: pipeline.stages.map(s => s.count),
+                backgroundColor: colors.bar,
+                borderRadius: 4,
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              indexAxis: 'y',
+              plugins: { legend: { display: false } },
+              scales: { x: { beginAtZero: true } }
+            }
+          });
+        }
 
-      const stageCtx = document.getElementById('pipelineStageChart').getContext('2d');
-      chartsCache['pipelineStageChart'] = new Chart(stageCtx, {
-        type: 'bar',
-        data: {
-          labels: stages.map(s => s.name),
-          datasets: [{
-            label: 'Count',
-            data: stages.map(s => s.count),
-            backgroundColor: '#2E75B6'
-          }]
-        },
-        options: {responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: {legend: {display: false}}}
-      });
-
-      const valueCtx = document.getElementById('pipelineValueChart').getContext('2d');
-      chartsCache['pipelineValueChart'] = new Chart(valueCtx, {
-        type: 'bar',
-        data: {
-          labels: stages.map(s => s.name),
-          datasets: [{
-            label: 'Total Value',
-            data: stages.map(s => s.totalValue),
-            backgroundColor: '#548235'
-          }]
-        },
-        options: {responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: {legend: {display: false}}}
+        // Value chart (Active Leads only)
+        if (isActiveLeads) {
+          const valueEl = document.getElementById(valueChartId);
+          if (valueEl) {
+            destroyChart(valueChartId);
+            chartsCache[valueChartId] = new Chart(valueEl.getContext('2d'), {
+              type: 'bar',
+              data: {
+                labels: pipeline.stages.map(s => s.name),
+                datasets: [{
+                  label: 'Total Value',
+                  data: pipeline.stages.map(s => s.totalValue),
+                  backgroundColor: colors.barAlt,
+                  borderRadius: 4,
+                }]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                plugins: { legend: { display: false } },
+                scales: { x: { beginAtZero: true, ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } } }
+              }
+            });
+          }
+        }
       });
     };
 
