@@ -465,6 +465,26 @@
           </div>
         </div>
       </div>
+
+      <!-- Quarterly Charts -->
+      <div class="grid gap-6 mt-6" style="grid-template-columns: repeat(2, 1fr);">
+        <div>
+          <div class="section-title" style="background-color: #2E75B6;">Quarterly ROI %</div>
+          <div class="section-body">
+            <div class="chart-container">
+              <canvas id="quarterlyROIChart"></canvas>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="section-title" style="background-color: #548235;">Quarterly ROAS</div>
+          <div class="section-body">
+            <div class="chart-container">
+              <canvas id="quarterlyROASChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- FINANCIALS TAB -->
@@ -1010,9 +1030,19 @@
       return teams;
     };
 
+    // Convert month string "MM-YY" to sortable number (YYMM)
+    const monthSortKey = (m) => {
+      if (!m || !m.includes('-')) return 0;
+      const parts = m.split('-');
+      const mm = parseInt(parts[0]) || 0;
+      const yy = parseInt(parts[1]) || 0;
+      return yy * 100 + mm; // e.g., "03-25" → 2503, "01-26" → 2601
+    };
+
     const calculateMonthlyMetrics = () => {
       const months = {};
       DEALS.forEach(d => {
+        if (!d.month) return;
         if (!months[d.month]) months[d.month] = {month: d.month, total: 0, won: 0, lost: 0, revenue: 0};
         months[d.month].total++;
         if (d.status === 'Closed - Won') {
@@ -1021,7 +1051,44 @@
         }
         if (d.status === 'Closed - Lost') months[d.month].lost++;
       });
-      return Object.values(months).sort((a, b) => a.month.localeCompare(b.month));
+      return Object.values(months).sort((a, b) => monthSortKey(a.month) - monthSortKey(b.month));
+    };
+
+    // Calculate quarterly metrics (3-month rolling)
+    const calculateQuarterlyMetrics = () => {
+      const monthly = calculateMonthlyMetrics();
+      const quarters = [];
+      for (let i = 0; i < monthly.length; i += 3) {
+        const chunk = monthly.slice(i, Math.min(i + 3, monthly.length));
+        if (chunk.length === 0) continue;
+        const label = chunk.length > 1 ? chunk[0].month + ' – ' + chunk[chunk.length - 1].month : chunk[0].month;
+        const totalDeals = chunk.reduce((s, m) => s + m.total, 0);
+        const totalWon = chunk.reduce((s, m) => s + m.won, 0);
+        const totalRevenue = chunk.reduce((s, m) => s + m.revenue, 0);
+
+        // Get ad spend for these months from Tiller
+        let qSpend = 0;
+        chunk.forEach(m => {
+          if (EXPENSE_DATA && m.month) {
+            const parts = m.month.split('-');
+            if (parts.length === 2) {
+              const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+              const mn = parseInt(parts[0]) - 1;
+              const yr = '20' + parts[1];
+              const lbl = monthNames[mn] + ' ' + yr;
+              const spend = getMonthlyAdSpend(lbl);
+              if (spend !== null) qSpend += Math.abs(spend);
+            }
+          }
+        });
+        if (qSpend === 0) qSpend = getTotalAdSpend() / 4; // fallback to avg quarter
+
+        const roas = qSpend > 0 ? totalRevenue / qSpend : 0;
+        const roi = qSpend > 0 ? ((totalRevenue - qSpend) / qSpend * 100) : 0;
+
+        quarters.push({ label, totalDeals, totalWon, totalRevenue, adSpend: qSpend, roas, roi });
+      }
+      return quarters;
     };
 
     // ==================== RENDER FUNCTIONS ====================
@@ -2043,6 +2110,102 @@
         `;
       });
       document.getElementById('roiTableBody').innerHTML = tableHtml;
+
+      // Quarterly ROI & ROAS Charts
+      const quarters = calculateQuarterlyMetrics();
+      const qLabels = quarters.map(q => q.label);
+
+      // Quarterly ROI % Chart
+      const roiCtx = document.getElementById('quarterlyROIChart');
+      if (roiCtx) {
+        if (roiCtx._chartInstance) roiCtx._chartInstance.destroy();
+        roiCtx._chartInstance = new Chart(roiCtx, {
+          type: 'bar',
+          data: {
+            labels: qLabels,
+            datasets: [{
+              label: 'ROI %',
+              data: quarters.map(q => q.roi.toFixed(1)),
+              backgroundColor: quarters.map(q => q.roi >= 0 ? 'rgba(46,117,182,0.7)' : 'rgba(220,53,69,0.7)'),
+              borderColor: quarters.map(q => q.roi >= 0 ? '#2E75B6' : '#DC3545'),
+              borderWidth: 1,
+              borderRadius: 4,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    const q = quarters[ctx.dataIndex];
+                    return [
+                      `ROI: ${q.roi.toFixed(1)}%`,
+                      `Revenue: $${q.totalRevenue.toLocaleString()}`,
+                      `Ad Spend: $${q.adSpend.toLocaleString()}`,
+                    ];
+                  }
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { callback: v => v + '%' },
+                title: { display: true, text: 'ROI %' }
+              }
+            }
+          }
+        });
+      }
+
+      // Quarterly ROAS Chart
+      const roasCtx = document.getElementById('quarterlyROASChart');
+      if (roasCtx) {
+        if (roasCtx._chartInstance) roasCtx._chartInstance.destroy();
+        roasCtx._chartInstance = new Chart(roasCtx, {
+          type: 'bar',
+          data: {
+            labels: qLabels,
+            datasets: [{
+              label: 'ROAS',
+              data: quarters.map(q => q.roas.toFixed(2)),
+              backgroundColor: 'rgba(84,130,53,0.7)',
+              borderColor: '#548235',
+              borderWidth: 1,
+              borderRadius: 4,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: (ctx) => {
+                    const q = quarters[ctx.dataIndex];
+                    return [
+                      `ROAS: ${q.roas.toFixed(2)}x`,
+                      `Revenue: $${q.totalRevenue.toLocaleString()}`,
+                      `Ad Spend: $${q.adSpend.toLocaleString()}`,
+                    ];
+                  }
+                }
+              }
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { callback: v => v + 'x' },
+                title: { display: true, text: 'ROAS' }
+              }
+            }
+          }
+        });
+      }
     };
 
     const switchTab = (tab) => {
