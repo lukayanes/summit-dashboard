@@ -169,9 +169,12 @@
 </head>
 <body>
   <!-- Header -->
-  <div class="navy-header text-white p-6 shadow-lg">
-    <h1 class="text-3xl font-bold">SUMMIT GROUP ACQUISITIONS</h1>
-    <p class="text-sm text-gray-300 mt-1">Deal Pipeline KPI Dashboard</p>
+  <div class="navy-header text-white p-6 shadow-lg flex items-center gap-5">
+    <img src="throne trans 2.png" alt="Summit Group Logo" style="height: 60px; width: auto;">
+    <div>
+      <h1 class="text-3xl font-bold">SUMMIT GROUP ACQUISITIONS</h1>
+      <p class="text-sm text-gray-300 mt-1">Deal Pipeline KPI Dashboard</p>
+    </div>
   </div>
 
   <!-- Tab Navigation -->
@@ -793,6 +796,8 @@
     const renderTeamTab = () => {
       const teams = calculateTeamMetrics();
       const colors = {Aubrey: '#2E75B6', Luka: '#548235', Brennen: '#ED7D31'};
+      const photos = {Aubrey: 'aubrey.jpg', Luka: 'luka.jpg', Brennen: 'brennen.jpg'};
+      const roles = {Aubrey: 'Disposition Manager', Luka: 'Disposition Manager', Brennen: 'Acquisition Manager'};
 
       let container = document.getElementById('teamCards');
       container.innerHTML = '';
@@ -803,6 +808,13 @@
         card.innerHTML = `
           <div class="section-title" style="background-color: ${colors[name]};">${name}</div>
           <div class="section-body">
+            <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #eee;">
+              <img src="${photos[name]}" alt="${name}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid ${colors[name]};">
+              <div>
+                <div style="font-size: 18px; font-weight: bold; color: #1B2A4A;">${name}</div>
+                <div style="font-size: 13px; color: #666;">${roles[name]}</div>
+              </div>
+            </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
               <div>
                 <div style="font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: 0.5px;">Total Deals</div>
