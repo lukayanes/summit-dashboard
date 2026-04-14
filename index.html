@@ -222,6 +222,7 @@
     <button class="tab-button" onclick="switchTab('monthly')">Monthly Trends</button>
     <button class="tab-button" onclick="switchTab('roi')">Marketing ROI</button>
     <button class="tab-button" onclick="switchTab('pipelineflow')">Pipeline Flow</button>
+    <button class="tab-button" onclick="switchTab('callledger')">Call Ledger</button>
   </div>
 
   <!-- Main Content Area -->
@@ -483,11 +484,49 @@
       </div>
     </div>
 
+    <!-- CALL LEDGER TAB -->
+    <div id="callledger" class="tab-content">
+      <div class="mb-4 flex gap-3 flex-wrap items-center">
+        <input type="text" id="callLedgerSearch" placeholder="Search calls..." oninput="filterCallLedger()" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 300px;">
+        <select id="filterMotivation" onchange="filterCallLedger()" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+          <option value="">All Motivation</option>
+        </select>
+        <select id="filterPropertyType" onchange="filterCallLedger()" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
+          <option value="">All Property Types</option>
+        </select>
+      </div>
+      <div id="callLedgerSummary" style="margin-bottom: 12px; font-size: 13px; color: #666;"></div>
+      <div class="table-container" style="max-height: 70vh; overflow: auto;">
+        <table id="callLedgerTable">
+          <thead>
+            <tr>
+              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('num')"># <span class="sort-arrow" id="callSort_num"></span></th>
+              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('date')">Date <span class="sort-arrow" id="callSort_date"></span></th>
+              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('seller')">Seller Name <span class="sort-arrow" id="callSort_seller"></span></th>
+              <th style="position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;">Phone</th>
+              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('address')">Property Address <span class="sort-arrow" id="callSort_address"></span></th>
+              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('city')">City / State <span class="sort-arrow" id="callSort_city"></span></th>
+              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('price')">Asking Price <span class="sort-arrow" id="callSort_price"></span></th>
+              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('type')">Property Type <span class="sort-arrow" id="callSort_type"></span></th>
+              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('motivation')">Motivation <span class="sort-arrow" id="callSort_motivation"></span></th>
+              <th style="position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;min-width:300px;">Call Summary</th>
+              <th style="position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;min-width:250px;">Next Steps</th>
+              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('callback')">Callback Date <span class="sort-arrow" id="callSort_callback"></span></th>
+            </tr>
+          </thead>
+          <tbody id="callLedgerBody">
+            <tr><td colspan="12" style="text-align:center;padding:40px;color:#666;">Loading call ledger...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 
   <script>
     // ==================== GOOGLE SHEETS INTEGRATION ====================
     const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSwypHrZcGSLGA0Ddb-a7GJwAOApyQGwqKW9xf7TNhaxfTnypAlM8W7KWyu9S3iN4JL2oYheTxvK_Kw/pub?gid=0&single=true&output=csv';
+    const CALL_LEDGER_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQNgebGg8-sFOUJ-124bGrkIZkLOZsu7Zpibn-u_a1KKzC0K0eCbP6CvQRTc4i5oEnAUwk-DVi-mLKy/pub?gid=2087946942&single=true&output=csv';
 
     let DEALS = []; // Will be populated from Google Sheet
 
@@ -1512,6 +1551,8 @@
         renderROITab();
       } else if (tab === 'pipelineflow') {
         // Pipeline flow already has its controls, no additional render needed
+      } else if (tab === 'callledger') {
+        renderCallLedgerTab();
       }
 
       // Give charts time to render
@@ -1532,6 +1573,181 @@
       document.getElementById('filterDispo').addEventListener('change', applyLedgerFilters);
       document.getElementById('filterAcq').addEventListener('change', applyLedgerFilters);
     };
+
+    // ==================== CALL LEDGER ====================
+    let CALLS = [];
+    let callFilteredData = [];
+    let callSortColumn = null;
+    let callSortAsc = true;
+
+    async function fetchCallLedger() {
+      try {
+        const resp = await fetch(CALL_LEDGER_CSV_URL);
+        if (!resp.ok) throw new Error('Failed to fetch call ledger');
+        const csv = await resp.text();
+        const rows = parseCSV(csv);
+
+        // Find header row — look for "Call #" or "Seller Name"
+        let headerIdx = -1;
+        for (let i = 0; i < Math.min(rows.length, 10); i++) {
+          if (rows[i].some(c => c.toLowerCase().includes('call #') || c.toLowerCase().includes('seller name'))) {
+            headerIdx = i; break;
+          }
+        }
+        if (headerIdx === -1) throw new Error('Could not find header row');
+
+        const headers = rows[headerIdx].map(h => h.toLowerCase().trim());
+        const col = (name) => headers.findIndex(h => h.includes(name));
+
+        const iNum = col('call #');
+        const iDate = col('date');
+        const iSeller = col('seller name');
+        const iPhone = col('phone');
+        const iAddr = col('property address');
+        const iCity = col('city');
+        const iPrice = col('asking price');
+        const iType = col('property type');
+        const iMotivation = col('motivation');
+        const iSummary = col('call summary');
+        const iNext = col('next step');
+        const iCallback = col('callback');
+
+        const calls = [];
+        for (let i = headerIdx + 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || r.length < 3) continue;
+          const seller = (iSeller >= 0 ? r[iSeller] : '') || '';
+          const num = (iNum >= 0 ? r[iNum] : '') || '';
+          if (!seller.trim() && !num.trim()) continue;
+
+          calls.push({
+            num: num,
+            date: (iDate >= 0 ? r[iDate] : '') || '',
+            seller: seller,
+            phone: (iPhone >= 0 ? r[iPhone] : '') || '',
+            address: (iAddr >= 0 ? r[iAddr] : '') || '',
+            city: (iCity >= 0 ? r[iCity] : '') || '',
+            price: (iPrice >= 0 ? r[iPrice] : '') || '',
+            type: (iType >= 0 ? r[iType] : '') || '',
+            motivation: (iMotivation >= 0 ? r[iMotivation] : '') || '',
+            summary: (iSummary >= 0 ? r[iSummary] : '') || '',
+            nextSteps: (iNext >= 0 ? r[iNext] : '') || '',
+            callback: (iCallback >= 0 ? r[iCallback] : '') || ''
+          });
+        }
+        return calls;
+      } catch (err) {
+        console.error('Error fetching call ledger:', err);
+        return [];
+      }
+    }
+
+    function getMotivationBadge(level) {
+      const l = (level || '').toLowerCase().trim();
+      if (l.includes('hot') || l.includes('high')) return '<span class="badge" style="background:#ffebee;color:#C00000;">Hot</span>';
+      if (l.includes('warm') || l.includes('med')) return '<span class="badge" style="background:#fff3e0;color:#f57c00;">Warm</span>';
+      if (l.includes('cold') || l.includes('low')) return '<span class="badge" style="background:#e3f2fd;color:#1976d2;">Cold</span>';
+      return '<span class="badge" style="background:#f5f5f5;color:#666;">' + (level || '-') + '</span>';
+    }
+
+    function renderCallLedgerTable() {
+      const body = document.getElementById('callLedgerBody');
+      if (!callFilteredData.length) {
+        body.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:20px;color:#666;">No calls found</td></tr>';
+        return;
+      }
+
+      body.innerHTML = callFilteredData.map((c, i) => `
+        <tr style="background:${i % 2 === 0 ? '#fff' : '#fafafa'};">
+          <td>${c.num}</td>
+          <td style="white-space:nowrap;">${c.date}</td>
+          <td style="font-weight:600;">${c.seller}</td>
+          <td style="white-space:nowrap;">${c.phone}</td>
+          <td>${c.address}</td>
+          <td style="white-space:nowrap;">${c.city}</td>
+          <td style="white-space:nowrap;">${c.price}</td>
+          <td>${c.type}</td>
+          <td>${getMotivationBadge(c.motivation)}</td>
+          <td style="font-size:12px;max-width:350px;">${c.summary}</td>
+          <td style="font-size:12px;max-width:280px;">${c.nextSteps}</td>
+          <td style="white-space:nowrap;">${c.callback}</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('callLedgerSummary').textContent =
+        callFilteredData.length + ' of ' + CALLS.length + ' calls shown';
+    }
+
+    function filterCallLedger() {
+      const search = (document.getElementById('callLedgerSearch').value || '').toLowerCase();
+      const motivation = document.getElementById('filterMotivation').value;
+      const propType = document.getElementById('filterPropertyType').value;
+
+      callFilteredData = CALLS.filter(c => {
+        if (motivation && !c.motivation.toLowerCase().includes(motivation.toLowerCase())) return false;
+        if (propType && !c.type.toLowerCase().includes(propType.toLowerCase())) return false;
+        if (search) {
+          const searchStr = [c.seller, c.address, c.city, c.summary, c.nextSteps, c.phone].join(' ').toLowerCase();
+          if (!searchStr.includes(search)) return false;
+        }
+        return true;
+      });
+      renderCallLedgerTable();
+    }
+
+    function sortCallLedger(col) {
+      if (callSortColumn === col) { callSortAsc = !callSortAsc; }
+      else { callSortColumn = col; callSortAsc = true; }
+
+      const getVal = (c) => {
+        switch(col) {
+          case 'num': return parseInt(c.num) || 0;
+          case 'date': return new Date(c.date) || 0;
+          case 'seller': return c.seller.toLowerCase();
+          case 'address': return c.address.toLowerCase();
+          case 'city': return c.city.toLowerCase();
+          case 'price': return parseNum(c.price) || 0;
+          case 'type': return c.type.toLowerCase();
+          case 'motivation': return c.motivation.toLowerCase();
+          case 'callback': return new Date(c.callback) || 0;
+          default: return '';
+        }
+      };
+
+      callFilteredData.sort((a, b) => {
+        const va = getVal(a), vb = getVal(b);
+        if (va < vb) return callSortAsc ? -1 : 1;
+        if (va > vb) return callSortAsc ? 1 : -1;
+        return 0;
+      });
+
+      // Update sort arrows
+      document.querySelectorAll('[id^="callSort_"]').forEach(el => { el.textContent = ''; el.className = 'sort-arrow'; });
+      const arrow = document.getElementById('callSort_' + col);
+      if (arrow) { arrow.textContent = callSortAsc ? '▲' : '▼'; arrow.className = 'sort-arrow active'; }
+
+      renderCallLedgerTable();
+    }
+
+    function populateCallFilters() {
+      const motivations = [...new Set(CALLS.map(c => c.motivation).filter(Boolean))];
+      const types = [...new Set(CALLS.map(c => c.type).filter(Boolean))];
+
+      const motSelect = document.getElementById('filterMotivation');
+      motivations.forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = m; motSelect.appendChild(o); });
+
+      const typeSelect = document.getElementById('filterPropertyType');
+      types.forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = t; typeSelect.appendChild(o); });
+    }
+
+    async function renderCallLedgerTab() {
+      if (CALLS.length === 0) {
+        CALLS = await fetchCallLedger();
+        callFilteredData = [...CALLS];
+        populateCallFilters();
+      }
+      renderCallLedgerTable();
+    }
 
     // ==================== REFRESH ====================
     async function refreshData() {
