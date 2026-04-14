@@ -1343,7 +1343,29 @@
       }
 
       if (stages.length === 0) {
-        content.innerHTML = '<div style="padding:20px;text-align:center;color:#666;">No pipeline stages found. Check that your GHL pipeline has opportunities.</div>';
+        let debugHtml = '<div style="padding:20px;text-align:center;color:#666;">';
+        debugHtml += '<p style="font-weight:600;margin-bottom:12px;">No pipeline stages found.</p>';
+        if (data.debug) {
+          debugHtml += '<div style="text-align:left;background:#f5f5f5;padding:16px;border-radius:8px;font-size:13px;max-width:600px;margin:0 auto;">';
+          debugHtml += `<p><strong>Pipelines found:</strong> ${data.debug.pipelineCount}</p>`;
+          debugHtml += `<p><strong>Stages in pipelines:</strong> ${data.debug.stageCount}</p>`;
+          debugHtml += `<p><strong>Total opportunities:</strong> ${data.debug.opportunityCount}</p>`;
+          debugHtml += `<p><strong>Unmatched opportunities:</strong> ${data.debug.unmatchedCount}</p>`;
+          if (data.debug.unmatchedStageIds && data.debug.unmatchedStageIds.length > 0) {
+            debugHtml += `<p><strong>Unmatched stage IDs:</strong> ${data.debug.unmatchedStageIds.join(', ')}</p>`;
+          }
+          if (data.debug.stageIds && data.debug.stageIds.length > 0) {
+            debugHtml += `<p><strong>Known stage IDs:</strong> ${data.debug.stageIds.join(', ')}</p>`;
+          }
+          if (data.debug.sampleOpp) {
+            debugHtml += `<p><strong>Sample opp keys:</strong> ${data.debug.sampleOppKeys.join(', ')}</p>`;
+            debugHtml += `<p><strong>Sample stageId:</strong> ${data.debug.sampleOpp.stageId || 'null'}</p>`;
+            debugHtml += `<p><strong>Sample pipelineStageId:</strong> ${data.debug.sampleOpp.pipelineStageId || 'null'}</p>`;
+          }
+          debugHtml += '</div>';
+        }
+        debugHtml += '</div>';
+        content.innerHTML = debugHtml;
         return;
       }
 
