@@ -1172,43 +1172,75 @@
 
     const renderPipelineFlow = (data) => {
       const content = document.getElementById('pipelineFlowContent');
-      
-      // Create HTML for stage funnel
-      let funnelHtml = '<div style="margin-bottom: 32px;"><div class="section-title" style="background-color: #2E75B6;">Pipeline Stage Funnel</div><div class="section-body"><div class="chart-container"><canvas id="pipelineStageChart"></canvas></div></div></div>';
-      
-      // Create HTML for stage value
-      funnelHtml += '<div style="margin-bottom: 32px;"><div class="section-title" style="background-color: #548235;">Stage Value</div><div class="section-body"><div class="chart-container"><canvas id="pipelineValueChart"></canvas></div></div></div>';
-      
-      // Create HTML for summary table
-      funnelHtml += `
-        <div style="margin-bottom: 32px;"><div class="section-title" style="background-color: #ED7D31;">Pipeline Summary</div><div class="section-body"><div class="table-container">
+
+      // Flatten the Worker's nested pipeline → stages structure into a flat stages array
+      const stages = [];
+      if (data.pipelines) {
+        Object.values(data.pipelines).forEach(pipeline => {
+          if (pipeline.stages) {
+            Object.values(pipeline.stages).forEach(stage => {
+              stages.push({
+                name: stage.name,
+                count: stage.count || 0,
+                totalValue: stage.totalValue || 0,
+                avgValue: stage.averageValue || 0,
+                avgDays: stage.averageDaysInStage || 0
+              });
+            });
+          }
+        });
+      } else if (data.stages) {
+        // Also support flat stages format
+        data.stages.forEach(s => stages.push(s));
+      }
+
+      if (stages.length === 0) {
+        content.innerHTML = '<div style="padding:20px;text-align:center;color:#666;">No pipeline stages found. Check that your GHL pipeline has opportunities.</div>';
+        return;
+      }
+
+      // Summary stats
+      const totalOpps = stages.reduce((s, st) => s + st.count, 0);
+      const totalVal = stages.reduce((s, st) => s + st.totalValue, 0);
+
+      // Create HTML
+      let html = '';
+
+      // KPI summary cards
+      html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;">';
+      html += `<div class="kpi-card"><div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px;text-transform:uppercase;">Total Opportunities</div><div style="font-size:24px;font-weight:bold;color:#2E75B6;">${totalOpps.toLocaleString()}</div></div>`;
+      html += `<div class="kpi-card"><div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px;text-transform:uppercase;">Pipeline Value</div><div style="font-size:24px;font-weight:bold;color:#548235;">${fmt(totalVal)}</div></div>`;
+      html += `<div class="kpi-card"><div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px;text-transform:uppercase;">Stages</div><div style="font-size:24px;font-weight:bold;color:#ED7D31;">${stages.length}</div></div>`;
+      html += `<div class="kpi-card"><div style="font-size:11px;font-weight:600;color:#666;margin-bottom:8px;text-transform:uppercase;">Avg per Stage</div><div style="font-size:24px;font-weight:bold;color:#7030A0;">${Math.round(totalOpps / stages.length)}</div></div>`;
+      html += '</div>';
+
+      // Stage funnel chart
+      html += '<div style="margin-bottom:32px;"><div class="section-title" style="background-color:#2E75B6;">Pipeline Stage Funnel</div><div class="section-body"><div class="chart-container"><canvas id="pipelineStageChart"></canvas></div></div></div>';
+
+      // Stage value chart
+      html += '<div style="margin-bottom:32px;"><div class="section-title" style="background-color:#548235;">Stage Value</div><div class="section-body"><div class="chart-container"><canvas id="pipelineValueChart"></canvas></div></div></div>';
+
+      // Summary table
+      html += `
+        <div style="margin-bottom:32px;"><div class="section-title" style="background-color:#ED7D31;">Pipeline Summary</div><div class="section-body"><div class="table-container">
           <table>
-            <thead>
-              <tr>
-                <th>Stage</th>
-                <th>Count</th>
-                <th>Total Value</th>
-                <th>Avg Value</th>
-                <th>Avg Days</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Stage</th><th>Count</th><th>Total Value</th><th>Avg Value</th><th>Avg Days</th></tr></thead>
             <tbody id="pipelineSummaryTable"></tbody>
           </table>
-        </div></div></div>
-      `;
-      
-      content.innerHTML = funnelHtml;
+        </div></div></div>`;
+
+      content.innerHTML = html;
 
       // Populate summary table
       let summaryTableHtml = '';
-      data.stages.forEach(stage => {
+      stages.forEach(stage => {
         summaryTableHtml += `
           <tr>
             <td style="font-weight: 500;">${stage.name}</td>
             <td>${stage.count}</td>
             <td style="font-weight: 500;">${fmt(stage.totalValue)}</td>
             <td style="font-weight: 500;">${fmt(stage.avgValue)}</td>
-            <td>${stage.avgDays.toFixed(0)} days</td>
+            <td>${(stage.avgDays || 0).toFixed(0)} days</td>
           </tr>
         `;
       });
@@ -1222,10 +1254,10 @@
       chartsCache['pipelineStageChart'] = new Chart(stageCtx, {
         type: 'bar',
         data: {
-          labels: data.stages.map(s => s.name),
+          labels: stages.map(s => s.name),
           datasets: [{
             label: 'Count',
-            data: data.stages.map(s => s.count),
+            data: stages.map(s => s.count),
             backgroundColor: '#2E75B6'
           }]
         },
@@ -1236,10 +1268,10 @@
       chartsCache['pipelineValueChart'] = new Chart(valueCtx, {
         type: 'bar',
         data: {
-          labels: data.stages.map(s => s.name),
+          labels: stages.map(s => s.name),
           datasets: [{
             label: 'Total Value',
-            data: data.stages.map(s => s.totalValue),
+            data: stages.map(s => s.totalValue),
             backgroundColor: '#548235'
           }]
         },
