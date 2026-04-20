@@ -422,24 +422,7 @@
 
     <!-- MONTHLY TRENDS TAB -->
     <div id="monthly" class="tab-content">
-      <div class="grid gap-6 mb-6" style="grid-template-columns: repeat(2, 1fr);">
-        <div>
-          <div class="section-title" style="background-color: #2E75B6;">Deals by Month</div>
-          <div class="section-body">
-            <div class="chart-container">
-              <canvas id="monthlyDealsChart"></canvas>
-            </div>
-          </div>
-        </div>
-        <div>
-          <div class="section-title" style="background-color: #548235;">Revenue by Month</div>
-          <div class="section-body">
-            <div class="chart-container">
-              <canvas id="monthlyRevenueChart"></canvas>
-            </div>
-          </div>
-        </div>
-      </div>
+      <div id="monthlyTrendsContent"></div>
     </div>
 
     <!-- MARKETING ROI TAB -->
@@ -1743,43 +1726,257 @@
     };
 
     const renderMonthlyTab = () => {
+      const container = document.getElementById('monthlyTrendsContent');
       const monthly = calculateMonthlyMetrics();
+      const strategies = calculateStrategyMetrics();
+      const teams = calculateTeamMetrics();
 
-      destroyChart('monthlyDealsChart');
-      destroyChart('monthlyRevenueChart');
+      // ── Monthly KPIs ──
+      const totalDeals = monthly.reduce((s, m) => s + m.total, 0);
+      const totalWon = monthly.reduce((s, m) => s + m.won, 0);
+      const totalLost = monthly.reduce((s, m) => s + m.lost, 0);
+      const totalRev = monthly.reduce((s, m) => s + m.revenue, 0);
+      const avgDealsPerMonth = monthly.length > 0 ? totalDeals / monthly.length : 0;
+      const avgRevPerMonth = monthly.length > 0 ? totalRev / monthly.length : 0;
 
-      // Deals by Month
-      const ctx1 = document.getElementById('monthlyDealsChart').getContext('2d');
-      chartsCache['monthlyDealsChart'] = new Chart(ctx1, {
-        type: 'bar',
-        data: {
-          labels: monthly.map(m => m.month),
-          datasets: [
-            {label: 'Total', data: monthly.map(m => m.total), backgroundColor: '#2E75B6'},
-            {label: 'Won', data: monthly.map(m => m.won), backgroundColor: '#548235'},
-            {label: 'Lost', data: monthly.map(m => m.lost), backgroundColor: '#C00000'}
-          ]
-        },
-        options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {position: 'bottom'}}}
+      // Best/worst months
+      let bestRevMonth = monthly[0] || {month:'-',revenue:0};
+      let bestDealMonth = monthly[0] || {month:'-',total:0};
+      let worstMonth = monthly[0] || {month:'-',total:Infinity};
+      monthly.forEach(m => {
+        if (m.revenue > bestRevMonth.revenue) bestRevMonth = m;
+        if (m.total > bestDealMonth.total) bestDealMonth = m;
+        if (m.total < worstMonth.total && m.total > 0) worstMonth = m;
       });
 
-      // Revenue by Month
-      const ctx2 = document.getElementById('monthlyRevenueChart').getContext('2d');
-      chartsCache['monthlyRevenueChart'] = new Chart(ctx2, {
-        type: 'line',
-        data: {
-          labels: monthly.map(m => m.month),
-          datasets: [{
-            label: 'Revenue',
-            data: monthly.map(m => m.revenue),
-            borderColor: '#548235',
-            backgroundColor: 'rgba(84, 130, 53, 0.1)',
-            fill: true,
-            tension: 0.3
-          }]
-        },
-        options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {position: 'bottom'}}}
+      // Month-over-month growth
+      const momGrowth = [];
+      for (let i = 1; i < monthly.length; i++) {
+        const prev = monthly[i - 1].total;
+        const curr = monthly[i].total;
+        momGrowth.push({ month: monthly[i].month, growth: prev > 0 ? ((curr - prev) / prev * 100) : 0, deals: curr, prevDeals: prev });
+      }
+
+      // Cumulative revenue
+      let cumRev = 0;
+      const cumRevData = monthly.map(m => { cumRev += m.revenue; return cumRev; });
+
+      // Win rate trend
+      const winRateTrend = monthly.map(m => ({ month: m.month, rate: m.total > 0 ? (m.won / m.total * 100) : 0 }));
+
+      // Strategy by month
+      const strategyByMonth = {};
+      DEALS.forEach(d => {
+        if (!d.month || !d.strategy) return;
+        if (!strategyByMonth[d.month]) strategyByMonth[d.month] = {};
+        strategyByMonth[d.month][d.strategy] = (strategyByMonth[d.month][d.strategy] || 0) + 1;
       });
+      const allStrategies = [...new Set(DEALS.map(d => d.strategy).filter(Boolean))];
+
+      // Tiller monthly income/expense overlay
+      const hasTiller = !!EXPENSE_DATA;
+      const tillerMonths = hasTiller ? EXPENSE_DATA.monthLabels : [];
+
+      let html = '';
+
+      // ── KPI Row ──
+      html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px;">`;
+      html += `<div class="kpi-card" style="border-left:4px solid #2E75B6;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Avg Deals/Month</div><div style="font-size:28px;font-weight:800;color:#2E75B6;">${avgDealsPerMonth.toFixed(1)}</div></div>`;
+      html += `<div class="kpi-card" style="border-left:4px solid #548235;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Avg Revenue/Month</div><div style="font-size:28px;font-weight:800;color:#548235;">${fmt(avgRevPerMonth)}</div></div>`;
+      html += `<div class="kpi-card" style="border-left:4px solid #ED7D31;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Best Month (Revenue)</div><div style="font-size:20px;font-weight:800;color:#ED7D31;">${bestRevMonth.month}</div><div style="font-size:12px;color:#888;">${fmt(bestRevMonth.revenue)}</div></div>`;
+      html += `<div class="kpi-card" style="border-left:4px solid #7030A0;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Best Month (Volume)</div><div style="font-size:20px;font-weight:800;color:#7030A0;">${bestDealMonth.month}</div><div style="font-size:12px;color:#888;">${bestDealMonth.total} deals</div></div>`;
+      html += `</div>`;
+
+      // ── Row 2 KPIs ──
+      html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;">`;
+      html += `<div class="kpi-card"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Total Deals</div><div style="font-size:24px;font-weight:800;color:#1B2A4A;">${totalDeals}</div></div>`;
+      html += `<div class="kpi-card"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Total Won</div><div style="font-size:24px;font-weight:800;color:#548235;">${totalWon}</div></div>`;
+      html += `<div class="kpi-card"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Total Lost</div><div style="font-size:24px;font-weight:800;color:#C00000;">${totalLost}</div></div>`;
+      html += `<div class="kpi-card"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Months Tracked</div><div style="font-size:24px;font-weight:800;color:#2F9599;">${monthly.length}</div></div>`;
+      html += `</div>`;
+
+      // ── Charts Row 1: Deal Volume + Revenue ──
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">`;
+      html += `<div><div class="section-title" style="background-color:#2E75B6;">Deal Volume by Month</div><div class="section-body"><div class="chart-container"><canvas id="mtDealsChart"></canvas></div></div></div>`;
+      html += `<div><div class="section-title" style="background-color:#548235;">Revenue by Month</div><div class="section-body"><div class="chart-container"><canvas id="mtRevenueChart"></canvas></div></div></div>`;
+      html += `</div>`;
+
+      // ── Charts Row 2: Cumulative Revenue + Win Rate Trend ──
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">`;
+      html += `<div><div class="section-title" style="background-color:#7030A0;">Cumulative Revenue</div><div class="section-body"><div class="chart-container"><canvas id="mtCumRevChart"></canvas></div></div></div>`;
+      html += `<div><div class="section-title" style="background-color:#ED7D31;">Win Rate Trend</div><div class="section-body"><div class="chart-container"><canvas id="mtWinRateChart"></canvas></div></div></div>`;
+      html += `</div>`;
+
+      // ── Charts Row 3: MoM Growth + Strategy Mix ──
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">`;
+      html += `<div><div class="section-title" style="background-color:#2F9599;">Month-over-Month Growth</div><div class="section-body"><div class="chart-container"><canvas id="mtMoMChart"></canvas></div></div></div>`;
+      html += `<div><div class="section-title" style="background-color:#1B2A4A;">Strategy Mix by Month</div><div class="section-body"><div class="chart-container"><canvas id="mtStrategyChart"></canvas></div></div></div>`;
+      html += `</div>`;
+
+      // ── Income vs Expense Overlay (if Tiller connected) ──
+      if (hasTiller) {
+        html += `<div style="margin-bottom:24px;"><div class="section-title" style="background-color:#1B2A4A;">Income vs Expenses vs Deals (Tiller + Ledger)</div><div class="section-body"><div class="chart-container" style="height:350px;"><canvas id="mtOverlayChart"></canvas></div></div></div>`;
+      }
+
+      // ── Monthly Detail Table ──
+      html += `<div style="margin-bottom:24px;"><div class="section-title" style="background-color:#1B2A4A;">Monthly Detail</div><div class="section-body"><div class="table-container">`;
+      html += `<table><thead><tr><th>Month</th><th>Total</th><th>Won</th><th>Lost</th><th>Win Rate</th><th>Revenue</th><th>Cumulative Rev</th><th>MoM Growth</th></tr></thead><tbody>`;
+
+      let cumR = 0;
+      monthly.forEach((m, idx) => {
+        cumR += m.revenue;
+        const wr = m.total > 0 ? (m.won / m.total * 100).toFixed(0) + '%' : '-';
+        let growth = '-';
+        if (idx > 0 && monthly[idx - 1].total > 0) {
+          const g = ((m.total - monthly[idx - 1].total) / monthly[idx - 1].total * 100);
+          growth = `<span style="color:${g >= 0 ? '#548235' : '#C00000'}">${g >= 0 ? '+' : ''}${g.toFixed(0)}%</span>`;
+        }
+        html += `<tr><td>${m.month}</td><td>${m.total}</td><td style="color:#548235;font-weight:600;">${m.won}</td><td style="color:#C00000;">${m.lost}</td><td>${wr}</td><td style="font-weight:600;">${fmt(m.revenue)}</td><td>${fmt(cumR)}</td><td>${growth}</td></tr>`;
+      });
+      html += `</tbody></table></div></div></div>`;
+
+      container.innerHTML = html;
+
+      // ── Render Charts ──
+      setTimeout(() => {
+        const mLabels = monthly.map(m => m.month);
+        const stratColors = ['#2E75B6','#548235','#ED7D31','#7030A0','#FFC000','#2F9599','#C00000','#1B2A4A'];
+
+        // Deal Volume
+        const dCtx = document.getElementById('mtDealsChart');
+        if (dCtx) {
+          destroyChart('mtDealsChart');
+          chartsCache['mtDealsChart'] = new Chart(dCtx.getContext('2d'), {
+            type: 'bar',
+            data: { labels: mLabels, datasets: [
+              { label: 'Total', data: monthly.map(m => m.total), backgroundColor: '#2E75B6', borderRadius: 3 },
+              { label: 'Won', data: monthly.map(m => m.won), backgroundColor: '#548235', borderRadius: 3 },
+              { label: 'Lost', data: monthly.map(m => m.lost), backgroundColor: '#C00000', borderRadius: 3 },
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+          });
+        }
+
+        // Revenue
+        const rCtx = document.getElementById('mtRevenueChart');
+        if (rCtx) {
+          destroyChart('mtRevenueChart');
+          chartsCache['mtRevenueChart'] = new Chart(rCtx.getContext('2d'), {
+            type: 'bar',
+            data: { labels: mLabels, datasets: [{
+              label: 'Revenue', data: monthly.map(m => m.revenue),
+              backgroundColor: 'rgba(84,130,53,0.7)', borderColor: '#548235', borderWidth: 1, borderRadius: 4,
+            }]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } } } }
+          });
+        }
+
+        // Cumulative Revenue
+        const cCtx = document.getElementById('mtCumRevChart');
+        if (cCtx) {
+          destroyChart('mtCumRevChart');
+          chartsCache['mtCumRevChart'] = new Chart(cCtx.getContext('2d'), {
+            type: 'line',
+            data: { labels: mLabels, datasets: [{
+              label: 'Cumulative Revenue', data: cumRevData,
+              borderColor: '#7030A0', backgroundColor: 'rgba(112,48,160,0.1)', fill: true, tension: 0.3, pointBackgroundColor: '#7030A0',
+            }]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } } } }
+          });
+        }
+
+        // Win Rate Trend
+        const wCtx = document.getElementById('mtWinRateChart');
+        if (wCtx) {
+          destroyChart('mtWinRateChart');
+          chartsCache['mtWinRateChart'] = new Chart(wCtx.getContext('2d'), {
+            type: 'line',
+            data: { labels: winRateTrend.map(w => w.month), datasets: [{
+              label: 'Win Rate %', data: winRateTrend.map(w => w.rate),
+              borderColor: '#ED7D31', backgroundColor: 'rgba(237,125,49,0.1)', fill: true, tension: 0.3, pointBackgroundColor: '#ED7D31',
+            }]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%' } } } }
+          });
+        }
+
+        // MoM Growth
+        const gCtx = document.getElementById('mtMoMChart');
+        if (gCtx && momGrowth.length > 0) {
+          destroyChart('mtMoMChart');
+          chartsCache['mtMoMChart'] = new Chart(gCtx.getContext('2d'), {
+            type: 'bar',
+            data: { labels: momGrowth.map(g => g.month), datasets: [{
+              label: 'MoM Growth %', data: momGrowth.map(g => g.growth),
+              backgroundColor: momGrowth.map(g => g.growth >= 0 ? 'rgba(84,130,53,0.7)' : 'rgba(192,0,0,0.7)'), borderRadius: 4,
+            }]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => v.toFixed(0) + '%' } } } }
+          });
+        }
+
+        // Strategy Mix (stacked bar)
+        const sCtx = document.getElementById('mtStrategyChart');
+        if (sCtx) {
+          destroyChart('mtStrategyChart');
+          const stratDatasets = allStrategies.map((strat, si) => ({
+            label: strat,
+            data: mLabels.map(m => (strategyByMonth[m] && strategyByMonth[m][strat]) || 0),
+            backgroundColor: stratColors[si % stratColors.length],
+          }));
+          chartsCache['mtStrategyChart'] = new Chart(sCtx.getContext('2d'), {
+            type: 'bar',
+            data: { labels: mLabels, datasets: stratDatasets },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { x: { stacked: true }, y: { stacked: true } } }
+          });
+        }
+
+        // Income vs Expense vs Deals overlay
+        if (hasTiller) {
+          const oCtx = document.getElementById('mtOverlayChart');
+          if (oCtx) {
+            destroyChart('mtOverlayChart');
+            // Build aligned data: use Tiller month labels, match deal months
+            const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const sortedTiller = tillerMonths.slice().sort((a, b) => {
+              const pa = a.split(' '), pb = b.split(' ');
+              return (parseInt(pa[1]) * 100 + monthNames.indexOf(pa[0])) - (parseInt(pb[1]) * 100 + monthNames.indexOf(pb[0]));
+            });
+
+            const overlayIncome = [], overlayExpense = [], overlayDeals = [];
+            sortedTiller.forEach(tLabel => {
+              const mt = EXPENSE_DATA.monthlyTotals[tLabel];
+              overlayIncome.push(mt ? mt.totalIncome : 0);
+              overlayExpense.push(mt ? Math.abs(mt.totalExpense) : 0);
+              // Match Tiller label "Jan 2026" to deal month "01-26"
+              const parts = tLabel.split(' ');
+              const mi = monthNames.indexOf(parts[0]);
+              const yr = parts[1] ? parts[1].slice(2) : '';
+              const dealMonth = (mi >= 0 && yr) ? String(mi + 1).padStart(2, '0') + '-' + yr : '';
+              const dm = monthly.find(m => m.month === dealMonth);
+              overlayDeals.push(dm ? dm.total : 0);
+            });
+
+            chartsCache['mtOverlayChart'] = new Chart(oCtx.getContext('2d'), {
+              type: 'bar',
+              data: {
+                labels: sortedTiller,
+                datasets: [
+                  { label: 'Income', data: overlayIncome, backgroundColor: 'rgba(84,130,53,0.6)', order: 2 },
+                  { label: 'Expenses', data: overlayExpense, backgroundColor: 'rgba(192,0,0,0.6)', order: 2 },
+                  { label: 'Deals', data: overlayDeals, type: 'line', borderColor: '#2E75B6', borderWidth: 2, backgroundColor: 'transparent', pointBackgroundColor: '#2E75B6', yAxisID: 'y1', order: 1, tension: 0.3 },
+                ]
+              },
+              options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' } },
+                scales: {
+                  y: { ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' }, title: { display: true, text: 'Dollars' } },
+                  y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Deal Count' } },
+                }
+              }
+            });
+          }
+        }
+      }, 10);
     };
 
     const renderFinancialsTab = () => {
