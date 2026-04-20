@@ -2584,7 +2584,10 @@
     };
 
     // ==================== PROJECTIONS TAB ====================
-    const renderProjectionsTab = () => {
+    // Store projection shared data globally so baseline selector can recalc
+    window._projShared = {};
+
+    const renderProjectionsTab = (baselinePeriod) => {
       const container = document.getElementById('projectionsContent');
 
       if (!EXPENSE_DATA) {
@@ -2620,55 +2623,110 @@
         return (parseInt(pa[1]) * 100 + monthNames.indexOf(pa[0])) - (parseInt(pb[1]) * 100 + monthNames.indexOf(pb[0]));
       });
 
-      // Use last 3 months with actual data as baseline
       const activeMonths = sortedMonths.filter(m => monthlyActuals[m].income > 0 || monthlyActuals[m].expense > 0);
-      const baselineMonths = activeMonths.slice(-3);
 
-      if (baselineMonths.length === 0) {
-        container.innerHTML = '<div style="text-align:center;padding:40px;background:white;border-radius:8px;"><p style="color:#666;">Not enough historical data for projections. Need at least 1 month of Tiller data.</p></div>';
+      if (activeMonths.length === 0) {
+        container.innerHTML = '<div style="text-align:center;padding:40px;background:white;border-radius:8px;"><p style="color:#666;">Not enough historical data. Need at least 1 month of Tiller data.</p></div>';
         return;
       }
 
+      // ── Baseline period selection ──
+      const period = baselinePeriod || 3;
+      const baselineMonths = activeMonths.slice(-period);
+
+      // Allow custom month selection
+      const excludedMonths = window._projExcluded || [];
+      const filteredBaseline = baselineMonths.filter(m => !excludedMonths.includes(m));
+      const usedBaseline = filteredBaseline.length > 0 ? filteredBaseline : baselineMonths;
+
       // ── Compute baseline averages ──
-      const baseIncome = baselineMonths.reduce((s, m) => s + monthlyActuals[m].income, 0) / baselineMonths.length;
-      const baseExpense = baselineMonths.reduce((s, m) => s + monthlyActuals[m].expense, 0) / baselineMonths.length;
-      const baseMkt = baselineMonths.reduce((s, m) => s + monthlyActuals[m].marketing, 0) / baselineMonths.length;
+      const baseIncome = usedBaseline.reduce((s, m) => s + monthlyActuals[m].income, 0) / usedBaseline.length;
+      const baseExpense = usedBaseline.reduce((s, m) => s + monthlyActuals[m].expense, 0) / usedBaseline.length;
+      const baseMkt = usedBaseline.reduce((s, m) => s + monthlyActuals[m].marketing, 0) / usedBaseline.length;
       const baseNonMktExp = baseExpense - baseMkt;
       const baseROAS = baseMkt > 0 ? baseIncome / baseMkt : 0;
       const baseROI = baseExpense > 0 ? ((baseIncome - baseExpense) / baseExpense * 100) : 0;
       const baseMargin = baseIncome > 0 ? ((baseIncome - baseExpense) / baseIncome) : 0;
 
-      // Deal metrics baseline
+      // Deal metrics baseline — match same period
       const dealMonthly = calculateMonthlyMetrics();
-      const recentDealMonths = dealMonthly.slice(-3);
+      const recentDealMonths = dealMonthly.slice(-period);
       const baseDealsPerMonth = recentDealMonths.length > 0 ? recentDealMonths.reduce((s, m) => s + m.total, 0) / recentDealMonths.length : 0;
       const baseWonPerMonth = recentDealMonths.length > 0 ? recentDealMonths.reduce((s, m) => s + m.won, 0) / recentDealMonths.length : 0;
       const baseWinRate = baseDealsPerMonth > 0 ? baseWonPerMonth / baseDealsPerMonth : 0;
       const baseDealRev = recentDealMonths.length > 0 ? recentDealMonths.reduce((s, m) => s + m.revenue, 0) / recentDealMonths.length : 0;
       const baseAvgDealSize = baseWonPerMonth > 0 ? baseDealRev / baseWonPerMonth : 0;
 
-      // Default projected ad spend = current average
-      const defaultAdSpend = Math.round(baseMkt);
+      // Keep last ad spend if slider was already set
+      const prevAdSpend = window._projShared.lastAdSpend;
+      const defaultAdSpend = prevAdSpend !== undefined ? prevAdSpend : Math.round(baseMkt);
 
-      container.innerHTML = buildProjectionsHTML(defaultAdSpend, baselineMonths, baseMkt, baseIncome, baseExpense, baseNonMktExp, baseROAS, baseROI, baseMargin, baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, sortedMonths, monthlyActuals);
+      // Store for recalc
+      window._projShared = { activeMonths, sortedMonths, monthlyActuals, lastAdSpend: defaultAdSpend };
 
-      // Hook up slider and input
+      container.innerHTML = buildProjectionsHTML(defaultAdSpend, usedBaseline, baseMkt, baseIncome, baseExpense, baseNonMktExp, baseROAS, baseROI, baseMargin, baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, sortedMonths, monthlyActuals, activeMonths, period);
+
+      // Set the selector value
       setTimeout(() => {
+        const sel = document.getElementById('projBaselineSelect');
+        if (sel) sel.value = period;
+
+        // Mark excluded months
+        activeMonths.forEach(m => {
+          const cb = document.getElementById('projCb_' + m.replace(/\s/g, '_'));
+          if (cb) cb.checked = !excludedMonths.includes(m);
+        });
+
         runProjection(defaultAdSpend, baseMkt, baseIncome, baseNonMktExp, baseROAS, baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, sortedMonths, monthlyActuals);
       }, 10);
     };
 
-    function buildProjectionsHTML(defaultAdSpend, baselineMonths, baseMkt, baseIncome, baseExpense, baseNonMktExp, baseROAS, baseROI, baseMargin, baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, sortedMonths, monthlyActuals) {
+    function buildProjectionsHTML(defaultAdSpend, baselineMonths, baseMkt, baseIncome, baseExpense, baseNonMktExp, baseROAS, baseROI, baseMargin, baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, sortedMonths, monthlyActuals, activeMonths, period) {
       let html = '';
 
-      // Header
+      // Header with baseline selector
       html += `<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:24px;margin-bottom:24px;color:white;">`;
-      html += `<h2 style="margin:0 0 4px 0;font-size:22px;font-weight:700;">Financial Projections</h2>`;
-      html += `<p style="margin:0;font-size:13px;opacity:0.7;">Based on last ${baselineMonths.length} months: ${baselineMonths.join(', ')}</p>`;
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;">`;
+      html += `<div><h2 style="margin:0 0 4px 0;font-size:22px;font-weight:700;">Financial Projections</h2>`;
+      html += `<p style="margin:0;font-size:13px;opacity:0.7;">Using ${baselineMonths.length} month${baselineMonths.length > 1 ? 's' : ''}: ${baselineMonths.join(', ')}</p></div>`;
+      html += `<div style="display:flex;align-items:center;gap:12px;">`;
+      html += `<label style="font-size:12px;opacity:0.8;">Baseline Period:</label>`;
+      html += `<select id="projBaselineSelect" onchange="onProjBaselineChange()" style="padding:6px 12px;border-radius:6px;border:none;font-size:14px;font-weight:600;cursor:pointer;">`;
+      html += `<option value="1">Last 1 Month</option>`;
+      html += `<option value="2">Last 2 Months</option>`;
+      html += `<option value="3">Last 3 Months</option>`;
+      html += `<option value="6">Last 6 Months</option>`;
+      html += `<option value="12">Last 12 Months</option>`;
+      html += `<option value="999">All Time</option>`;
+      html += `</select>`;
+      html += `</div></div></div>`;
+
+      // ── Month toggle: include/exclude specific months ──
+      html += `<div style="background:white;border-radius:8px;padding:14px 16px;margin-bottom:20px;border:1px solid #e0e0e0;">`;
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">`;
+      html += `<span style="font-size:12px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">Include/Exclude Months</span>`;
+      html += `<span style="font-size:11px;color:#999;">Uncheck outlier months to remove them from the baseline</span>`;
       html += `</div>`;
+      html += `<div style="display:flex;flex-wrap:wrap;gap:6px;">`;
+
+      const selectedSet = new Set(baselineMonths);
+      (activeMonths || []).forEach(m => {
+        const inBaseline = selectedSet.has(m);
+        const cbId = 'projCb_' + m.replace(/\\s/g, '_');
+        const data = monthlyActuals[m];
+        const net = data.income - data.expense;
+        const dotColor = net >= 0 ? '#548235' : '#C00000';
+        html += `<label style="display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer;background:${inBaseline ? '#e8f4e8' : '#f5f5f5'};border:1px solid ${inBaseline ? '#548235' : '#ddd'};opacity:${inBaseline ? 1 : 0.5};">`;
+        html += `<input type="checkbox" id="${cbId}" ${inBaseline ? 'checked' : ''} onchange="onProjMonthToggle()" style="accent-color:#2E75B6;cursor:pointer;">`;
+        html += `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${dotColor};"></span>`;
+        html += `<span>${m}</span>`;
+        html += `<span style="font-size:10px;color:#999;">${fmt(data.income)}</span>`;
+        html += `</label>`;
+      });
+      html += `</div></div>`;
 
       // ── Baseline KPIs ──
-      html += `<div style="margin-bottom:8px;"><h3 style="margin:0 0 12px 0;font-size:14px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">Baseline (Recent Avg/Month)</h3></div>`;
+      html += `<div style="margin-bottom:8px;"><h3 style="margin:0 0 12px 0;font-size:14px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">Baseline (Avg/Month from selected period)</h3></div>`;
       html += `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px;">`;
       html += `<div class="kpi-card"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:6px;">Avg Revenue</div><div style="font-size:20px;font-weight:800;color:#548235;">${fmt(baseIncome)}</div></div>`;
       html += `<div class="kpi-card"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:6px;">Avg Marketing</div><div style="font-size:20px;font-weight:800;color:#ED7D31;">${fmt(baseMkt)}</div></div>`;
@@ -2710,6 +2768,40 @@
 
       // ── Historical vs Projected (full timeline) ──
       html += `<div><div class="section-title" style="background-color:#1B2A4A;">Historical + Projected Timeline</div><div class="section-body"><div class="chart-container" style="height:350px;"><canvas id="projTimelineChart"></canvas></div></div></div>`;
+
+      // ── How Projections Are Calculated ──
+      html += `<div style="margin-top:28px;background:#f8f9fa;border-radius:12px;border:1px solid #e0e0e0;padding:24px;">`;
+      html += `<h3 style="margin:0 0 16px 0;font-size:16px;font-weight:700;color:#1B2A4A;">How These Projections Are Calculated</h3>`;
+
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:13px;color:#444;line-height:1.7;">`;
+
+      html += `<div>`;
+      html += `<div style="font-weight:700;color:#2E75B6;margin-bottom:6px;">Baseline</div>`;
+      html += `<p style="margin:0 0 12px 0;">We average your selected months of Tiller data to establish a baseline for revenue, expenses, marketing spend, deal volume, and win rate. You can change the period or exclude outlier months above.</p>`;
+
+      html += `<div style="font-weight:700;color:#548235;margin-bottom:6px;">Projected Revenue</div>`;
+      html += `<p style="margin:0 0 12px 0;">Your baseline ROAS (${baseROAS.toFixed(2)}x) tells us every $1 of marketing spend historically generated $${baseROAS.toFixed(2)} in revenue. We apply that ratio to your projected ad spend. Spend increases above 1.5x baseline use a diminishing returns curve (60% efficiency) since doubling ad spend rarely doubles results.</p>`;
+
+      html += `<div style="font-weight:700;color:#C00000;margin-bottom:6px;">Projected Expenses</div>`;
+      html += `<p style="margin:0;">Your projected ad spend + your baseline non-marketing overhead (${fmt(baseNonMktExp)}/mo — things like CRM, software, commissions, travel). Overhead stays fixed; only marketing spend changes with the slider.</p>`;
+      html += `</div>`;
+
+      html += `<div>`;
+      html += `<div style="font-weight:700;color:#7030A0;margin-bottom:6px;">Projected Deals</div>`;
+      html += `<p style="margin:0 0 12px 0;">Baseline deal volume (${baseDealsPerMonth.toFixed(1)}/mo) scaled by the same ratio as revenue. More spend = more leads = more deals, with the same diminishing returns curve applied. Win rate (${(baseWinRate * 100).toFixed(0)}%) stays constant.</p>`;
+
+      html += `<div style="font-weight:700;color:#ED7D31;margin-bottom:6px;">ROI & ROAS</div>`;
+      html += `<p style="margin:0 0 12px 0;"><strong>ROAS</strong> = Projected Revenue ÷ Ad Spend. <strong>ROI</strong> = (Revenue − Total Expenses) ÷ Total Expenses × 100. Both decrease at very high spend levels due to diminishing returns.</p>`;
+
+      html += `<div style="font-weight:700;color:#1B2A4A;margin-bottom:6px;">Sensitivity Chart</div>`;
+      html += `<p style="margin:0 0 12px 0;">Shows how ROI and ROAS shift across spend levels from 25% to 300% of your baseline. Helps find the sweet spot where returns are maximized before diminishing returns kick in too hard.</p>`;
+
+      html += `<div style="font-weight:700;color:#548235;margin-bottom:6px;">Partner Split</div>`;
+      html += `<p style="margin:0;">Annual profit divided equally 3 ways (Aubrey, Luka, Brennen). Based on projected net profit × 12 months.</p>`;
+      html += `</div>`;
+
+      html += `</div>`; // close grid
+      html += `</div>`; // close legend container
 
       return html;
     }
@@ -2890,6 +2982,7 @@
     window.onProjSliderChange = () => {
       const val = parseInt(document.getElementById('projAdSpendSlider').value);
       document.getElementById('projAdSpendInput').value = val;
+      window._projShared.lastAdSpend = val;
       const b = window._projBaseline;
       runProjection(val, b.baseMkt, b.baseIncome, b.baseNonMktExp, b.baseROAS, b.baseDealsPerMonth, b.baseWonPerMonth, b.baseWinRate, b.baseAvgDealSize, b.sortedMonths, b.monthlyActuals);
     };
@@ -2897,8 +2990,28 @@
     window.onProjAdSpendChange = () => {
       const val = parseInt(document.getElementById('projAdSpendInput').value) || 0;
       document.getElementById('projAdSpendSlider').value = val;
+      window._projShared.lastAdSpend = val;
       const b = window._projBaseline;
       runProjection(val, b.baseMkt, b.baseIncome, b.baseNonMktExp, b.baseROAS, b.baseDealsPerMonth, b.baseWonPerMonth, b.baseWinRate, b.baseAvgDealSize, b.sortedMonths, b.monthlyActuals);
+    };
+
+    window.onProjBaselineChange = () => {
+      const period = parseInt(document.getElementById('projBaselineSelect').value) || 3;
+      window._projExcluded = [];
+      renderProjectionsTab(period);
+    };
+
+    window.onProjMonthToggle = () => {
+      const shared = window._projShared;
+      if (!shared.activeMonths) return;
+      const excluded = [];
+      shared.activeMonths.forEach(m => {
+        const cb = document.getElementById('projCb_' + m.replace(/\s/g, '_'));
+        if (cb && !cb.checked) excluded.push(m);
+      });
+      window._projExcluded = excluded;
+      const period = parseInt(document.getElementById('projBaselineSelect').value) || 3;
+      renderProjectionsTab(period);
     };
 
     const switchTab = (tab) => {
