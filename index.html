@@ -554,7 +554,7 @@
     // ==================== GOOGLE SHEETS INTEGRATION ====================
     const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSwypHrZcGSLGA0Ddb-a7GJwAOApyQGwqKW9xf7TNhaxfTnypAlM8W7KWyu9S3iN4JL2oYheTxvK_Kw/pub?gid=0&single=true&output=csv';
     const CALL_LEDGER_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQNgebGg8-sFOUJ-124bGrkIZkLOZsu7Zpibn-u_a1KKzC0K0eCbP6CvQRTc4i5oEnAUwk-DVi-mLKy/pub?gid=2087946942&single=true&output=csv';
-    const CATEGORIES_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOpsTuv9CuraF1lW8ZnDtN-EnMSEcnFOSYSa_5Ws3oaZ3z8_OoTmfNcoN1yWbqq8ag4tWLZw5SxhNY/pub?gid=2026412097&single=true&output=csv';
+    const CATEGORIES_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOpsTuv9CuraF1lW8ZnDtN-EnMSEcnFOSYSa_5Ws3oaZ3z8_OoTmfNcoN1yWbqq8ag4tWLZw5SxhNY/pub?gid=1007913777&single=true&output=csv';
 
     let EXPENSE_DATA = null; // Will hold parsed categories data
 
@@ -723,23 +723,42 @@
 
         const categories = {};
         const monthlyTotals = {};
-        monthCols.forEach(mc => { monthlyTotals[mc.label] = { adSpend: 0, smsMarketing: 0, totalExpense: 0, totalIncome: 0 }; });
+        monthCols.forEach(mc => { monthlyTotals[mc.label] = { adSpend: 0, smsMarketing: 0, investorLift: 0, totalExpense: 0, totalIncome: 0, totalMarketing: 0 }; });
+
+        // Rows to skip: group headers, subtotals, summary rows
+        const skipRows = ['income', 'marketing & lead gen', 'software & tools', 'deal costs', 'operations',
+          'total income', 'total marketing & lead gen', 'total software & tools', 'total deal costs', 'total operations',
+          'total', 'total expenses', 'net profit/loss'];
+
+        // Marketing spend categories (for ROAS)
+        const marketingCats = ['ad spend', 'google ad spend', 'facebook ad spend', 'tik tok ad spend', 'sms marketing', 'investor lift'];
 
         for (let i = headerIdx + 1; i < rows.length; i++) {
           const r = rows[i];
           if (!r || r.length < 3) continue;
           const catName = (r[catIdx] || '').trim();
-          if (!catName || catName === 'TOTAL' || catName === 'TOTAL EXPENSES' || catName === 'TOTAL INCOME' || catName === 'NET PROFIT/LOSS') continue;
+          if (!catName) continue;
+          const catLower = catName.toLowerCase();
+          if (skipRows.includes(catLower)) continue;
 
           const type = typeIdx >= 0 ? (r[typeIdx] || '').trim() : '';
 
-          categories[catName] = {};
+          categories[catName] = { _type: type };
           monthCols.forEach(mc => {
             const val = parseNum(r[mc.idx]) || 0;
             categories[catName][mc.label] = val;
 
-            if (catName.toLowerCase() === 'ad spend') monthlyTotals[mc.label].adSpend += val;
-            if (catName.toLowerCase() === 'sms marketing') monthlyTotals[mc.label].smsMarketing += val;
+            // Track marketing spend (all marketing categories roll up)
+            if (marketingCats.includes(catLower)) {
+              monthlyTotals[mc.label].totalMarketing += val;
+            }
+            // Legacy fields for backward compat
+            if (catLower === 'ad spend' || catLower === 'google ad spend' || catLower === 'facebook ad spend' || catLower === 'tik tok ad spend') {
+              monthlyTotals[mc.label].adSpend += val;
+            }
+            if (catLower === 'sms marketing') monthlyTotals[mc.label].smsMarketing += val;
+            if (catLower === 'investor lift') monthlyTotals[mc.label].investorLift += val;
+
             if (type.toLowerCase() === 'expense') monthlyTotals[mc.label].totalExpense += val;
             if (type.toLowerCase() === 'income') monthlyTotals[mc.label].totalIncome += val;
           });
@@ -755,14 +774,14 @@
     function getTotalAdSpend() {
       if (!EXPENSE_DATA) return 34500; // fallback
       let total = 0;
-      Object.values(EXPENSE_DATA.monthlyTotals).forEach(m => { total += Math.abs(m.adSpend) + Math.abs(m.smsMarketing); });
+      Object.values(EXPENSE_DATA.monthlyTotals).forEach(m => { total += Math.abs(m.totalMarketing); });
       return total || 34500;
     }
 
     function getMonthlyAdSpend(monthLabel) {
       if (!EXPENSE_DATA || !EXPENSE_DATA.monthlyTotals[monthLabel]) return null;
       const m = EXPENSE_DATA.monthlyTotals[monthLabel];
-      return Math.abs(m.adSpend) + Math.abs(m.smsMarketing);
+      return Math.abs(m.totalMarketing);
     }
 
     // ==================== FALLBACK DATA ====================
@@ -1790,10 +1809,11 @@
       });
 
       Object.entries(categories).forEach(([catName, monthlyData]) => {
-        const isIncome = catName.includes('Income') || catName.includes('Closed Deals') || catName.includes('CRM Income') || catName.includes('Consulting') || catName.includes('Other');
+        const isIncome = (monthlyData._type || '').toLowerCase() === 'income';
         let catTotal = 0;
 
         Object.entries(monthlyData).forEach(([month, value]) => {
+          if (month === '_type') return; // skip type metadata
           if (value) {
             catTotal += value;
             if (isIncome && value > 0) {
