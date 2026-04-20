@@ -197,6 +197,301 @@
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
     }
+
+    /* ═══════════════════════════════════════
+       MOBILE RESPONSIVE STYLES
+       ═══════════════════════════════════════ */
+
+    /* Tablet: <= 1024px */
+    @media (max-width: 1024px) {
+      /* KPI grids: 4-col on tablet */
+      #execKPIs, #execKPIs2 {
+        grid-template-columns: repeat(4, 1fr) !important;
+      }
+      #pipelineKPIs {
+        grid-template-columns: repeat(3, 1fr) !important;
+      }
+      #agingBucketsRow {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+    }
+
+    /* Phone: <= 768px */
+    @media (max-width: 768px) {
+      /* Header */
+      .navy-header {
+        padding: 12px 16px !important;
+        flex-direction: column !important;
+        gap: 8px !important;
+        text-align: center;
+      }
+      .navy-header img {
+        height: 40px !important;
+      }
+      .navy-header h1 {
+        font-size: 18px !important;
+      }
+      .navy-header p {
+        font-size: 11px !important;
+      }
+
+      /* Tab nav: horizontal scroll */
+      .px-6.pt-6.flex {
+        padding: 8px 12px 0 !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        flex-wrap: nowrap !important;
+      }
+      .px-6.pt-6.flex::-webkit-scrollbar {
+        display: none;
+      }
+      .tab-button {
+        padding: 8px 12px !important;
+        font-size: 12px !important;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      /* Main content area */
+      .p-6 {
+        padding: 12px !important;
+      }
+
+      /* All inline grids → single column on mobile */
+      [style*="grid-template-columns: repeat(8"] {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+      [style*="grid-template-columns: repeat(5"] {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+      [style*="grid-template-columns:repeat(5"] {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+      [style*="grid-template-columns: repeat(4"] {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+      [style*="grid-template-columns:repeat(4"] {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+      [style*="grid-template-columns: repeat(3"] {
+        grid-template-columns: 1fr !important;
+      }
+      [style*="grid-template-columns:repeat(3"] {
+        grid-template-columns: 1fr !important;
+      }
+      [style*="grid-template-columns: repeat(2"] {
+        grid-template-columns: 1fr !important;
+      }
+      [style*="grid-template-columns:repeat(2"] {
+        grid-template-columns: 1fr !important;
+      }
+      [style*="grid-template-columns: 1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+      }
+      [style*="grid-template-columns:1fr 1fr"] {
+        grid-template-columns: 1fr !important;
+      }
+      [style*="grid-template-columns: 1fr auto"] {
+        grid-template-columns: 1fr !important;
+      }
+
+      /* KPI grids specifically */
+      #execKPIs, #execKPIs2 {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 8px !important;
+      }
+      #pipelineKPIs {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 8px !important;
+      }
+      #agingBucketsRow {
+        grid-template-columns: 1fr !important;
+        gap: 8px !important;
+      }
+      #teamCards {
+        grid-template-columns: 1fr !important;
+      }
+
+      /* KPI cards: smaller on mobile */
+      .kpi-card {
+        padding: 10px !important;
+      }
+      .kpi-card div[style*="font-size:20px"],
+      .kpi-card div[style*="font-size: 20px"] {
+        font-size: 16px !important;
+      }
+      .kpi-card div[style*="font-size:28px"],
+      .kpi-card div[style*="font-size: 28px"] {
+        font-size: 20px !important;
+      }
+
+      /* Section titles and bodies */
+      .section-title {
+        font-size: 12px !important;
+        padding: 8px 12px !important;
+      }
+      .section-body {
+        padding: 10px !important;
+      }
+
+      /* Charts: constrain height on mobile */
+      .chart-container {
+        height: 220px !important;
+        min-height: 180px;
+        margin: 8px 0 !important;
+      }
+      .chart-container[style*="height:320px"] {
+        height: 240px !important;
+      }
+      .chart-container[style*="height:280px"] {
+        height: 220px !important;
+      }
+
+      /* Tables: smaller font, tighter padding */
+      table {
+        font-size: 11px !important;
+      }
+      th, td {
+        padding: 6px 4px !important;
+      }
+      .table-container {
+        margin-top: 8px !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch;
+      }
+      /* Minimum table width so columns don't crush */
+      .table-container table {
+        min-width: 600px;
+      }
+
+      /* Badges */
+      .badge {
+        font-size: 10px !important;
+        padding: 2px 6px !important;
+      }
+
+      /* Deal Ledger search/filter row */
+      [style*="grid-template-columns: repeat(auto-fit, minmax(150px"] {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 8px !important;
+      }
+
+      /* Projections: baseline header flex */
+      [style*="background:linear-gradient(135deg,#1B2A4A"] {
+        padding: 14px !important;
+      }
+      [style*="background:linear-gradient(135deg,#1B2A4A"] > div {
+        flex-direction: column !important;
+        gap: 10px !important;
+        align-items: flex-start !important;
+      }
+      [style*="background:linear-gradient(135deg,#1B2A4A"] h2 {
+        font-size: 17px !important;
+      }
+
+      /* Projections: month checkbox row */
+      [style*="display:flex;flex-wrap:wrap;gap:6px"] {
+        gap: 4px !important;
+      }
+      [style*="display:flex;flex-wrap:wrap;gap:6px"] > label {
+        padding: 3px 6px !important;
+        font-size: 10px !important;
+      }
+
+      /* Projections: ad spend slider box */
+      [style*="border:2px solid #2E75B6;padding:20px"] {
+        padding: 12px !important;
+      }
+      [style*="border:2px solid #2E75B6;padding:20px"] h3 {
+        font-size: 14px !important;
+      }
+      #projAdSpendInput {
+        width: 90px !important;
+        font-size: 14px !important;
+        padding: 6px 8px !important;
+      }
+
+      /* Financials: ROI/ROAS toggle buttons */
+      [style*="display:flex"][style*="gap:8px"] button {
+        font-size: 11px !important;
+        padding: 6px 10px !important;
+      }
+
+      /* Pipeline Flow: full width */
+      [style*="max-width:900px"] {
+        max-width: 100% !important;
+      }
+
+      /* Executive drill-down panels */
+      #exec-drill-down, #pipeline-drill-down, #team-drill-down {
+        padding: 12px !important;
+      }
+
+      /* Methodology / legend grids */
+      [style*="grid-template-columns:1fr 1fr;gap:20px"] {
+        grid-template-columns: 1fr !important;
+      }
+
+      /* Select dropdowns: ensure readable */
+      select {
+        font-size: 13px !important;
+        padding: 6px 8px !important;
+      }
+
+      /* Monthly Trends KPI row */
+      [style*="grid-template-columns:repeat(auto-fill,minmax(160px"] {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+    }
+
+    /* Small phone: <= 480px */
+    @media (max-width: 480px) {
+      .navy-header h1 {
+        font-size: 15px !important;
+      }
+
+      #execKPIs, #execKPIs2,
+      #pipelineKPIs {
+        grid-template-columns: 1fr 1fr !important;
+        gap: 6px !important;
+      }
+
+      .tab-button {
+        padding: 6px 10px !important;
+        font-size: 11px !important;
+      }
+
+      .p-6 {
+        padding: 8px !important;
+      }
+
+      .chart-container {
+        height: 180px !important;
+      }
+
+      table {
+        font-size: 10px !important;
+      }
+      th, td {
+        padding: 4px 3px !important;
+      }
+
+      /* Stack any flex row layouts */
+      [style*="display:flex;align-items:center;justify-content:space-between"] {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 6px !important;
+      }
+
+      /* Smaller KPI values */
+      .kpi-card div[style*="font-size:20px"],
+      .kpi-card div[style*="font-size: 20px"],
+      .kpi-card div[style*="font-size:18px"],
+      .kpi-card div[style*="font-size: 18px"] {
+        font-size: 14px !important;
+      }
+    }
   </style>
 </head>
 <body>
@@ -2691,7 +2986,7 @@
       html += `<p style="margin:0;font-size:13px;opacity:0.7;">Using ${baselineMonths.length} month${baselineMonths.length > 1 ? 's' : ''}: ${baselineMonths.join(', ')}</p></div>`;
       html += `<div style="display:flex;align-items:center;gap:12px;">`;
       html += `<label style="font-size:12px;opacity:0.8;">Baseline Period:</label>`;
-      html += `<select id="projBaselineSelect" onchange="onProjBaselineChange()" style="padding:6px 12px;border-radius:6px;border:none;font-size:14px;font-weight:600;cursor:pointer;">`;
+      html += `<select id="projBaselineSelect" onchange="onProjBaselineChange()" style="padding:6px 12px;border-radius:6px;border:none;font-size:14px;font-weight:600;cursor:pointer;background:#fff;color:#1B2A4A;">`;
       html += `<option value="1">Last 1 Month</option>`;
       html += `<option value="2">Last 2 Months</option>`;
       html += `<option value="3">Last 3 Months</option>`;
@@ -2712,7 +3007,7 @@
       const selectedSet = new Set(baselineMonths);
       (activeMonths || []).forEach(m => {
         const inBaseline = selectedSet.has(m);
-        const cbId = 'projCb_' + m.replace(/\\s/g, '_');
+        const cbId = 'projCb_' + m.replace(/\s/g, '_');
         const data = monthlyActuals[m];
         const net = data.income - data.expense;
         const dotColor = net >= 0 ? '#548235' : '#C00000';
