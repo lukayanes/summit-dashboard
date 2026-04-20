@@ -444,47 +444,7 @@
 
     <!-- MARKETING ROI TAB -->
     <div id="roi" class="tab-content">
-      <div id="roiKPIs" class="grid gap-4 mb-6" style="grid-template-columns: repeat(4, 1fr);"></div>
-
-      <div>
-        <div class="section-title" style="background-color: #1B2A4A;">ROI Projections</div>
-        <div class="section-body">
-          <div class="table-container">
-            <table id="roiTable">
-              <thead>
-                <tr>
-                  <th>Month</th>
-                  <th>Ad Spend</th>
-                  <th>Revenue</th>
-                  <th>ROAS</th>
-                  <th>ROI %</th>
-                </tr>
-              </thead>
-              <tbody id="roiTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- Quarterly Charts -->
-      <div class="grid gap-6 mt-6" style="grid-template-columns: repeat(2, 1fr);">
-        <div>
-          <div class="section-title" style="background-color: #2E75B6;">Quarterly ROI %</div>
-          <div class="section-body">
-            <div class="chart-container">
-              <canvas id="quarterlyROIChart"></canvas>
-            </div>
-          </div>
-        </div>
-        <div>
-          <div class="section-title" style="background-color: #548235;">Quarterly ROAS</div>
-          <div class="section-body">
-            <div class="chart-container">
-              <canvas id="quarterlyROASChart"></canvas>
-            </div>
-          </div>
-        </div>
-      </div>
+      <div id="roiContent"></div>
     </div>
 
     <!-- FINANCIALS TAB -->
@@ -1570,16 +1530,48 @@
       // KPI Row 2
       let kpis2 = document.getElementById('execKPIs2');
       kpis2.innerHTML = '';
-      kpis2.appendChild(createKpiCard('Total Revenue', fmt(metrics.wonValue), '#548235'));
+
+      // Total Revenue from Tiller (matches Financials tab)
+      let tillerRevenue = 0;
+      if (EXPENSE_DATA) {
+        Object.entries(EXPENSE_DATA.categories).forEach(([catName, monthlyVals]) => {
+          if ((monthlyVals._type || '').toLowerCase() === 'income') {
+            Object.entries(monthlyVals).forEach(([month, value]) => {
+              if (month !== '_type' && value > 0) tillerRevenue += value;
+            });
+          }
+        });
+      }
+      kpis2.appendChild(createKpiCard('Total Revenue', fmt(tillerRevenue || metrics.wonValue), '#548235'));
+
       kpis2.appendChild(createKpiCard('Avg Fee', fmt(metrics.avgFee), '#2E75B6'));
-      kpis2.appendChild(createKpiCard('Largest Deal', fmt(metrics.largest), '#ED7D31'));
+
+      // Potential Profit — only Under Contract or Listed/Posted deals with a potential profit value
+      const potentialDeals = DEALS.filter(d => ['Under Contract', 'Listed/Posted'].includes(d.status) && d.potential && d.potential > 0);
+      const potentialProfit = potentialDeals.reduce((s, d) => s + d.potential, 0);
+      kpis2.appendChild(createKpiCard('Potential Profit', fmt(potentialProfit), '#ED7D31',
+        () => showDrillDown('exec', 'POTENTIAL PROFIT', potentialDeals)));
+
       kpis2.appendChild(createKpiCard('Pipeline Value', fmt(metrics.pipelineValue), '#FFC000'));
       kpis2.appendChild(createKpiCard('Avg Days Close', metrics.avgClose + ' days', '#7030A0'));
       const avgContract = DEALS.filter(d => d.contract).reduce((s, d) => s + d.contract, 0) / DEALS.filter(d => d.contract).length;
       kpis2.appendChild(createKpiCard('Avg Contract', fmt(avgContract), '#2F9599'));
-      const liveAdSpend = getTotalAdSpend();
-      const liveROAS = liveAdSpend > 0 ? (metrics.wonValue / liveAdSpend).toFixed(1) + 'x' : '-';
-      kpis2.appendChild(createKpiCard('ROAS', liveROAS, '#C00000'));
+
+      // ROAS from Tiller (matches Financials & Marketing ROI tabs)
+      let tillerMarketing = 0;
+      if (EXPENSE_DATA) {
+        const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift'];
+        Object.entries(EXPENSE_DATA.categories).forEach(([catName, monthlyVals]) => {
+          if (mktCats.includes(catName.toLowerCase())) {
+            Object.entries(monthlyVals).forEach(([month, value]) => {
+              if (month !== '_type' && value < 0) tillerMarketing += Math.abs(value);
+            });
+          }
+        });
+      }
+      const tillerROAS = tillerMarketing > 0 ? ((tillerRevenue || metrics.wonValue) / tillerMarketing).toFixed(1) + 'x' : '-';
+      kpis2.appendChild(createKpiCard('ROAS', tillerROAS, '#C00000'));
+
       kpis2.appendChild(createKpiCard('Deals 60+ Days', metrics.over60Count, '#C00000',
         () => showDrillDown('exec', '60+ DAYS', metrics.over60)));
 
@@ -2158,159 +2150,234 @@
     };
 
     const renderROITab = () => {
-      const metrics = calculateMetrics();
-      const monthly = calculateMonthlyMetrics();
-      const totalAdSpend = getTotalAdSpend();
+      const container = document.getElementById('roiContent');
 
-      // KPIs
-      let kpis = document.getElementById('roiKPIs');
-      kpis.innerHTML = '';
+      if (!EXPENSE_DATA) {
+        container.innerHTML = '<div style="text-align:center;padding:40px;background:white;border-radius:8px;"><p style="color:#666;">Connect your Tiller expense sheet to see Marketing ROI data.</p></div>';
+        return;
+      }
 
-      const totalRevenue = monthly.reduce((s, m) => s + m.revenue, 0);
-      const roas = totalAdSpend > 0 ? totalRevenue / totalAdSpend : 0;
-      const costPerDeal = totalAdSpend > 0 ? totalAdSpend / metrics.totalCount : 0;
-      const activeMonths = EXPENSE_DATA ? EXPENSE_DATA.monthLabels.filter(ml => {
-        const spend = getMonthlyAdSpend(ml);
-        return spend && spend > 0;
-      }).length : 12;
-      const avgMonthlySpend = activeMonths > 0 ? totalAdSpend / activeMonths : 0;
+      const categories = EXPENSE_DATA.categories;
+      const monthLabels = EXPENSE_DATA.monthLabels;
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift'];
 
-      kpis.appendChild(createKpiCard('Total Ad Spend', fmt(totalAdSpend), '#1B2A4A'));
-      kpis.appendChild(createKpiCard('Monthly Avg Spend', fmt(avgMonthlySpend), '#7030A0'));
-      kpis.appendChild(createKpiCard('ROAS', roas.toFixed(2) + 'x', '#548235'));
-      kpis.appendChild(createKpiCard('Cost per Deal', fmt(costPerDeal), '#ED7D31'));
-      kpis.appendChild(createKpiCard('ROI %', fmtPct(roas - 1), '#2E75B6'));
-      kpis.appendChild(createKpiCard('Total Revenue', fmt(totalRevenue), '#548235'));
+      // ── Build monthly data from Tiller ──
+      let totalIncome = 0, totalMarketing = 0;
+      const monthlyData = {};
+      const channelTotals = {};
 
-      const dataSource = EXPENSE_DATA ? 'Live from Tiller' : 'Using fallback ($34,500)';
-      kpis.appendChild(createKpiCard('Data Source', dataSource, '#2F9599'));
+      monthLabels.forEach(m => { monthlyData[m] = { income: 0, marketing: 0, channels: {} }; });
 
-      // ROI Table — match monthly spend to deal months
-      let tableHtml = '';
-      monthly.forEach(m => {
-        // Try to match month label (e.g., "03-26" → "Mar 2026")
-        let monthSpend = avgMonthlySpend; // default to average
-        if (EXPENSE_DATA && m.month) {
-          const parts = m.month.split('-');
-          if (parts.length === 2) {
-            const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            const mn = parseInt(parts[0]) - 1;
-            const yr = '20' + parts[1];
-            const label = monthNames[mn] + ' ' + yr;
-            const liveSpend = getMonthlyAdSpend(label);
-            if (liveSpend !== null) monthSpend = Math.abs(liveSpend);
+      Object.entries(categories).forEach(([catName, monthlyVals]) => {
+        const isIncome = (monthlyVals._type || '').toLowerCase() === 'income';
+        const catLower = catName.toLowerCase();
+        const isMkt = marketingCats.includes(catLower);
+
+        Object.entries(monthlyVals).forEach(([month, value]) => {
+          if (month === '_type' || !value) return;
+          if (isIncome && value > 0) {
+            if (monthlyData[month]) monthlyData[month].income += value;
+            totalIncome += value;
           }
+          if (isMkt && value < 0) {
+            const absVal = Math.abs(value);
+            if (monthlyData[month]) {
+              monthlyData[month].marketing += absVal;
+              monthlyData[month].channels[catName] = (monthlyData[month].channels[catName] || 0) + absVal;
+            }
+            totalMarketing += absVal;
+            channelTotals[catName] = (channelTotals[catName] || 0) + absVal;
+          }
+        });
+      });
+
+      const overallROAS = totalMarketing > 0 ? totalIncome / totalMarketing : 0;
+      const overallROI = totalMarketing > 0 ? ((totalIncome - totalMarketing) / totalMarketing * 100) : 0;
+      const activeMonths = monthLabels.filter(m => monthlyData[m].marketing > 0).length;
+      const avgMonthlySpend = activeMonths > 0 ? totalMarketing / activeMonths : 0;
+      const costPerDeal = DEALS.length > 0 ? totalMarketing / DEALS.filter(d => d.status === 'Closed - Won').length : 0;
+
+      // ── Quarterly aggregation from Tiller ──
+      const sortedMonths = monthLabels.slice().sort((a, b) => {
+        const pa = a.split(' '), pb = b.split(' ');
+        const mns = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        return (parseInt(pa[1]) * 100 + mns.indexOf(pa[0])) - (parseInt(pb[1]) * 100 + mns.indexOf(pb[0]));
+      });
+      const quarters = [];
+      for (let i = 0; i < sortedMonths.length; i += 3) {
+        const chunk = sortedMonths.slice(i, Math.min(i + 3, sortedMonths.length));
+        if (chunk.length === 0) continue;
+        const label = chunk.length > 1 ? chunk[0] + ' – ' + chunk[chunk.length - 1] : chunk[0];
+        const qInc = chunk.reduce((s, m) => s + monthlyData[m].income, 0);
+        const qMkt = chunk.reduce((s, m) => s + monthlyData[m].marketing, 0);
+        const qRoas = qMkt > 0 ? qInc / qMkt : 0;
+        const qRoi = qMkt > 0 ? ((qInc - qMkt) / qMkt * 100) : 0;
+        quarters.push({ label, income: qInc, marketing: qMkt, roas: qRoas, roi: qRoi });
+      }
+
+      let html = '';
+
+      // ── KPI Row 1: Core marketing metrics ──
+      html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px;">`;
+      html += `<div class="kpi-card" style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);color:white;border:none;"><div style="font-size:10px;font-weight:700;opacity:0.8;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Total Marketing Spend</div><div style="font-size:28px;font-weight:800;">${fmt(totalMarketing)}</div></div>`;
+      html += `<div class="kpi-card" style="border-left:4px solid #548235;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Total Revenue</div><div style="font-size:28px;font-weight:800;color:#548235;">${fmt(totalIncome)}</div></div>`;
+      html += `<div class="kpi-card" style="background:linear-gradient(135deg,#548235,#70AD47);color:white;border:none;"><div style="font-size:10px;font-weight:700;opacity:0.8;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">ROAS</div><div style="font-size:32px;font-weight:800;">${overallROAS.toFixed(2)}x</div></div>`;
+      html += `<div class="kpi-card" style="background:linear-gradient(135deg,#2E75B6,#5B9BD5);color:white;border:none;"><div style="font-size:10px;font-weight:700;opacity:0.8;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">ROI</div><div style="font-size:32px;font-weight:800;">${overallROI.toFixed(1)}%</div></div>`;
+      html += `</div>`;
+
+      // ── KPI Row 2 ──
+      html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;">`;
+      html += `<div class="kpi-card" style="border-left:4px solid #7030A0;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Avg Monthly Spend</div><div style="font-size:24px;font-weight:800;color:#7030A0;">${fmt(avgMonthlySpend)}</div></div>`;
+      html += `<div class="kpi-card" style="border-left:4px solid #ED7D31;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Cost per Deal</div><div style="font-size:24px;font-weight:800;color:#ED7D31;">${fmt(costPerDeal)}</div></div>`;
+      html += `<div class="kpi-card" style="border-left:4px solid #2E75B6;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Active Months</div><div style="font-size:24px;font-weight:800;color:#2E75B6;">${activeMonths}</div></div>`;
+      const dataSource = EXPENSE_DATA ? 'Live from Tiller' : 'Fallback';
+      html += `<div class="kpi-card" style="border-left:4px solid #2F9599;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Data Source</div><div style="font-size:18px;font-weight:700;color:#2F9599;">${dataSource}</div></div>`;
+      html += `</div>`;
+
+      // ── Ad Spend by Month (stacked bar by channel) ──
+      html += `<div style="margin-bottom:24px;"><div class="section-title" style="background-color:#1B2A4A;">Ad Spend by Month</div><div class="section-body"><div class="chart-container" style="height:350px;"><canvas id="roiAdSpendChart"></canvas></div></div></div>`;
+
+      // ── Ad Spend by Channel (doughnut) ──
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">`;
+      html += `<div><div class="section-title" style="background-color:#ED7D31;">Spend by Channel</div><div class="section-body"><div class="chart-container" style="height:300px;"><canvas id="roiChannelChart"></canvas></div></div></div>`;
+
+      // ── Monthly ROI/ROAS toggle ──
+      html += `<div>`;
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;">`;
+      html += `<div class="section-title" style="background-color:#2E75B6;flex:1;">ROI & ROAS Trend</div>`;
+      html += `<div style="display:flex;gap:4px;background:#e8edf3;border-radius:6px;padding:3px;margin-left:8px;" id="roiTrendToggle">`;
+      html += `<button onclick="toggleRoiTrend('monthly')" id="roiTrendMonthlyBtn" style="padding:5px 12px;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;background:#2E75B6;color:white;">Monthly</button>`;
+      html += `<button onclick="toggleRoiTrend('quarterly')" id="roiTrendQuarterlyBtn" style="padding:5px 12px;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;background:transparent;color:#666;">Quarterly</button>`;
+      html += `</div></div>`;
+      html += `<div class="section-body"><div class="chart-container" style="height:300px;"><canvas id="roiTrendChart"></canvas></div></div>`;
+      html += `</div></div>`;
+
+      // ── Monthly Detail Table ──
+      html += `<div style="margin-bottom:24px;"><div class="section-title" style="background-color:#1B2A4A;">Monthly Marketing Performance</div><div class="section-body"><div class="table-container">`;
+      html += `<table><thead><tr><th>Month</th><th>Ad Spend</th><th>Google Ads</th><th>Facebook Ads</th><th>TikTok</th><th>SMS</th><th>Investor Lift</th><th>Revenue</th><th>ROAS</th><th>ROI %</th></tr></thead><tbody>`;
+
+      let tTotalMkt = 0, tTotalInc = 0;
+      sortedMonths.forEach(month => {
+        const d = monthlyData[month];
+        if (d.income === 0 && d.marketing === 0) return;
+        const mRoas = d.marketing > 0 ? (d.income / d.marketing).toFixed(1) + 'x' : '-';
+        const mRoi = d.marketing > 0 ? ((d.income - d.marketing) / d.marketing * 100).toFixed(0) + '%' : '-';
+        tTotalMkt += d.marketing; tTotalInc += d.income;
+        html += `<tr>
+          <td>${month}</td>
+          <td style="font-weight:600;">${fmt(d.marketing)}</td>
+          <td>${fmt(d.channels['Google Ad Spend'] || 0)}</td>
+          <td>${fmt(d.channels['Facebook Ad Spend'] || 0)}</td>
+          <td>${fmt(d.channels['Tik Tok Ad Spend'] || 0)}</td>
+          <td>${fmt(d.channels['SMS Marketing'] || 0)}</td>
+          <td>${fmt(d.channels['Investor Lift'] || 0)}</td>
+          <td style="color:#548235;font-weight:600;">${fmt(d.income)}</td>
+          <td>${mRoas}</td>
+          <td>${mRoi}</td>
+        </tr>`;
+      });
+
+      const tRoas = tTotalMkt > 0 ? (tTotalInc / tTotalMkt).toFixed(1) + 'x' : '-';
+      const tRoi = tTotalMkt > 0 ? ((tTotalInc - tTotalMkt) / tTotalMkt * 100).toFixed(0) + '%' : '-';
+      html += `<tr style="background:#f0f0f0;font-weight:700;"><td>TOTAL</td><td>${fmt(tTotalMkt)}</td><td></td><td></td><td></td><td></td><td></td><td style="color:#548235;">${fmt(tTotalInc)}</td><td>${tRoas}</td><td>${tRoi}</td></tr>`;
+      html += `</tbody></table></div></div></div>`;
+
+      // ── Quarterly Table ──
+      html += `<div><div class="section-title" style="background-color:#7030A0;">Quarterly Summary</div><div class="section-body"><div class="table-container">`;
+      html += `<table><thead><tr><th>Quarter</th><th>Marketing Spend</th><th>Revenue</th><th>ROAS</th><th>ROI %</th></tr></thead><tbody>`;
+      quarters.forEach(q => {
+        html += `<tr><td>${q.label}</td><td>${fmt(q.marketing)}</td><td style="color:#548235;font-weight:600;">${fmt(q.income)}</td><td>${q.roas > 0 ? q.roas.toFixed(1) + 'x' : '-'}</td><td>${q.roi !== 0 ? q.roi.toFixed(0) + '%' : '-'}</td></tr>`;
+      });
+      html += `</tbody></table></div></div></div>`;
+
+      container.innerHTML = html;
+
+      // ── Render Charts ──
+      setTimeout(() => {
+        const chartColors = ['#2E75B6','#ED7D31','#E74C3C','#7030A0','#2F9599','#548235'];
+        const channelNames = Object.keys(channelTotals);
+
+        // Ad Spend by Month — stacked bar by channel
+        const adSpendCtx = document.getElementById('roiAdSpendChart');
+        if (adSpendCtx) {
+          destroyChart('roiAdSpendChart');
+          const datasets = channelNames.map((ch, ci) => ({
+            label: ch,
+            data: sortedMonths.map(m => monthlyData[m].channels[ch] || 0),
+            backgroundColor: chartColors[ci % chartColors.length],
+            borderRadius: 2,
+          }));
+          chartsCache['roiAdSpendChart'] = new Chart(adSpendCtx.getContext('2d'), {
+            type: 'bar',
+            data: { labels: sortedMonths, datasets },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { x: { stacked: true }, y: { stacked: true, ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } } } }
+          });
         }
 
-        const roi = m.revenue > 0 && monthSpend > 0 ? ((m.revenue - monthSpend) / monthSpend * 100) : 0;
-        const monthRoas = monthSpend > 0 ? (m.revenue / monthSpend).toFixed(1) + 'x' : '-';
-        tableHtml += `
-          <tr>
-            <td>${m.month}</td>
-            <td>${fmt(monthSpend)}</td>
-            <td>${fmt(m.revenue)}</td>
-            <td>${monthRoas}</td>
-            <td>${roi.toFixed(0)}%</td>
-          </tr>
-        `;
+        // Spend by Channel doughnut
+        const chCtx = document.getElementById('roiChannelChart');
+        if (chCtx && channelNames.length > 0) {
+          destroyChart('roiChannelChart');
+          chartsCache['roiChannelChart'] = new Chart(chCtx.getContext('2d'), {
+            type: 'doughnut',
+            data: { labels: channelNames, datasets: [{ data: channelNames.map(ch => channelTotals[ch]), backgroundColor: chartColors.slice(0, channelNames.length), borderColor: 'white', borderWidth: 2 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+          });
+        }
+
+        // ROI/ROAS Trend — default monthly
+        renderRoiTrendChart('monthly', sortedMonths, monthlyData, quarters);
+      }, 10);
+    };
+
+    // ROI trend chart render helper
+    window._roiTrendData = {};
+    function renderRoiTrendChart(view, sortedMonths, monthlyData, quarters) {
+      window._roiTrendData = { sortedMonths, monthlyData, quarters };
+      const ctx = document.getElementById('roiTrendChart');
+      if (!ctx) return;
+      destroyChart('roiTrendChart');
+
+      let labels, roiData, roasData;
+      if (view === 'monthly') {
+        labels = sortedMonths.filter(m => monthlyData[m].income > 0 || monthlyData[m].marketing > 0);
+        roiData = labels.map(m => { const d = monthlyData[m]; return d.marketing > 0 ? ((d.income - d.marketing) / d.marketing * 100) : 0; });
+        roasData = labels.map(m => { const d = monthlyData[m]; return d.marketing > 0 ? d.income / d.marketing : 0; });
+      } else {
+        labels = quarters.map(q => q.label);
+        roiData = quarters.map(q => q.roi);
+        roasData = quarters.map(q => q.roas);
+      }
+
+      chartsCache['roiTrendChart'] = new Chart(ctx.getContext('2d'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label: 'ROI %', data: roiData, borderColor: '#2E75B6', backgroundColor: 'rgba(46,117,182,0.1)', fill: true, tension: 0.3, yAxisID: 'y' },
+            { label: 'ROAS', data: roasData, borderColor: '#548235', backgroundColor: 'transparent', borderDash: [5, 5], tension: 0.3, yAxisID: 'y1' },
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom' } },
+          scales: {
+            y: { type: 'linear', position: 'left', ticks: { callback: v => v.toFixed(0) + '%' }, title: { display: true, text: 'ROI %' } },
+            y1: { type: 'linear', position: 'right', ticks: { callback: v => v.toFixed(1) + 'x' }, title: { display: true, text: 'ROAS' }, grid: { drawOnChartArea: false } },
+          }
+        }
       });
-      document.getElementById('roiTableBody').innerHTML = tableHtml;
+    }
 
-      // Quarterly ROI & ROAS Charts
-      const quarters = calculateQuarterlyMetrics();
-      const qLabels = quarters.map(q => q.label);
-
-      // Quarterly ROI % Chart
-      const roiCtx = document.getElementById('quarterlyROIChart');
-      if (roiCtx) {
-        if (roiCtx._chartInstance) roiCtx._chartInstance.destroy();
-        roiCtx._chartInstance = new Chart(roiCtx, {
-          type: 'bar',
-          data: {
-            labels: qLabels,
-            datasets: [{
-              label: 'ROI %',
-              data: quarters.map(q => q.roi.toFixed(1)),
-              backgroundColor: quarters.map(q => q.roi >= 0 ? 'rgba(46,117,182,0.7)' : 'rgba(220,53,69,0.7)'),
-              borderColor: quarters.map(q => q.roi >= 0 ? '#2E75B6' : '#DC3545'),
-              borderWidth: 1,
-              borderRadius: 4,
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { display: false },
-              tooltip: {
-                callbacks: {
-                  label: (ctx) => {
-                    const q = quarters[ctx.dataIndex];
-                    return [
-                      `ROI: ${q.roi.toFixed(1)}%`,
-                      `Revenue: $${q.totalRevenue.toLocaleString()}`,
-                      `Ad Spend: $${q.adSpend.toLocaleString()}`,
-                    ];
-                  }
-                }
-              }
-            },
-            scales: {
-              y: {
-                beginAtZero: true,
-                ticks: { callback: v => v + '%' },
-                title: { display: true, text: 'ROI %' }
-              }
-            }
-          }
-        });
+    window.toggleRoiTrend = (view) => {
+      const mBtn = document.getElementById('roiTrendMonthlyBtn');
+      const qBtn = document.getElementById('roiTrendQuarterlyBtn');
+      if (mBtn && qBtn) {
+        if (view === 'monthly') { mBtn.style.background = '#2E75B6'; mBtn.style.color = 'white'; qBtn.style.background = 'transparent'; qBtn.style.color = '#666'; }
+        else { qBtn.style.background = '#2E75B6'; qBtn.style.color = 'white'; mBtn.style.background = 'transparent'; mBtn.style.color = '#666'; }
       }
-
-      // Quarterly ROAS Chart
-      const roasCtx = document.getElementById('quarterlyROASChart');
-      if (roasCtx) {
-        if (roasCtx._chartInstance) roasCtx._chartInstance.destroy();
-        roasCtx._chartInstance = new Chart(roasCtx, {
-          type: 'bar',
-          data: {
-            labels: qLabels,
-            datasets: [{
-              label: 'ROAS',
-              data: quarters.map(q => q.roas.toFixed(2)),
-              backgroundColor: 'rgba(84,130,53,0.7)',
-              borderColor: '#548235',
-              borderWidth: 1,
-              borderRadius: 4,
-            }]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { display: false },
-              tooltip: {
-                callbacks: {
-                  label: (ctx) => {
-                    const q = quarters[ctx.dataIndex];
-                    return [
-                      `ROAS: ${q.roas.toFixed(2)}x`,
-                      `Revenue: $${q.totalRevenue.toLocaleString()}`,
-                      `Ad Spend: $${q.adSpend.toLocaleString()}`,
-                    ];
-                  }
-                }
-              }
-            },
-            scales: {
-              y: {
-                beginAtZero: true,
-                ticks: { callback: v => v + 'x' },
-                title: { display: true, text: 'ROAS' }
-              }
-            }
-          }
-        });
-      }
+      const d = window._roiTrendData;
+      if (d.sortedMonths) renderRoiTrendChart(view, d.sortedMonths, d.monthlyData, d.quarters);
     };
 
     const switchTab = (tab) => {
