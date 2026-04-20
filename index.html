@@ -590,8 +590,13 @@
 
     function parseNum(val) {
       if (!val || val === '' || val === '-' || val === 'N/A') return null;
-      const n = parseFloat(val.replace(/[$,]/g, ''));
-      return isNaN(n) ? null : n;
+      let s = val.replace(/[$,\s]/g, '');
+      // Handle parenthesized negatives: (1360.17) → -1360.17
+      const isNeg = s.startsWith('(') && s.endsWith(')');
+      if (isNeg) s = s.slice(1, -1);
+      const n = parseFloat(s);
+      if (isNaN(n)) return null;
+      return isNeg ? -n : n;
     }
 
     function parseDate(val) {
@@ -1789,31 +1794,37 @@
       const container = document.getElementById('financialsContent');
 
       if (!EXPENSE_DATA) {
-        container.innerHTML = '<div style="text-align: center; padding: 40px; background: white; border-radius: 8px; margin: 16px 0;"><p style="color: #666; font-size: 14px;">Connect your Tiller expense sheet to see financial KPIs. Expense data will load automatically on next refresh.</p></div>';
+        container.innerHTML = '<div style="text-align:center;padding:40px;background:white;border-radius:8px;margin:16px 0;"><p style="color:#666;font-size:14px;">Connect your Tiller expense sheet to see financial KPIs.</p></div>';
         return;
       }
 
       container.innerHTML = '';
 
-      // Calculate totals and metrics
       const categories = EXPENSE_DATA.categories;
       const monthLabels = EXPENSE_DATA.monthLabels;
+      const dealMetrics = calculateMetrics();
+      const dealMonthly = calculateMonthlyMetrics();
+      const dealQuarterly = calculateQuarterlyMetrics();
 
-      let totalIncome = 0;
-      let totalExpenses = 0;
+      // ── Compute financials from Tiller ──
+      let totalIncome = 0, totalExpenses = 0, totalCommission = 0, totalMarketing = 0;
       const categoryTotals = {};
       const monthlyIncomeExpense = {};
+      const monthlyMarketing = {};
 
-      monthLabels.forEach(month => {
-        monthlyIncomeExpense[month] = { income: 0, expense: 0 };
+      monthLabels.forEach(m => {
+        monthlyIncomeExpense[m] = { income: 0, expense: 0, marketing: 0, commission: 0, opex: 0 };
       });
+
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift'];
 
       Object.entries(categories).forEach(([catName, monthlyData]) => {
         const isIncome = (monthlyData._type || '').toLowerCase() === 'income';
+        const catLower = catName.toLowerCase();
         let catTotal = 0;
 
         Object.entries(monthlyData).forEach(([month, value]) => {
-          if (month === '_type') return; // skip type metadata
+          if (month === '_type') return;
           if (value) {
             catTotal += value;
             if (isIncome && value > 0) {
@@ -1822,351 +1833,328 @@
             } else if (!isIncome && value < 0) {
               monthlyIncomeExpense[month].expense += value;
               totalExpenses += value;
+              if (marketingCats.includes(catLower)) monthlyIncomeExpense[month].marketing += value;
+              if (catLower === 'commission') monthlyIncomeExpense[month].commission += value;
+              monthlyIncomeExpense[month].opex += value;
             }
+            if (marketingCats.includes(catLower)) totalMarketing += value;
+            if (catLower === 'commission') totalCommission += value;
           }
         });
-
-        if (catTotal !== 0) {
-          categoryTotals[catName] = catTotal;
-        }
+        if (catTotal !== 0) categoryTotals[catName] = catTotal;
       });
 
       totalExpenses = Math.abs(totalExpenses);
+      totalMarketing = Math.abs(totalMarketing);
+      totalCommission = Math.abs(totalCommission);
+      const operatingExpenses = totalExpenses - totalCommission;
       const netProfit = totalIncome - totalExpenses;
-      const profitMargin = totalIncome > 0 ? (netProfit / totalIncome) : 0;
-      const avgMonthlyIncome = monthLabels.length > 0 ? totalIncome / monthLabels.length : 0;
-      const avgMonthlyExpenses = monthLabels.length > 0 ? totalExpenses / monthLabels.length : 0;
+      const netProfitMargin = totalIncome > 0 ? (netProfit / totalIncome) : 0;
+      const overallROI = totalExpenses > 0 ? ((totalIncome - totalExpenses) / totalExpenses * 100) : 0;
+      const overallROAS = totalMarketing > 0 ? (totalIncome / totalMarketing) : 0;
 
-      let bestMonth = monthLabels[0];
-      let worstMonth = monthLabels[0];
-      let bestNet = 0;
-      let worstNet = Infinity;
+      // ── Recent spend (last 30 / 7 days) ──
+      const now = new Date();
+      const monthNow = now.getMonth(); // 0-indexed
+      const yearNow = now.getFullYear();
+      const monthPrev = monthNow === 0 ? 11 : monthNow - 1;
+      const yearPrev = monthNow === 0 ? yearNow - 1 : yearNow;
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const currentLabel = monthNames[monthNow] + ' ' + yearNow;
+      const prevLabel = monthNames[monthPrev] + ' ' + yearPrev;
 
-      monthLabels.forEach(month => {
-        const monthInc = monthlyIncomeExpense[month].income;
-        const monthExp = Math.abs(monthlyIncomeExpense[month].expense);
-        const monthNet = monthInc - monthExp;
-        if (monthNet > bestNet) { bestNet = monthNet; bestMonth = month; }
-        if (monthNet < worstNet) { worstNet = monthNet; worstMonth = month; }
+      const currentMonthSpend = monthlyIncomeExpense[currentLabel] ? Math.abs(monthlyIncomeExpense[currentLabel].expense) : 0;
+      const prevMonthSpend = monthlyIncomeExpense[prevLabel] ? Math.abs(monthlyIncomeExpense[prevLabel].expense) : 0;
+      const dayOfMonth = now.getDate();
+      const spent30d = currentMonthSpend + (dayOfMonth < 30 ? prevMonthSpend * ((30 - dayOfMonth) / 30) : 0);
+      const spent7d = currentMonthSpend * Math.min(7 / dayOfMonth, 1);
+
+      // ── Partner net worth (equal split) ──
+      const partnerShare = netProfit / 3;
+
+      // ═══════════════════════════════════════════
+      // ROI CALCULATOR — MAIN FOCUS
+      // ═══════════════════════════════════════════
+      let html = '';
+
+      // ROI Calculator Header
+      html += `<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:24px;margin-bottom:24px;color:white;">`;
+      html += `<h2 style="margin:0 0 4px 0;font-size:22px;font-weight:700;letter-spacing:0.5px;">ROI Calculator</h2>`;
+      html += `<p style="margin:0;font-size:13px;opacity:0.7;">Summit Group Acquisitions Financial Performance</p>`;
+      html += `</div>`;
+
+      // ── Row 1: Core P&L KPIs ──
+      html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px;">`;
+      html += `<div class="kpi-card" style="border-left:4px solid #548235;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Total Revenue</div><div style="font-size:28px;font-weight:800;color:#548235;">${fmt(totalIncome)}</div></div>`;
+      html += `<div class="kpi-card" style="border-left:4px solid #ED7D31;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Operating Expenses</div><div style="font-size:28px;font-weight:800;color:#ED7D31;">${fmt(operatingExpenses)}</div></div>`;
+      html += `<div class="kpi-card" style="border-left:4px solid #C00000;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Commission Payout</div><div style="font-size:28px;font-weight:800;color:#C00000;">${fmt(totalCommission)}</div></div>`;
+      html += `<div class="kpi-card" style="border-left:4px solid ${netProfit >= 0 ? '#2E75B6' : '#C00000'};"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Net Profit</div><div style="font-size:28px;font-weight:800;color:${netProfit >= 0 ? '#2E75B6' : '#C00000'};">${fmt(netProfit)}</div></div>`;
+      html += `</div>`;
+
+      // ── Row 2: ROI / ROAS / Margin / Marketing Spend ──
+      html += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px;">`;
+      html += `<div class="kpi-card" style="background:linear-gradient(135deg,#2E75B6,#5B9BD5);color:white;border:none;"><div style="font-size:10px;font-weight:700;opacity:0.8;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">ROI</div><div style="font-size:32px;font-weight:800;">${overallROI.toFixed(1)}%</div></div>`;
+      html += `<div class="kpi-card" style="background:linear-gradient(135deg,#548235,#70AD47);color:white;border:none;"><div style="font-size:10px;font-weight:700;opacity:0.8;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">ROAS</div><div style="font-size:32px;font-weight:800;">${overallROAS.toFixed(2)}x</div></div>`;
+      html += `<div class="kpi-card" style="border-left:4px solid #7030A0;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Net Profit Margin</div><div style="font-size:28px;font-weight:800;color:#7030A0;">${fmtPct(netProfitMargin)}</div></div>`;
+      html += `<div class="kpi-card" style="border-left:4px solid #ED7D31;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Total Marketing Spend</div><div style="font-size:28px;font-weight:800;color:#ED7D31;">${fmt(totalMarketing)}</div></div>`;
+      html += `</div>`;
+
+      // ── Row 3: Recent Spend ──
+      html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:28px;">`;
+      html += `<div class="kpi-card" style="border-left:4px solid #C00000;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Spent Last 30 Days</div><div style="font-size:24px;font-weight:800;color:#C00000;">${fmt(spent30d)}</div><div style="font-size:11px;color:#999;margin-top:4px;">Estimated from monthly data</div></div>`;
+      html += `<div class="kpi-card" style="border-left:4px solid #ED7D31;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Spent Last 7 Days</div><div style="font-size:24px;font-weight:800;color:#ED7D31;">${fmt(spent7d)}</div><div style="font-size:11px;color:#999;margin-top:4px;">Estimated from monthly data</div></div>`;
+      html += `<div class="kpi-card" style="border-left:4px solid #2E75B6;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Current Month Spend</div><div style="font-size:24px;font-weight:800;color:#2E75B6;">${fmt(currentMonthSpend)}</div><div style="font-size:11px;color:#999;margin-top:4px;">${currentLabel}</div></div>`;
+      html += `</div>`;
+
+      // ═══════════════════════════════════════════
+      // PARTNERS NET WORTH FOR TSG
+      // ═══════════════════════════════════════════
+      html += `<div style="background:white;border-radius:12px;border:2px solid #1B2A4A;padding:20px;margin-bottom:28px;">`;
+      html += `<h3 style="margin:0 0 16px 0;font-size:16px;font-weight:700;color:#1B2A4A;">Partners Net Worth for TSG</h3>`;
+      html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">`;
+
+      const partners = [
+        { name: 'Aubrey', img: 'images/aubrey.jpg', role: 'Disposition' },
+        { name: 'Luka', img: 'images/luka.jpg', role: 'Disposition' },
+        { name: 'Brennen', img: 'images/brennen.jpg', role: 'Acquisition' },
+      ];
+
+      partners.forEach(p => {
+        const shareColor = partnerShare >= 0 ? '#548235' : '#C00000';
+        html += `<div style="text-align:center;padding:16px;background:#f8f9fa;border-radius:8px;">`;
+        html += `<img src="${p.img}" alt="${p.name}" style="width:60px;height:60px;border-radius:50%;object-fit:cover;margin-bottom:8px;border:3px solid #1B2A4A;">`;
+        html += `<div style="font-size:16px;font-weight:700;color:#1B2A4A;">${p.name}</div>`;
+        html += `<div style="font-size:11px;color:#888;margin-bottom:8px;">${p.role}</div>`;
+        html += `<div style="font-size:24px;font-weight:800;color:${shareColor};">${fmt(partnerShare)}</div>`;
+        html += `<div style="font-size:11px;color:#999;">Equal Split (1/3)</div>`;
+        html += `</div>`;
       });
 
-      // KPI Cards Row 1
-      const kpiRow1 = document.createElement('div');
-      kpiRow1.style.display = 'grid';
-      kpiRow1.style.gridTemplateColumns = 'repeat(auto-fit, minmax(150px, 1fr))';
-      kpiRow1.style.gap = '12px';
-      kpiRow1.style.marginBottom = '16px';
+      html += `</div></div>`;
 
-      kpiRow1.appendChild(createKpiCard('Total Income', fmt(totalIncome), '#548235'));
-      kpiRow1.appendChild(createKpiCard('Total Expenses', fmt(totalExpenses), '#C00000'));
-      kpiRow1.appendChild(createKpiCard('Net Profit/Loss', fmt(netProfit), netProfit >= 0 ? '#2E75B6' : '#C00000'));
-      kpiRow1.appendChild(createKpiCard('Profit Margin', fmtPct(profitMargin), '#548235'));
+      // ═══════════════════════════════════════════
+      // ROI & ROAS — MONTHLY vs QUARTERLY TOGGLE
+      // ═══════════════════════════════════════════
+      html += `<div style="margin-bottom:28px;">`;
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">`;
+      html += `<h3 style="margin:0;font-size:18px;font-weight:700;color:#1B2A4A;">ROI & ROAS Performance</h3>`;
+      html += `<div style="display:flex;gap:4px;background:#e8edf3;border-radius:6px;padding:3px;" id="finRoiToggle">`;
+      html += `<button onclick="toggleFinRoiView('monthly')" id="finRoiMonthlyBtn" style="padding:6px 16px;border:none;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;background:#2E75B6;color:white;">Monthly</button>`;
+      html += `<button onclick="toggleFinRoiView('quarterly')" id="finRoiQuarterlyBtn" style="padding:6px 16px;border:none;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:#666;">Quarterly</button>`;
+      html += `</div></div>`;
 
-      container.appendChild(kpiRow1);
+      // Monthly view (default visible)
+      html += `<div id="finRoiMonthlyView">`;
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">`;
+      html += `<div><div class="section-title" style="background-color:#2E75B6;">Monthly ROI %</div><div class="section-body"><div class="chart-container"><canvas id="finMonthlyROIChart"></canvas></div></div></div>`;
+      html += `<div><div class="section-title" style="background-color:#548235;">Monthly ROAS</div><div class="section-body"><div class="chart-container"><canvas id="finMonthlyROASChart"></canvas></div></div></div>`;
+      html += `</div></div>`;
 
-      // KPI Cards Row 2
-      const kpiRow2 = document.createElement('div');
-      kpiRow2.style.display = 'grid';
-      kpiRow2.style.gridTemplateColumns = 'repeat(auto-fit, minmax(150px, 1fr))';
-      kpiRow2.style.gap = '12px';
-      kpiRow2.style.marginBottom = '24px';
+      // Quarterly view (hidden by default)
+      html += `<div id="finRoiQuarterlyView" style="display:none;">`;
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">`;
+      html += `<div><div class="section-title" style="background-color:#2E75B6;">Quarterly ROI %</div><div class="section-body"><div class="chart-container"><canvas id="finQuarterlyROIChart"></canvas></div></div></div>`;
+      html += `<div><div class="section-title" style="background-color:#548235;">Quarterly ROAS</div><div class="section-body"><div class="chart-container"><canvas id="finQuarterlyROASChart"></canvas></div></div></div>`;
+      html += `</div></div>`;
 
-      kpiRow2.appendChild(createKpiCard('Avg Monthly Income', fmt(avgMonthlyIncome), '#548235'));
-      kpiRow2.appendChild(createKpiCard('Avg Monthly Expenses', fmt(avgMonthlyExpenses), '#C00000'));
-      kpiRow2.appendChild(createKpiCard('Best Month', bestMonth, '#2E75B6'));
-      kpiRow2.appendChild(createKpiCard('Worst Month', worstMonth, '#ED7D31'));
+      html += `</div>`; // close ROI/ROAS section
 
-      container.appendChild(kpiRow2);
+      // ═══════════════════════════════════════════
+      // MONTHLY P&L CHART
+      // ═══════════════════════════════════════════
+      html += `<div style="margin-bottom:28px;">`;
+      html += `<div class="section-title" style="background-color:#1B2A4A;">Monthly Profit & Loss</div>`;
+      html += `<div class="section-body"><div class="chart-container"><canvas id="monthlyPnLChart"></canvas></div></div>`;
+      html += `</div>`;
 
-      // Section: Monthly P&L Chart
-      const pnlSection = document.createElement('div');
-      pnlSection.style.marginBottom = '24px';
+      // ═══════════════════════════════════════════
+      // EXPENSE & INCOME BREAKDOWN (side by side)
+      // ═══════════════════════════════════════════
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px;">`;
+      html += `<div><div class="section-title" style="background-color:#C00000;">Expense Breakdown</div><div class="section-body"><div class="chart-container" style="height:350px;"><canvas id="expenseBreakdownChart"></canvas></div></div></div>`;
+      html += `<div><div class="section-title" style="background-color:#548235;">Income Breakdown</div><div class="section-body"><div class="chart-container" style="height:350px;"><canvas id="incomeBreakdownChart"></canvas></div></div></div>`;
+      html += `</div>`;
 
-      const pnlTitle = document.createElement('div');
-      pnlTitle.className = 'section-title';
-      pnlTitle.style.backgroundColor = '#1B2A4A';
-      pnlTitle.textContent = 'Monthly Profit & Loss';
+      // ═══════════════════════════════════════════
+      // MONTHLY DETAIL TABLE
+      // ═══════════════════════════════════════════
+      html += `<div style="margin-bottom:28px;"><div class="section-title" style="background-color:#1B2A4A;">Monthly Summary</div><div class="section-body"><div class="table-container">`;
+      html += `<table><thead><tr><th>Month</th><th>Revenue</th><th>Expenses</th><th>Marketing</th><th>Net Profit</th><th>Margin</th><th>ROI</th><th>ROAS</th></tr></thead><tbody>`;
 
-      const pnlBody = document.createElement('div');
-      pnlBody.className = 'section-body';
-
-      const pnlChartContainer = document.createElement('div');
-      pnlChartContainer.className = 'chart-container';
-
-      const pnlCanvas = document.createElement('canvas');
-      pnlCanvas.id = 'monthlyPnLChart';
-      pnlChartContainer.appendChild(pnlCanvas);
-      pnlBody.appendChild(pnlChartContainer);
-
-      pnlSection.appendChild(pnlTitle);
-      pnlSection.appendChild(pnlBody);
-      container.appendChild(pnlSection);
-
-      // Render Monthly P&L Chart
-      setTimeout(() => {
-        const ctx = document.getElementById('monthlyPnLChart').getContext('2d');
-        const incomeData = monthLabels.map(m => monthlyIncomeExpense[m].income);
-        const expenseData = monthLabels.map(m => Math.abs(monthlyIncomeExpense[m].expense));
-        const netData = monthLabels.map(m => monthlyIncomeExpense[m].income - Math.abs(monthlyIncomeExpense[m].expense));
-
-        destroyChart('monthlyPnLChart');
-        chartsCache['monthlyPnLChart'] = new Chart(ctx, {
-          type: 'bar',
-          data: {
-            labels: monthLabels,
-            datasets: [
-              {
-                label: 'Income',
-                data: incomeData,
-                backgroundColor: '#548235',
-                borderColor: '#548235',
-                borderWidth: 0,
-                order: 2
-              },
-              {
-                label: 'Expenses',
-                data: expenseData,
-                backgroundColor: '#C00000',
-                borderColor: '#C00000',
-                borderWidth: 0,
-                order: 2
-              },
-              {
-                label: 'Net Profit',
-                data: netData,
-                type: 'line',
-                borderColor: '#2E75B6',
-                borderWidth: 2,
-                backgroundColor: 'transparent',
-                pointBackgroundColor: '#2E75B6',
-                order: 1,
-                tension: 0.3
-              }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: { legend: { position: 'bottom' } },
-            scales: {
-              y: { beginAtZero: true, ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } }
-            }
-          }
-        });
-      }, 10);
-
-      // Section: Expense Breakdown
-      const expenseBreakdownSection = document.createElement('div');
-      expenseBreakdownSection.style.marginBottom = '24px';
-
-      const expenseTitle = document.createElement('div');
-      expenseTitle.className = 'section-title';
-      expenseTitle.style.backgroundColor = '#C00000';
-      expenseTitle.textContent = 'Expense Breakdown by Category';
-
-      const expenseBody = document.createElement('div');
-      expenseBody.className = 'section-body';
-
-      const expenseChartContainer = document.createElement('div');
-      expenseChartContainer.className = 'chart-container';
-      expenseChartContainer.style.height = '400px';
-
-      const expenseCanvas = document.createElement('canvas');
-      expenseCanvas.id = 'expenseBreakdownChart';
-      expenseChartContainer.appendChild(expenseCanvas);
-      expenseBody.appendChild(expenseChartContainer);
-
-      expenseBreakdownSection.appendChild(expenseTitle);
-      expenseBreakdownSection.appendChild(expenseBody);
-      container.appendChild(expenseBreakdownSection);
-
-      // Render Expense Breakdown Chart
-      setTimeout(() => {
-        const expenseCategories = [];
-        const expenseValues = [];
-        const colors = ['#2E75B6', '#548235', '#C00000', '#ED7D31', '#FFC000', '#2F9599', '#7030A0', '#1B2A4A'];
-        let colorIdx = 0;
-        const expenseColors = [];
-
-        Object.entries(categoryTotals).forEach(([cat, total]) => {
-          if (total < 0) {
-            expenseCategories.push(cat);
-            expenseValues.push(Math.abs(total));
-            expenseColors.push(colors[colorIdx % colors.length]);
-            colorIdx++;
-          }
-        });
-
-        if (expenseValues.length > 0) {
-          const expenseCtx = document.getElementById('expenseBreakdownChart').getContext('2d');
-          destroyChart('expenseBreakdownChart');
-          chartsCache['expenseBreakdownChart'] = new Chart(expenseCtx, {
-            type: 'doughnut',
-            data: {
-              labels: expenseCategories,
-              datasets: [{
-                data: expenseValues,
-                backgroundColor: expenseColors,
-                borderColor: 'white',
-                borderWidth: 2
-              }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
-          });
-        } else {
-          expenseChartContainer.innerHTML = '<p style="text-align: center; padding: 20px; color: #666;">No expense data available</p>';
-        }
-      }, 10);
-
-      // Section: Income Breakdown
-      const incomeBreakdownSection = document.createElement('div');
-      incomeBreakdownSection.style.marginBottom = '24px';
-
-      const incomeTitle = document.createElement('div');
-      incomeTitle.className = 'section-title';
-      incomeTitle.style.backgroundColor = '#548235';
-      incomeTitle.textContent = 'Income Breakdown by Category';
-
-      const incomeBody = document.createElement('div');
-      incomeBody.className = 'section-body';
-
-      const incomeChartContainer = document.createElement('div');
-      incomeChartContainer.className = 'chart-container';
-      incomeChartContainer.style.height = '400px';
-
-      const incomeCanvas = document.createElement('canvas');
-      incomeCanvas.id = 'incomeBreakdownChart';
-      incomeChartContainer.appendChild(incomeCanvas);
-      incomeBody.appendChild(incomeChartContainer);
-
-      incomeBreakdownSection.appendChild(incomeTitle);
-      incomeBreakdownSection.appendChild(incomeBody);
-      container.appendChild(incomeBreakdownSection);
-
-      // Render Income Breakdown Chart
-      setTimeout(() => {
-        const incomeCategories = [];
-        const incomeValues = [];
-        const colors = ['#2E75B6', '#548235', '#C00000', '#ED7D31', '#FFC000', '#2F9599', '#7030A0', '#1B2A4A'];
-        let colorIdx = 0;
-        const incomeColors = [];
-
-        Object.entries(categoryTotals).forEach(([cat, total]) => {
-          if (total > 0) {
-            incomeCategories.push(cat);
-            incomeValues.push(total);
-            incomeColors.push(colors[colorIdx % colors.length]);
-            colorIdx++;
-          }
-        });
-
-        if (incomeValues.length > 0) {
-          const incomeCtx = document.getElementById('incomeBreakdownChart').getContext('2d');
-          destroyChart('incomeBreakdownChart');
-          chartsCache['incomeBreakdownChart'] = new Chart(incomeCtx, {
-            type: 'doughnut',
-            data: {
-              labels: incomeCategories,
-              datasets: [{
-                data: incomeValues,
-                backgroundColor: incomeColors,
-                borderColor: 'white',
-                borderWidth: 2
-              }]
-            },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
-          });
-        } else {
-          incomeChartContainer.innerHTML = '<p style="text-align: center; padding: 20px; color: #666;">No income data available</p>';
-        }
-      }, 10);
-
-      // Section: Monthly Detail Table
-      const monthlyTableSection = document.createElement('div');
-      monthlyTableSection.style.marginBottom = '24px';
-
-      const monthlyTableTitle = document.createElement('div');
-      monthlyTableTitle.className = 'section-title';
-      monthlyTableTitle.style.backgroundColor = '#1B2A4A';
-      monthlyTableTitle.textContent = 'Monthly Summary';
-
-      const monthlyTableBody = document.createElement('div');
-      monthlyTableBody.className = 'section-body';
-
-      let monthlyTableHtml = '<table><thead><tr><th>Month</th><th>Total Income</th><th>Total Expenses</th><th>Net Profit/Loss</th><th>Margin %</th></tr></thead><tbody>';
-      let totalInc = 0, totalExp = 0;
-
+      let tblTotalInc = 0, tblTotalExp = 0, tblTotalMkt = 0;
       monthLabels.forEach(month => {
         const inc = monthlyIncomeExpense[month].income;
         const exp = Math.abs(monthlyIncomeExpense[month].expense);
+        const mkt = Math.abs(monthlyIncomeExpense[month].marketing);
         const net = inc - exp;
         const margin = inc > 0 ? (net / inc) : 0;
-        const marginColor = margin >= 0 ? '#548235' : '#C00000';
+        const mRoi = exp > 0 ? ((inc - exp) / exp * 100) : 0;
+        const mRoas = mkt > 0 ? (inc / mkt) : 0;
+        tblTotalInc += inc; tblTotalExp += exp; tblTotalMkt += mkt;
 
-        totalInc += inc;
-        totalExp += exp;
-
-        monthlyTableHtml += `<tr>
-          <td>${month}</td>
-          <td>${fmt(inc)}</td>
-          <td>${fmt(exp)}</td>
-          <td style="color: ${net >= 0 ? '#548235' : '#C00000'}; font-weight: 600;">${fmt(net)}</td>
-          <td style="color: ${marginColor};">${fmtPct(margin)}</td>
+        html += `<tr>
+          <td>${month}</td><td>${fmt(inc)}</td><td>${fmt(exp)}</td><td>${fmt(mkt)}</td>
+          <td style="color:${net >= 0 ? '#548235' : '#C00000'};font-weight:600;">${fmt(net)}</td>
+          <td style="color:${margin >= 0 ? '#548235' : '#C00000'};">${fmtPct(margin)}</td>
+          <td>${mRoi.toFixed(0)}%</td>
+          <td>${mRoas > 0 ? mRoas.toFixed(1) + 'x' : '-'}</td>
         </tr>`;
       });
 
-      const totalNet = totalInc - totalExp;
-      const totalMargin = totalInc > 0 ? (totalNet / totalInc) : 0;
-      const totalMarginColor = totalMargin >= 0 ? '#548235' : '#C00000';
+      const tblNet = tblTotalInc - tblTotalExp;
+      const tblMargin = tblTotalInc > 0 ? tblNet / tblTotalInc : 0;
+      const tblRoi = tblTotalExp > 0 ? ((tblTotalInc - tblTotalExp) / tblTotalExp * 100) : 0;
+      const tblRoas = tblTotalMkt > 0 ? tblTotalInc / tblTotalMkt : 0;
 
-      monthlyTableHtml += `<tr style="background-color: #f0f0f0; font-weight: 600;">
-        <td>TOTAL</td>
-        <td>${fmt(totalInc)}</td>
-        <td>${fmt(totalExp)}</td>
-        <td style="color: ${totalMarginColor};">${fmt(totalNet)}</td>
-        <td style="color: ${totalMarginColor};">${fmtPct(totalMargin)}</td>
+      html += `<tr style="background:#f0f0f0;font-weight:700;">
+        <td>TOTAL</td><td>${fmt(tblTotalInc)}</td><td>${fmt(tblTotalExp)}</td><td>${fmt(tblTotalMkt)}</td>
+        <td style="color:${tblNet >= 0 ? '#548235' : '#C00000'};">${fmt(tblNet)}</td>
+        <td>${fmtPct(tblMargin)}</td><td>${tblRoi.toFixed(0)}%</td><td>${tblRoas > 0 ? tblRoas.toFixed(1) + 'x' : '-'}</td>
       </tr></tbody></table>`;
+      html += `</div></div></div>`;
 
-      monthlyTableBody.innerHTML = monthlyTableHtml;
-      monthlyTableSection.appendChild(monthlyTableTitle);
-      monthlyTableSection.appendChild(monthlyTableBody);
-      container.appendChild(monthlyTableSection);
+      // ═══════════════════════════════════════════
+      // CATEGORY DETAIL TABLE
+      // ═══════════════════════════════════════════
+      html += `<div><div class="section-title" style="background-color:#1B2A4A;">Category Totals</div><div class="section-body"><div class="table-container">`;
+      html += `<table><thead><tr><th>Category</th><th>Type</th><th>Total</th><th>Monthly Avg</th></tr></thead><tbody>`;
 
-      // Section: Category Detail Table
-      const categoryTableSection = document.createElement('div');
-
-      const categoryTableTitle = document.createElement('div');
-      categoryTableTitle.className = 'section-title';
-      categoryTableTitle.style.backgroundColor = '#1B2A4A';
-      categoryTableTitle.textContent = 'Category Totals';
-
-      const categoryTableBody = document.createElement('div');
-      categoryTableBody.className = 'section-body';
-
-      const sortedCategories = Object.entries(categoryTotals)
-        .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
-
-      let categoryTableHtml = '<table><thead><tr><th>Category</th><th>Type</th><th>Total</th><th>Monthly Avg</th></tr></thead><tbody>';
-
-      sortedCategories.forEach(([cat, total]) => {
+      Object.entries(categoryTotals).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).forEach(([cat, total]) => {
         const type = total > 0 ? 'Income' : 'Expense';
-        const displayTotal = Math.abs(total);
-        const monthlyAvg = displayTotal / monthLabels.length;
         const color = total > 0 ? '#548235' : '#C00000';
-
-        categoryTableHtml += `<tr>
-          <td>${cat}</td>
-          <td style="color: ${color}; font-weight: 600;">${type}</td>
-          <td style="color: ${color};">${fmt(displayTotal)}</td>
-          <td>${fmt(monthlyAvg)}</td>
-        </tr>`;
+        html += `<tr><td>${cat}</td><td style="color:${color};font-weight:600;">${type}</td><td style="color:${color};">${fmt(Math.abs(total))}</td><td>${fmt(Math.abs(total) / monthLabels.length)}</td></tr>`;
       });
 
-      categoryTableHtml += '</tbody></table>';
-      categoryTableBody.innerHTML = categoryTableHtml;
-      categoryTableSection.appendChild(categoryTableTitle);
-      categoryTableSection.appendChild(categoryTableBody);
-      container.appendChild(categoryTableSection);
+      html += `</tbody></table></div></div></div>`;
+
+      container.innerHTML = html;
+
+      // ═══════════════════════════════════════════
+      // RENDER ALL CHARTS
+      // ═══════════════════════════════════════════
+      setTimeout(() => {
+        // ── Monthly P&L ──
+        const pnlCtx = document.getElementById('monthlyPnLChart');
+        if (pnlCtx) {
+          destroyChart('monthlyPnLChart');
+          chartsCache['monthlyPnLChart'] = new Chart(pnlCtx.getContext('2d'), {
+            type: 'bar',
+            data: {
+              labels: monthLabels,
+              datasets: [
+                { label: 'Income', data: monthLabels.map(m => monthlyIncomeExpense[m].income), backgroundColor: '#548235', order: 2 },
+                { label: 'Expenses', data: monthLabels.map(m => Math.abs(monthlyIncomeExpense[m].expense)), backgroundColor: '#C00000', order: 2 },
+                { label: 'Net Profit', data: monthLabels.map(m => monthlyIncomeExpense[m].income - Math.abs(monthlyIncomeExpense[m].expense)), type: 'line', borderColor: '#2E75B6', borderWidth: 2, backgroundColor: 'transparent', pointBackgroundColor: '#2E75B6', order: 1, tension: 0.3 }
+              ]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true, ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } } } }
+          });
+        }
+
+        // ── Expense Breakdown ──
+        const expCats = [], expVals = [], expColors = [];
+        const chartColors = ['#2E75B6','#548235','#C00000','#ED7D31','#FFC000','#2F9599','#7030A0','#1B2A4A','#5B9BD5','#70AD47','#E74C3C','#F4A261'];
+        let ci = 0;
+        Object.entries(categoryTotals).forEach(([cat, total]) => {
+          if (total < 0) { expCats.push(cat); expVals.push(Math.abs(total)); expColors.push(chartColors[ci++ % chartColors.length]); }
+        });
+        if (expVals.length > 0) {
+          const expCtx = document.getElementById('expenseBreakdownChart');
+          destroyChart('expenseBreakdownChart');
+          chartsCache['expenseBreakdownChart'] = new Chart(expCtx.getContext('2d'), {
+            type: 'doughnut', data: { labels: expCats, datasets: [{ data: expVals, backgroundColor: expColors, borderColor: 'white', borderWidth: 2 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+          });
+        }
+
+        // ── Income Breakdown ──
+        const incCats = [], incVals = [], incColors = [];
+        ci = 0;
+        Object.entries(categoryTotals).forEach(([cat, total]) => {
+          if (total > 0) { incCats.push(cat); incVals.push(total); incColors.push(chartColors[ci++ % chartColors.length]); }
+        });
+        if (incVals.length > 0) {
+          const incCtx = document.getElementById('incomeBreakdownChart');
+          destroyChart('incomeBreakdownChart');
+          chartsCache['incomeBreakdownChart'] = new Chart(incCtx.getContext('2d'), {
+            type: 'doughnut', data: { labels: incCats, datasets: [{ data: incVals, backgroundColor: incColors, borderColor: 'white', borderWidth: 2 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+          });
+        }
+
+        // ── Monthly ROI & ROAS Charts ──
+        const mLabels = [], mRoiData = [], mRoasData = [];
+        monthLabels.forEach(month => {
+          const inc = monthlyIncomeExpense[month].income;
+          const exp = Math.abs(monthlyIncomeExpense[month].expense);
+          const mkt = Math.abs(monthlyIncomeExpense[month].marketing);
+          if (inc > 0 || exp > 0) {
+            mLabels.push(month);
+            mRoiData.push(exp > 0 ? ((inc - exp) / exp * 100) : 0);
+            mRoasData.push(mkt > 0 ? (inc / mkt) : 0);
+          }
+        });
+
+        const mRoiCtx = document.getElementById('finMonthlyROIChart');
+        if (mRoiCtx) {
+          destroyChart('finMonthlyROIChart');
+          chartsCache['finMonthlyROIChart'] = new Chart(mRoiCtx.getContext('2d'), {
+            type: 'bar', data: { labels: mLabels, datasets: [{ label: 'ROI %', data: mRoiData, backgroundColor: mRoiData.map(v => v >= 0 ? 'rgba(46,117,182,0.7)' : 'rgba(192,0,0,0.7)'), borderRadius: 4 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => v + '%' } } } }
+          });
+        }
+
+        const mRoasCtx = document.getElementById('finMonthlyROASChart');
+        if (mRoasCtx) {
+          destroyChart('finMonthlyROASChart');
+          chartsCache['finMonthlyROASChart'] = new Chart(mRoasCtx.getContext('2d'), {
+            type: 'bar', data: { labels: mLabels, datasets: [{ label: 'ROAS', data: mRoasData, backgroundColor: 'rgba(84,130,53,0.7)', borderRadius: 4 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => v.toFixed(1) + 'x' } } } }
+          });
+        }
+
+        // ── Quarterly ROI & ROAS Charts ──
+        const quarters = dealQuarterly;
+        const qLabels = quarters.map(q => q.label);
+
+        const qRoiCtx = document.getElementById('finQuarterlyROIChart');
+        if (qRoiCtx) {
+          destroyChart('finQuarterlyROIChart');
+          chartsCache['finQuarterlyROIChart'] = new Chart(qRoiCtx.getContext('2d'), {
+            type: 'bar', data: { labels: qLabels, datasets: [{ label: 'ROI %', data: quarters.map(q => q.roi.toFixed(1)), backgroundColor: quarters.map(q => q.roi >= 0 ? 'rgba(46,117,182,0.7)' : 'rgba(192,0,0,0.7)'), borderRadius: 4 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => v + '%' } } } }
+          });
+        }
+
+        const qRoasCtx = document.getElementById('finQuarterlyROASChart');
+        if (qRoasCtx) {
+          destroyChart('finQuarterlyROASChart');
+          chartsCache['finQuarterlyROASChart'] = new Chart(qRoasCtx.getContext('2d'), {
+            type: 'bar', data: { labels: qLabels, datasets: [{ label: 'ROAS', data: quarters.map(q => q.roas.toFixed(2)), backgroundColor: 'rgba(84,130,53,0.7)', borderRadius: 4 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => v + 'x' } } } }
+          });
+        }
+      }, 10);
+    };
+
+    // Toggle Monthly/Quarterly ROI view on Financials tab
+    window.toggleFinRoiView = (view) => {
+      const monthlyDiv = document.getElementById('finRoiMonthlyView');
+      const quarterlyDiv = document.getElementById('finRoiQuarterlyView');
+      const monthlyBtn = document.getElementById('finRoiMonthlyBtn');
+      const quarterlyBtn = document.getElementById('finRoiQuarterlyBtn');
+      if (!monthlyDiv || !quarterlyDiv) return;
+      if (view === 'monthly') {
+        monthlyDiv.style.display = 'block';
+        quarterlyDiv.style.display = 'none';
+        monthlyBtn.style.background = '#2E75B6'; monthlyBtn.style.color = 'white';
+        quarterlyBtn.style.background = 'transparent'; quarterlyBtn.style.color = '#666';
+      } else {
+        monthlyDiv.style.display = 'none';
+        quarterlyDiv.style.display = 'block';
+        quarterlyBtn.style.background = '#2E75B6'; quarterlyBtn.style.color = 'white';
+        monthlyBtn.style.background = 'transparent'; monthlyBtn.style.color = '#666';
+      }
     };
 
     const renderROITab = () => {
