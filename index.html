@@ -222,6 +222,7 @@
     <button class="tab-button" onclick="switchTab('monthly')">Monthly Trends</button>
     <button class="tab-button" onclick="switchTab('roi')">Marketing ROI</button>
     <button class="tab-button" onclick="switchTab('financials')">Financials</button>
+    <button class="tab-button" onclick="switchTab('projections')">Projections</button>
     <button class="tab-button" onclick="switchTab('pipelineflow')">Pipeline Flow</button>
     <button class="tab-button" onclick="switchTab('callledger')">Call Ledger</button>
   </div>
@@ -452,6 +453,11 @@
           <p>Connect your GHL pipeline by entering your Worker API URL above</p>
         </div>
       </div>
+    </div>
+
+    <!-- PROJECTIONS TAB -->
+    <div id="projections" class="tab-content">
+      <div id="projectionsContent"></div>
     </div>
 
     <!-- CALL LEDGER TAB -->
@@ -2577,6 +2583,324 @@
       if (d.sortedMonths) renderRoiTrendChart(view, d.sortedMonths, d.monthlyData, d.quarters);
     };
 
+    // ==================== PROJECTIONS TAB ====================
+    const renderProjectionsTab = () => {
+      const container = document.getElementById('projectionsContent');
+
+      if (!EXPENSE_DATA) {
+        container.innerHTML = '<div style="text-align:center;padding:40px;background:white;border-radius:8px;"><p style="color:#666;">Connect your Tiller expense sheet to use the Projections calculator.</p></div>';
+        return;
+      }
+
+      const categories = EXPENSE_DATA.categories;
+      const monthLabels = EXPENSE_DATA.monthLabels;
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift'];
+
+      // ── Build monthly actuals from Tiller ──
+      const monthlyActuals = {};
+      monthLabels.forEach(m => { monthlyActuals[m] = { income: 0, expense: 0, marketing: 0 }; });
+
+      Object.entries(categories).forEach(([catName, monthlyVals]) => {
+        const isIncome = (monthlyVals._type || '').toLowerCase() === 'income';
+        const isMkt = marketingCats.includes(catName.toLowerCase());
+        Object.entries(monthlyVals).forEach(([month, value]) => {
+          if (month === '_type' || !value || !monthlyActuals[month]) return;
+          if (isIncome && value > 0) monthlyActuals[month].income += value;
+          if (!isIncome && value < 0) {
+            monthlyActuals[month].expense += Math.abs(value);
+            if (isMkt) monthlyActuals[month].marketing += Math.abs(value);
+          }
+        });
+      });
+
+      // Sort months chronologically
+      const sortedMonths = monthLabels.slice().sort((a, b) => {
+        const pa = a.split(' '), pb = b.split(' ');
+        return (parseInt(pa[1]) * 100 + monthNames.indexOf(pa[0])) - (parseInt(pb[1]) * 100 + monthNames.indexOf(pb[0]));
+      });
+
+      // Use last 3 months with actual data as baseline
+      const activeMonths = sortedMonths.filter(m => monthlyActuals[m].income > 0 || monthlyActuals[m].expense > 0);
+      const baselineMonths = activeMonths.slice(-3);
+
+      if (baselineMonths.length === 0) {
+        container.innerHTML = '<div style="text-align:center;padding:40px;background:white;border-radius:8px;"><p style="color:#666;">Not enough historical data for projections. Need at least 1 month of Tiller data.</p></div>';
+        return;
+      }
+
+      // ── Compute baseline averages ──
+      const baseIncome = baselineMonths.reduce((s, m) => s + monthlyActuals[m].income, 0) / baselineMonths.length;
+      const baseExpense = baselineMonths.reduce((s, m) => s + monthlyActuals[m].expense, 0) / baselineMonths.length;
+      const baseMkt = baselineMonths.reduce((s, m) => s + monthlyActuals[m].marketing, 0) / baselineMonths.length;
+      const baseNonMktExp = baseExpense - baseMkt;
+      const baseROAS = baseMkt > 0 ? baseIncome / baseMkt : 0;
+      const baseROI = baseExpense > 0 ? ((baseIncome - baseExpense) / baseExpense * 100) : 0;
+      const baseMargin = baseIncome > 0 ? ((baseIncome - baseExpense) / baseIncome) : 0;
+
+      // Deal metrics baseline
+      const dealMonthly = calculateMonthlyMetrics();
+      const recentDealMonths = dealMonthly.slice(-3);
+      const baseDealsPerMonth = recentDealMonths.length > 0 ? recentDealMonths.reduce((s, m) => s + m.total, 0) / recentDealMonths.length : 0;
+      const baseWonPerMonth = recentDealMonths.length > 0 ? recentDealMonths.reduce((s, m) => s + m.won, 0) / recentDealMonths.length : 0;
+      const baseWinRate = baseDealsPerMonth > 0 ? baseWonPerMonth / baseDealsPerMonth : 0;
+      const baseDealRev = recentDealMonths.length > 0 ? recentDealMonths.reduce((s, m) => s + m.revenue, 0) / recentDealMonths.length : 0;
+      const baseAvgDealSize = baseWonPerMonth > 0 ? baseDealRev / baseWonPerMonth : 0;
+
+      // Default projected ad spend = current average
+      const defaultAdSpend = Math.round(baseMkt);
+
+      container.innerHTML = buildProjectionsHTML(defaultAdSpend, baselineMonths, baseMkt, baseIncome, baseExpense, baseNonMktExp, baseROAS, baseROI, baseMargin, baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, sortedMonths, monthlyActuals);
+
+      // Hook up slider and input
+      setTimeout(() => {
+        runProjection(defaultAdSpend, baseMkt, baseIncome, baseNonMktExp, baseROAS, baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, sortedMonths, monthlyActuals);
+      }, 10);
+    };
+
+    function buildProjectionsHTML(defaultAdSpend, baselineMonths, baseMkt, baseIncome, baseExpense, baseNonMktExp, baseROAS, baseROI, baseMargin, baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, sortedMonths, monthlyActuals) {
+      let html = '';
+
+      // Header
+      html += `<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:24px;margin-bottom:24px;color:white;">`;
+      html += `<h2 style="margin:0 0 4px 0;font-size:22px;font-weight:700;">Financial Projections</h2>`;
+      html += `<p style="margin:0;font-size:13px;opacity:0.7;">Based on last ${baselineMonths.length} months: ${baselineMonths.join(', ')}</p>`;
+      html += `</div>`;
+
+      // ── Baseline KPIs ──
+      html += `<div style="margin-bottom:8px;"><h3 style="margin:0 0 12px 0;font-size:14px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">Baseline (Recent Avg/Month)</h3></div>`;
+      html += `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px;">`;
+      html += `<div class="kpi-card"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:6px;">Avg Revenue</div><div style="font-size:20px;font-weight:800;color:#548235;">${fmt(baseIncome)}</div></div>`;
+      html += `<div class="kpi-card"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:6px;">Avg Marketing</div><div style="font-size:20px;font-weight:800;color:#ED7D31;">${fmt(baseMkt)}</div></div>`;
+      html += `<div class="kpi-card"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:6px;">ROAS</div><div style="font-size:20px;font-weight:800;color:#2E75B6;">${baseROAS.toFixed(2)}x</div></div>`;
+      html += `<div class="kpi-card"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:6px;">Deals/Month</div><div style="font-size:20px;font-weight:800;color:#7030A0;">${baseDealsPerMonth.toFixed(1)}</div></div>`;
+      html += `<div class="kpi-card"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:6px;">Win Rate</div><div style="font-size:20px;font-weight:800;color:#2F9599;">${(baseWinRate * 100).toFixed(0)}%</div></div>`;
+      html += `</div>`;
+
+      // ── Ad Spend Slider ──
+      const maxSlider = Math.max(defaultAdSpend * 4, 50000);
+      html += `<div style="background:white;border-radius:12px;border:2px solid #2E75B6;padding:20px;margin-bottom:24px;">`;
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">`;
+      html += `<h3 style="margin:0;font-size:16px;font-weight:700;color:#1B2A4A;">Adjust Monthly Ad Spend</h3>`;
+      html += `<div style="display:flex;align-items:center;gap:8px;">`;
+      html += `<span style="font-size:16px;font-weight:700;color:#2E75B6;">$</span>`;
+      html += `<input type="number" id="projAdSpendInput" value="${defaultAdSpend}" min="0" max="200000" step="500" style="width:120px;padding:8px 12px;border:2px solid #2E75B6;border-radius:6px;font-size:18px;font-weight:700;color:#2E75B6;text-align:right;" onchange="onProjAdSpendChange()">`;
+      html += `<span style="font-size:13px;color:#888;">/month</span>`;
+      html += `</div></div>`;
+      html += `<input type="range" id="projAdSpendSlider" min="0" max="${maxSlider}" step="500" value="${defaultAdSpend}" style="width:100%;accent-color:#2E75B6;height:8px;" oninput="onProjSliderChange()">`;
+      html += `<div style="display:flex;justify-content:space-between;font-size:11px;color:#999;margin-top:4px;"><span>$0</span><span>${fmt(maxSlider)}</span></div>`;
+      html += `</div>`;
+
+      // ── Projected KPIs (will be filled by JS) ──
+      html += `<div id="projKPIs"></div>`;
+
+      // ── Projection Charts ──
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">`;
+      html += `<div><div class="section-title" style="background-color:#2E75B6;">Projected 12-Month Revenue vs Spend</div><div class="section-body"><div class="chart-container" style="height:320px;"><canvas id="projRevenueChart"></canvas></div></div></div>`;
+      html += `<div><div class="section-title" style="background-color:#548235;">Projected Cumulative Profit</div><div class="section-body"><div class="chart-container" style="height:320px;"><canvas id="projProfitChart"></canvas></div></div></div>`;
+      html += `</div>`;
+
+      html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">`;
+      html += `<div><div class="section-title" style="background-color:#7030A0;">Projected Deal Flow</div><div class="section-body"><div class="chart-container" style="height:280px;"><canvas id="projDealsChart"></canvas></div></div></div>`;
+      html += `<div><div class="section-title" style="background-color:#ED7D31;">ROI & ROAS at Different Spend Levels</div><div class="section-body"><div class="chart-container" style="height:280px;"><canvas id="projSensitivityChart"></canvas></div></div></div>`;
+      html += `</div>`;
+
+      // ── Projection Table ──
+      html += `<div style="margin-bottom:24px;"><div class="section-title" style="background-color:#1B2A4A;">12-Month Projection Detail</div><div class="section-body"><div class="table-container"><table><thead><tr><th>Month</th><th>Ad Spend</th><th>Proj Revenue</th><th>Total Expenses</th><th>Net Profit</th><th>ROAS</th><th>ROI</th><th>Proj Deals</th><th>Proj Won</th><th>Cumulative Profit</th></tr></thead><tbody id="projTableBody"></tbody></table></div></div></div>`;
+
+      // ── Historical vs Projected (full timeline) ──
+      html += `<div><div class="section-title" style="background-color:#1B2A4A;">Historical + Projected Timeline</div><div class="section-body"><div class="chart-container" style="height:350px;"><canvas id="projTimelineChart"></canvas></div></div></div>`;
+
+      return html;
+    }
+
+    // Store baseline data for recalc
+    window._projBaseline = {};
+
+    function runProjection(adSpend, baseMkt, baseIncome, baseNonMktExp, baseROAS, baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, sortedMonths, monthlyActuals) {
+      // Store for slider updates
+      window._projBaseline = { baseMkt, baseIncome, baseNonMktExp, baseROAS, baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, sortedMonths, monthlyActuals };
+
+      const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const now = new Date();
+      let projMonth = now.getMonth();
+      let projYear = now.getFullYear();
+
+      // Scale factor: how does new ad spend compare to baseline?
+      const scaleFactor = baseMkt > 0 ? adSpend / baseMkt : 1;
+      // Assume diminishing returns: revenue scales as sqrt of spend increase for big jumps
+      const revenueScale = scaleFactor <= 1.5 ? scaleFactor : 1.5 + (scaleFactor - 1.5) * 0.6;
+      const projRevenue = baseROAS > 0 ? adSpend * baseROAS * (revenueScale / scaleFactor) : baseIncome * revenueScale;
+      const projTotalExpense = adSpend + baseNonMktExp;
+      const projNet = projRevenue - projTotalExpense;
+      const projROAS = adSpend > 0 ? projRevenue / adSpend : 0;
+      const projROI = projTotalExpense > 0 ? ((projRevenue - projTotalExpense) / projTotalExpense * 100) : 0;
+      const projMargin = projRevenue > 0 ? (projNet / projRevenue) : 0;
+      const projDeals = baseDealsPerMonth * revenueScale;
+      const projWon = projDeals * baseWinRate;
+      const projAvgDeal = baseAvgDealSize;
+      const annualRevenue = projRevenue * 12;
+      const annualProfit = projNet * 12;
+      const partnerShare = annualProfit / 3;
+
+      // ── KPI Cards ──
+      let kpiHtml = `<div style="margin-bottom:8px;"><h3 style="margin:0 0 12px 0;font-size:14px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">Projected Monthly (at ${fmt(adSpend)}/mo ad spend)</h3></div>`;
+      kpiHtml += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px;">`;
+      kpiHtml += `<div class="kpi-card" style="background:linear-gradient(135deg,#548235,#70AD47);color:white;border:none;"><div style="font-size:10px;font-weight:700;opacity:0.8;text-transform:uppercase;margin-bottom:8px;">Proj Revenue/Mo</div><div style="font-size:26px;font-weight:800;">${fmt(projRevenue)}</div></div>`;
+      kpiHtml += `<div class="kpi-card" style="background:linear-gradient(135deg,#2E75B6,#5B9BD5);color:white;border:none;"><div style="font-size:10px;font-weight:700;opacity:0.8;text-transform:uppercase;margin-bottom:8px;">Proj Net Profit/Mo</div><div style="font-size:26px;font-weight:800;">${fmt(projNet)}</div></div>`;
+      kpiHtml += `<div class="kpi-card" style="border-left:4px solid #548235;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:8px;">Proj ROAS</div><div style="font-size:26px;font-weight:800;color:#548235;">${projROAS.toFixed(2)}x</div></div>`;
+      kpiHtml += `<div class="kpi-card" style="border-left:4px solid #2E75B6;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:8px;">Proj ROI</div><div style="font-size:26px;font-weight:800;color:#2E75B6;">${projROI.toFixed(1)}%</div></div>`;
+      kpiHtml += `</div>`;
+
+      kpiHtml += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px;">`;
+      kpiHtml += `<div class="kpi-card" style="border-left:4px solid #7030A0;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:8px;">Proj Deals/Mo</div><div style="font-size:22px;font-weight:800;color:#7030A0;">${projDeals.toFixed(1)}</div></div>`;
+      kpiHtml += `<div class="kpi-card" style="border-left:4px solid #ED7D31;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:8px;">Proj Won/Mo</div><div style="font-size:22px;font-weight:800;color:#ED7D31;">${projWon.toFixed(1)}</div></div>`;
+      kpiHtml += `<div class="kpi-card" style="border-left:4px solid #548235;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:8px;">Annual Revenue</div><div style="font-size:22px;font-weight:800;color:#548235;">${fmt(annualRevenue)}</div></div>`;
+      kpiHtml += `<div class="kpi-card" style="border-left:4px solid #1B2A4A;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:8px;">Annual Profit</div><div style="font-size:22px;font-weight:800;color:${annualProfit >= 0 ? '#1B2A4A' : '#C00000'};">${fmt(annualProfit)}</div></div>`;
+      kpiHtml += `</div>`;
+
+      // Partner annual split
+      kpiHtml += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px;">`;
+      ['Aubrey','Luka','Brennen'].forEach(name => {
+        const color = partnerShare >= 0 ? '#548235' : '#C00000';
+        kpiHtml += `<div class="kpi-card" style="text-align:center;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:6px;">${name} (Annual)</div><div style="font-size:22px;font-weight:800;color:${color};">${fmt(partnerShare)}</div></div>`;
+      });
+      kpiHtml += `</div>`;
+
+      document.getElementById('projKPIs').innerHTML = kpiHtml;
+
+      // ── 12-Month Projection Data ──
+      const projMonths = [];
+      let cumProfit = 0;
+      for (let i = 0; i < 12; i++) {
+        const mi = (projMonth + i) % 12;
+        const yr = projYear + Math.floor((projMonth + i) / 12);
+        const label = monthNames[mi] + ' ' + yr;
+        cumProfit += projNet;
+        projMonths.push({ label, revenue: projRevenue, adSpend, totalExp: projTotalExpense, net: projNet, roas: projROAS, roi: projROI, deals: projDeals, won: projWon, cumProfit });
+      }
+
+      // ── Projection Table ──
+      let tableHtml = '';
+      projMonths.forEach(p => {
+        tableHtml += `<tr><td>${p.label}</td><td>${fmt(p.adSpend)}</td><td style="color:#548235;font-weight:600;">${fmt(p.revenue)}</td><td>${fmt(p.totalExp)}</td><td style="color:${p.net >= 0 ? '#548235' : '#C00000'};font-weight:600;">${fmt(p.net)}</td><td>${p.roas.toFixed(1)}x</td><td>${p.roi.toFixed(0)}%</td><td>${p.deals.toFixed(1)}</td><td>${p.won.toFixed(1)}</td><td style="font-weight:600;">${fmt(p.cumProfit)}</td></tr>`;
+      });
+      document.getElementById('projTableBody').innerHTML = tableHtml;
+
+      // ── Charts ──
+      setTimeout(() => {
+        const pLabels = projMonths.map(p => p.label);
+
+        // Revenue vs Spend
+        const rc = document.getElementById('projRevenueChart');
+        if (rc) {
+          destroyChart('projRevenueChart');
+          chartsCache['projRevenueChart'] = new Chart(rc.getContext('2d'), {
+            type: 'bar', data: { labels: pLabels, datasets: [
+              { label: 'Revenue', data: projMonths.map(p => p.revenue), backgroundColor: 'rgba(84,130,53,0.7)', borderRadius: 3 },
+              { label: 'Ad Spend', data: projMonths.map(p => p.adSpend), backgroundColor: 'rgba(237,125,49,0.7)', borderRadius: 3 },
+              { label: 'Total Expenses', data: projMonths.map(p => p.totalExp), backgroundColor: 'rgba(192,0,0,0.4)', borderRadius: 3 },
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { y: { ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } } } }
+          });
+        }
+
+        // Cumulative Profit
+        const pc = document.getElementById('projProfitChart');
+        if (pc) {
+          destroyChart('projProfitChart');
+          chartsCache['projProfitChart'] = new Chart(pc.getContext('2d'), {
+            type: 'line', data: { labels: pLabels, datasets: [{
+              label: 'Cumulative Profit', data: projMonths.map(p => p.cumProfit),
+              borderColor: projNet >= 0 ? '#548235' : '#C00000', backgroundColor: projNet >= 0 ? 'rgba(84,130,53,0.1)' : 'rgba(192,0,0,0.1)', fill: true, tension: 0.3, pointBackgroundColor: projNet >= 0 ? '#548235' : '#C00000',
+            }]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } } } }
+          });
+        }
+
+        // Deal Flow
+        const dc = document.getElementById('projDealsChart');
+        if (dc) {
+          destroyChart('projDealsChart');
+          chartsCache['projDealsChart'] = new Chart(dc.getContext('2d'), {
+            type: 'bar', data: { labels: pLabels, datasets: [
+              { label: 'Projected Deals', data: projMonths.map(p => p.deals), backgroundColor: 'rgba(112,48,160,0.6)', borderRadius: 3 },
+              { label: 'Projected Won', data: projMonths.map(p => p.won), backgroundColor: 'rgba(84,130,53,0.6)', borderRadius: 3 },
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+          });
+        }
+
+        // Sensitivity: ROI & ROAS at different spend levels
+        const sc = document.getElementById('projSensitivityChart');
+        if (sc) {
+          destroyChart('projSensitivityChart');
+          const spendLevels = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0].map(mult => Math.round(baseMkt * mult));
+          const sensROAS = spendLevels.map(sp => {
+            const sf = baseMkt > 0 ? sp / baseMkt : 1;
+            const rs = sf <= 1.5 ? sf : 1.5 + (sf - 1.5) * 0.6;
+            const rev = baseROAS > 0 ? sp * baseROAS * (rs / sf) : baseIncome * rs;
+            return sp > 0 ? rev / sp : 0;
+          });
+          const sensROI = spendLevels.map((sp, i) => {
+            const totalExp = sp + baseNonMktExp;
+            const sf = baseMkt > 0 ? sp / baseMkt : 1;
+            const rs = sf <= 1.5 ? sf : 1.5 + (sf - 1.5) * 0.6;
+            const rev = baseROAS > 0 ? sp * baseROAS * (rs / sf) : baseIncome * rs;
+            return totalExp > 0 ? ((rev - totalExp) / totalExp * 100) : 0;
+          });
+          chartsCache['projSensitivityChart'] = new Chart(sc.getContext('2d'), {
+            type: 'line', data: { labels: spendLevels.map(s => fmt(s)), datasets: [
+              { label: 'ROAS', data: sensROAS, borderColor: '#548235', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y1' },
+              { label: 'ROI %', data: sensROI, borderColor: '#2E75B6', backgroundColor: 'rgba(46,117,182,0.1)', fill: true, tension: 0.3, yAxisID: 'y' },
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: {
+              y: { position: 'left', ticks: { callback: v => v.toFixed(0) + '%' }, title: { display: true, text: 'ROI %' } },
+              y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v.toFixed(1) + 'x' }, title: { display: true, text: 'ROAS' } },
+            }}
+          });
+        }
+
+        // Timeline: historical + projected
+        const tc = document.getElementById('projTimelineChart');
+        if (tc) {
+          destroyChart('projTimelineChart');
+          const histLabels = sortedMonths.filter(m => monthlyActuals[m].income > 0 || monthlyActuals[m].expense > 0);
+          const allLabels = [...histLabels, ...pLabels];
+          const histRev = histLabels.map(m => monthlyActuals[m].income);
+          const histExp = histLabels.map(m => monthlyActuals[m].expense);
+          const projRevArr = new Array(histLabels.length).fill(null).concat(projMonths.map(p => p.revenue));
+          const projExpArr = new Array(histLabels.length).fill(null).concat(projMonths.map(p => p.totalExp));
+          const histRevFull = histRev.concat(new Array(12).fill(null));
+          const histExpFull = histExp.concat(new Array(12).fill(null));
+
+          chartsCache['projTimelineChart'] = new Chart(tc.getContext('2d'), {
+            type: 'line', data: { labels: allLabels, datasets: [
+              { label: 'Actual Revenue', data: histRevFull, borderColor: '#548235', backgroundColor: 'rgba(84,130,53,0.1)', fill: true, tension: 0.3, spanGaps: false },
+              { label: 'Projected Revenue', data: projRevArr, borderColor: '#548235', borderDash: [6, 3], backgroundColor: 'rgba(84,130,53,0.05)', fill: true, tension: 0.3, spanGaps: false },
+              { label: 'Actual Expenses', data: histExpFull, borderColor: '#C00000', backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
+              { label: 'Projected Expenses', data: projExpArr, borderColor: '#C00000', borderDash: [6, 3], backgroundColor: 'transparent', tension: 0.3, spanGaps: false },
+            ]},
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { y: { ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } } } }
+          });
+        }
+      }, 10);
+    }
+
+    window.onProjSliderChange = () => {
+      const val = parseInt(document.getElementById('projAdSpendSlider').value);
+      document.getElementById('projAdSpendInput').value = val;
+      const b = window._projBaseline;
+      runProjection(val, b.baseMkt, b.baseIncome, b.baseNonMktExp, b.baseROAS, b.baseDealsPerMonth, b.baseWonPerMonth, b.baseWinRate, b.baseAvgDealSize, b.sortedMonths, b.monthlyActuals);
+    };
+
+    window.onProjAdSpendChange = () => {
+      const val = parseInt(document.getElementById('projAdSpendInput').value) || 0;
+      document.getElementById('projAdSpendSlider').value = val;
+      const b = window._projBaseline;
+      runProjection(val, b.baseMkt, b.baseIncome, b.baseNonMktExp, b.baseROAS, b.baseDealsPerMonth, b.baseWonPerMonth, b.baseWinRate, b.baseAvgDealSize, b.sortedMonths, b.monthlyActuals);
+    };
+
     const switchTab = (tab) => {
       // Hide all tabs
       document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -2606,6 +2930,8 @@
         renderROITab();
       } else if (tab === 'financials') {
         renderFinancialsTab();
+      } else if (tab === 'projections') {
+        renderProjectionsTab();
       } else if (tab === 'pipelineflow') {
         // Pipeline flow already has its controls, no additional render needed
       } else if (tab === 'callledger') {
