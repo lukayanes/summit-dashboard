@@ -2910,10 +2910,11 @@
       try {
         // Clear cached lead source data so it re-fetches
         window._dealCalc.leadSourceData = null;
-        const data = await fetchLeadSourceData();
+        const data = await fetchLeadSourceData(); // fetches all time by default
         if (data && data.sources) {
           populateLeadSourceCards(data);
-          if (statusEl) { statusEl.textContent = `Connected — ${data.totalOpportunities} opportunities`; statusEl.style.color = '#548235'; }
+          const filtered = data.filteredCount || data.totalOpportunities;
+          if (statusEl) { statusEl.textContent = `Connected — ${filtered} leads from ${data.totalOpportunities} total`; statusEl.style.color = '#548235'; }
         } else {
           if (statusEl) { statusEl.textContent = 'Connected but no lead data found'; statusEl.style.color = '#ED7D31'; }
         }
@@ -2924,16 +2925,104 @@
       btn.disabled = false;
     };
 
-    const fetchLeadSourceData = async () => {
+    const fetchLeadSourceData = async (monthsBack) => {
+      // Clear cache if different period requested
+      if (monthsBack && window._dealCalc.leadSourceMonths !== monthsBack) {
+        window._dealCalc.leadSourceData = null;
+      }
       if (window._dealCalc.leadSourceData) return window._dealCalc.leadSourceData;
       if (!pipelineWorkerUrl) return null;
       try {
-        const resp = await fetch(`${pipelineWorkerUrl}/api/lead-sources`);
+        const url = monthsBack
+          ? `${pipelineWorkerUrl}/api/lead-sources?months=${monthsBack}`
+          : `${pipelineWorkerUrl}/api/lead-sources`;
+        const resp = await fetch(url);
         if (!resp.ok) return null;
         const data = await resp.json();
         window._dealCalc.leadSourceData = data;
+        window._dealCalc.leadSourceMonths = monthsBack || 'all';
         return data;
       } catch (e) { console.error('Lead source fetch error:', e); return null; }
+    };
+
+    /**
+     * Cross-reference GHL lead names against Deal Ledger to find actual contracts.
+     * Fuzzy matches on name (case-insensitive, trims whitespace).
+     * Returns { google: { leads, contracts, names }, facebook: {...}, combined: {...} }
+     */
+    const crossRefLeadsWithDealLedger = (ghlData) => {
+      if (!ghlData || !ghlData.sources) return null;
+
+      // Build a set of Deal Ledger names that are actual contracts
+      // (Under Contract, Listed/Posted, Closed - Won all count as "got a contract")
+      const contractStatuses = ['under contract', 'listed/posted', 'closed - won'];
+      const dealLedgerContracts = (DEALS || [])
+        .filter(d => contractStatuses.includes((d.status || '').toLowerCase()))
+        .map(d => ({
+          name: (d.id || '').toLowerCase().trim(), // 'id' field is the contact name in Deal Ledger
+          status: d.status,
+          month: d.month,
+          final: d.final,
+          potential: d.potential,
+        }));
+
+      const dealNameSet = new Set(dealLedgerContracts.map(d => d.name));
+
+      const result = {};
+      ['google', 'facebook', 'combined'].forEach(bucket => {
+        const src = ghlData.sources[bucket];
+        if (!src) { result[bucket] = { leads: 0, contracts: 0, matchedNames: [] }; return; }
+
+        const leadNames = (src.leadNames || []);
+        const matchedNames = [];
+
+        leadNames.forEach(ghlName => {
+          const normalized = (ghlName || '').toLowerCase().trim();
+          if (!normalized) return;
+
+          // Exact match
+          if (dealNameSet.has(normalized)) {
+            matchedNames.push(ghlName);
+            return;
+          }
+
+          // Fuzzy: check if Deal Ledger name contains the GHL name or vice versa
+          // Also try last-name-first-name flip
+          for (const deal of dealLedgerContracts) {
+            if (deal.name.includes(normalized) || normalized.includes(deal.name)) {
+              matchedNames.push(ghlName);
+              return;
+            }
+            // Try "First Last" vs "Last, First" matching
+            const parts = normalized.split(/\s+/);
+            if (parts.length >= 2) {
+              const flipped = parts.slice(-1).concat(parts.slice(0, -1)).join(' ');
+              if (deal.name.includes(flipped)) {
+                matchedNames.push(ghlName);
+                return;
+              }
+            }
+          }
+        });
+
+        // Deduplicate matched names
+        const uniqueMatched = [...new Set(matchedNames)];
+
+        result[bucket] = {
+          leads: src.leadCount || 0,
+          contracts: uniqueMatched.length,
+          leadsPerContract: uniqueMatched.length > 0
+            ? Math.round((src.leadCount || 0) / uniqueMatched.length * 10) / 10
+            : null,
+          conversionRate: (src.leadCount || 0) > 0
+            ? Math.round(uniqueMatched.length / (src.leadCount || 1) * 1000) / 10
+            : 0,
+          matchedNames: uniqueMatched,
+          byMonth: src.byMonth || {},
+        };
+      });
+
+      return result;
     };
 
     // ── Build Deal Flow Calculator HTML ──
@@ -3093,7 +3182,51 @@
       const periodContracts = contractsInput;
       const periodLabel = period.charAt(0).toUpperCase() + period.slice(1);
 
-      let kpi = '';
+      // ── Leads required row (from GHL cross-ref data) ──
+      const xref = window._dealCalc.leadSourceXref;
+      let leadsRow = '';
+      if (xref) {
+        const gLpc = xref.google?.leadsPerContract;
+        const fLpc = xref.facebook?.leadsPerContract;
+        const cLpc = xref.combined?.leadsPerContract;
+
+        const gLeadsNeeded = gLpc ? Math.ceil(contractsPerMonth * gLpc) : null;
+        const fLeadsNeeded = fLpc ? Math.ceil(contractsPerMonth * fLpc) : null;
+        const cLeadsNeeded = cLpc ? Math.ceil(contractsPerMonth * cLpc) : null;
+
+        // Cost per lead estimates (ad spend / leads per month)
+        const gLeadsPerMonth = xref.google?.leads && xref.google.leads > 0 ? xref.google.leads / (parseInt(window._dealCalc.leadSourceMonths) || 12) : null;
+        const fLeadsPerMonth = xref.facebook?.leads && xref.facebook.leads > 0 ? xref.facebook.leads / (parseInt(window._dealCalc.leadSourceMonths) || 12) : null;
+
+        leadsRow += `<div style="background:#f0f7ff;border-radius:8px;padding:14px;margin-bottom:12px;border:1px solid #cce0ff;">`;
+        leadsRow += `<div style="font-size:11px;font-weight:700;color:#2E75B6;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Leads Required for ${contractsPerMonth.toFixed(1)} Contracts/Month</div>`;
+        leadsRow += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">`;
+
+        // Google
+        leadsRow += `<div style="text-align:center;padding:8px;background:white;border-radius:6px;border:1px solid #4285F420;">`;
+        leadsRow += `<div style="font-size:10px;font-weight:600;color:#4285F4;">Google (sm3)</div>`;
+        leadsRow += `<div style="font-size:20px;font-weight:800;color:#4285F4;">${gLeadsNeeded !== null ? gLeadsNeeded + '/mo' : 'N/A'}</div>`;
+        leadsRow += `<div style="font-size:9px;color:#999;">${gLpc ? gLpc + ' leads per contract' : 'No data yet'}</div>`;
+        leadsRow += `</div>`;
+
+        // Facebook
+        leadsRow += `<div style="text-align:center;padding:8px;background:white;border-radius:6px;border:1px solid #1877F220;">`;
+        leadsRow += `<div style="font-size:10px;font-weight:600;color:#1877F2;">Facebook</div>`;
+        leadsRow += `<div style="font-size:20px;font-weight:800;color:#1877F2;">${fLeadsNeeded !== null ? fLeadsNeeded + '/mo' : 'N/A'}</div>`;
+        leadsRow += `<div style="font-size:9px;color:#999;">${fLpc ? fLpc + ' leads per contract' : 'No data yet'}</div>`;
+        leadsRow += `</div>`;
+
+        // Combined
+        leadsRow += `<div style="text-align:center;padding:8px;background:white;border-radius:6px;border:1px solid #703080220;">`;
+        leadsRow += `<div style="font-size:10px;font-weight:600;color:#7030A0;">Combined</div>`;
+        leadsRow += `<div style="font-size:20px;font-weight:800;color:#7030A0;">${cLeadsNeeded !== null ? cLeadsNeeded + '/mo' : 'N/A'}</div>`;
+        leadsRow += `<div style="font-size:9px;color:#999;">${cLpc ? cLpc + ' leads per contract' : 'No data yet'}</div>`;
+        leadsRow += `</div>`;
+
+        leadsRow += `</div></div>`;
+      }
+
+      let kpi = leadsRow;
       kpi += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">`;
 
       // Monthly
@@ -3143,23 +3276,31 @@
       if (el) el.innerHTML = kpi;
     };
 
-    // ── Populate lead source cards after GHL fetch ──
-    const populateLeadSourceCards = (data) => {
+    // ── Populate lead source cards after GHL fetch + Deal Ledger cross-ref ──
+    const populateLeadSourceCards = (ghlData) => {
       const container = document.getElementById('calcLeadSourceCards');
       if (!container) return;
-      if (!data || !data.sources) {
+      if (!ghlData || !ghlData.sources) {
         container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:8px;color:#999;font-size:12px;">Connect GHL Worker to see lead source data</div>`;
         return;
       }
-      const s = data.sources;
+
+      // Cross-reference GHL leads against Deal Ledger for real contract counts
+      const xref = crossRefLeadsWithDealLedger(ghlData);
+      // Store for use in calculator projections
+      window._dealCalc.leadSourceXref = xref;
+
+      const periodLabel = ghlData.monthsBack === 'all' ? 'All Time' : `Last ${ghlData.monthsBack} Months`;
+
       let html = '';
       const sources = [
-        { key: 'google', label: 'Google Ads', color: '#4285F4', icon: 'G' },
-        { key: 'facebook', label: 'Facebook Ads', color: '#1877F2', icon: 'f' },
+        { key: 'google', label: 'Google Ads (sm3)', color: '#4285F4', icon: 'G' },
+        { key: 'facebook', label: 'Facebook (facebook lead)', color: '#1877F2', icon: 'f' },
         { key: 'combined', label: 'All Sources', color: '#7030A0', icon: '*' },
       ];
       sources.forEach(src => {
-        const d = s[src.key] || {};
+        const d = xref ? xref[src.key] : null;
+        if (!d) return;
         const lpc = d.leadsPerContract;
         const conv = d.conversionRate || 0;
         html += `<div style="background:white;border-radius:8px;padding:14px;text-align:center;border:2px solid ${src.color}20;">`;
@@ -3167,10 +3308,23 @@
         html += `<div style="font-size:11px;font-weight:600;color:#666;margin-bottom:6px;">${src.label}</div>`;
         html += `<div style="font-size:24px;font-weight:800;color:${src.color};">${lpc !== null ? lpc + ':1' : 'N/A'}</div>`;
         html += `<div style="font-size:10px;color:#999;">leads per contract</div>`;
-        html += `<div style="margin-top:6px;font-size:11px;color:#666;"><span style="font-weight:700;">${d.leads || 0}</span> leads &rarr; <span style="font-weight:700;">${d.contracts || 0}</span> contracts</div>`;
+        html += `<div style="margin-top:8px;font-size:11px;color:#666;"><span style="font-weight:700;">${d.leads}</span> leads &rarr; <span style="font-weight:700;color:#548235;">${d.contracts}</span> contracts</div>`;
         html += `<div style="font-size:10px;color:#999;margin-top:2px;">${conv}% conversion</div>`;
+        if (d.matchedNames.length > 0) {
+          html += `<div style="margin-top:6px;border-top:1px solid #eee;padding-top:6px;font-size:9px;color:#999;text-align:left;">`;
+          html += `<div style="font-weight:700;margin-bottom:2px;">Matched in Deal Ledger:</div>`;
+          d.matchedNames.slice(0, 5).forEach(n => { html += `<div>• ${n}</div>`; });
+          if (d.matchedNames.length > 5) html += `<div>+ ${d.matchedNames.length - 5} more</div>`;
+          html += `</div>`;
+        }
         html += `</div>`;
       });
+
+      // Period note
+      html += `<div style="grid-column:1/-1;text-align:center;font-size:10px;color:#999;margin-top:4px;">`;
+      html += `Period: ${periodLabel} | Contracts verified against Deal Ledger (UC / Listed / Closed-Won)`;
+      html += `</div>`;
+
       container.innerHTML = html;
     };
 
