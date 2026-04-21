@@ -752,6 +752,12 @@
 
     <!-- PROJECTIONS TAB -->
     <div id="projections" class="tab-content">
+      <div class="mb-4 bg-white rounded-lg shadow-md p-3" style="display:flex;align-items:center;gap:12px;">
+        <label style="font-size:12px;font-weight:600;color:#666;white-space:nowrap;">GHL Worker URL</label>
+        <input type="text" id="projWorkerUrl" value="https://summit-ghl-dashboard-api.aubrey.workers.dev" style="flex:1;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
+        <button onclick="connectProjWorker()" id="projConnectBtn" style="padding:8px 18px;background-color:#7030A0;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:13px;white-space:nowrap;">Connect GHL</button>
+        <span id="projConnectStatus" style="font-size:11px;color:#999;"></span>
+      </div>
       <div id="projectionsContent"></div>
     </div>
 
@@ -1557,7 +1563,7 @@
     };
 
     // ==================== PIPELINE FLOW FUNCTIONS ====================
-    let pipelineWorkerUrl = '';
+    let pipelineWorkerUrl = 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
 
     const connectPipelineWorker = async () => {
       pipelineWorkerUrl = document.getElementById('pipelineWorkerUrl').value.trim();
@@ -2884,6 +2890,40 @@
     window._dealCalc = { contractsPerMonth: 0, period: 'month', leadSourceData: null };
 
     // ── Fetch GHL lead source data for calculator ──
+    // ── Connect GHL from Projections tab ──
+    window.connectProjWorker = async () => {
+      const urlInput = document.getElementById('projWorkerUrl');
+      const statusEl = document.getElementById('projConnectStatus');
+      const btn = document.getElementById('projConnectBtn');
+      const url = (urlInput?.value || '').trim();
+      if (!url) { if (statusEl) statusEl.textContent = 'Enter a URL'; return; }
+
+      // Sync to main pipelineWorkerUrl and the Pipeline Flow input
+      pipelineWorkerUrl = url;
+      const mainInput = document.getElementById('pipelineWorkerUrl');
+      if (mainInput) mainInput.value = url;
+
+      btn.textContent = 'Connecting...';
+      btn.disabled = true;
+      if (statusEl) statusEl.textContent = '';
+
+      try {
+        // Clear cached lead source data so it re-fetches
+        window._dealCalc.leadSourceData = null;
+        const data = await fetchLeadSourceData();
+        if (data && data.sources) {
+          populateLeadSourceCards(data);
+          if (statusEl) { statusEl.textContent = `Connected — ${data.totalOpportunities} opportunities`; statusEl.style.color = '#548235'; }
+        } else {
+          if (statusEl) { statusEl.textContent = 'Connected but no lead data found'; statusEl.style.color = '#ED7D31'; }
+        }
+      } catch (e) {
+        if (statusEl) { statusEl.textContent = 'Error: ' + e.message; statusEl.style.color = '#C00000'; }
+      }
+      btn.textContent = 'Connect GHL';
+      btn.disabled = false;
+    };
+
     const fetchLeadSourceData = async () => {
       if (window._dealCalc.leadSourceData) return window._dealCalc.leadSourceData;
       if (!pipelineWorkerUrl) return null;
