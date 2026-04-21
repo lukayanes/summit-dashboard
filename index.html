@@ -2881,6 +2881,258 @@
     // ==================== PROJECTIONS TAB ====================
     // Store projection shared data globally so baseline selector can recalc
     window._projShared = {};
+    window._dealCalc = { contractsPerMonth: 0, period: 'month', leadSourceData: null };
+
+    // ── Fetch GHL lead source data for calculator ──
+    const fetchLeadSourceData = async () => {
+      if (window._dealCalc.leadSourceData) return window._dealCalc.leadSourceData;
+      if (!pipelineWorkerUrl) return null;
+      try {
+        const resp = await fetch(`${pipelineWorkerUrl}/api/lead-sources`);
+        if (!resp.ok) return null;
+        const data = await resp.json();
+        window._dealCalc.leadSourceData = data;
+        return data;
+      } catch (e) { console.error('Lead source fetch error:', e); return null; }
+    };
+
+    // ── Build Deal Flow Calculator HTML ──
+    function buildDealFlowCalcHTML(baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, baseMkt, baseIncome, baseExpense) {
+      // Compute actuals from Deal Ledger
+      const allDeals = DEALS || [];
+      const closedWon = allDeals.filter(d => d.status === 'Closed - Won');
+      const totalContracts = allDeals.length;
+
+      // Time range for rates
+      const dates = allDeals.filter(d => d.ucDate).map(d => new Date(d.ucDate)).filter(d => !isNaN(d));
+      const oldestDate = dates.length > 0 ? new Date(Math.min(...dates)) : new Date();
+      const newestDate = dates.length > 0 ? new Date(Math.max(...dates)) : new Date();
+      const daySpan = Math.max(1, (newestDate - oldestDate) / (1000 * 60 * 60 * 24));
+      const monthSpan = Math.max(1, daySpan / 30.44);
+
+      const actualContractsPerDay = totalContracts / Math.max(daySpan, 1);
+      const actualContractsPerWeek = actualContractsPerDay * 7;
+      const actualContractsPerMonth = totalContracts / monthSpan;
+      const actualContractsPerQuarter = actualContractsPerMonth * 3;
+
+      const avgDealSize = closedWon.length > 0
+        ? closedWon.reduce((s, d) => s + (d.final || d.potential || 0), 0) / closedWon.length
+        : baseAvgDealSize;
+      const closeRate = totalContracts > 0 ? (closedWon.length / totalContracts * 100) : (baseWinRate * 100);
+
+      // Default slider to actual contracts/month
+      const defaultContracts = Math.round(actualContractsPerMonth * 10) / 10;
+
+      let html = '';
+
+      // ── DEAL FLOW CALCULATOR ──
+      html += `<div style="background:white;border-radius:12px;border:2px solid #7030A0;padding:24px;margin-bottom:28px;box-shadow:0 4px 16px rgba(112,48,160,0.1);">`;
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">`;
+      html += `<div>`;
+      html += `<h2 style="margin:0 0 4px 0;font-size:20px;font-weight:800;color:#1B2A4A;">Deal Flow Calculator</h2>`;
+      html += `<p style="margin:0;font-size:12px;color:#888;">Adjust contracts to project revenue & profit across time periods</p>`;
+      html += `</div>`;
+      html += `<div style="background:#7030A0;color:white;padding:6px 14px;border-radius:20px;font-size:11px;font-weight:700;">INTERACTIVE</div>`;
+      html += `</div>`;
+
+      // ── Row 1: Contracts slider + period toggle ──
+      html += `<div style="display:grid;grid-template-columns:1fr auto;gap:20px;align-items:start;margin-bottom:20px;">`;
+
+      // Slider
+      html += `<div>`;
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">`;
+      html += `<span style="font-size:12px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">Contracts Per Period</span>`;
+      html += `<div style="display:flex;align-items:center;gap:8px;">`;
+      html += `<input type="number" id="calcContractInput" value="${defaultContracts.toFixed(1)}" min="0" max="100" step="0.1" style="width:80px;padding:6px 10px;border:2px solid #7030A0;border-radius:6px;font-size:16px;font-weight:700;color:#7030A0;text-align:right;" onchange="onCalcUpdate()">`;
+      html += `</div></div>`;
+      html += `<input type="range" id="calcContractSlider" min="0" max="${Math.max(defaultContracts * 4, 30).toFixed(0)}" step="0.1" value="${defaultContracts.toFixed(1)}" style="width:100%;accent-color:#7030A0;height:8px;" oninput="onCalcSliderChange()">`;
+      html += `<div style="display:flex;justify-content:space-between;font-size:10px;color:#999;margin-top:2px;"><span>0</span><span>Your avg: ${defaultContracts.toFixed(1)}/mo</span><span>${Math.max(defaultContracts * 4, 30).toFixed(0)}</span></div>`;
+      html += `</div>`;
+
+      // Period toggle
+      html += `<div style="display:flex;flex-direction:column;gap:4px;">`;
+      html += `<span style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:2px;">Period</span>`;
+      ['day', 'week', 'month', 'quarter'].forEach(p => {
+        const isActive = p === 'month';
+        html += `<button onclick="onCalcPeriodChange('${p}')" id="calcPeriodBtn_${p}" style="padding:6px 14px;border:1px solid ${isActive ? '#7030A0' : '#ddd'};background:${isActive ? '#7030A0' : 'white'};color:${isActive ? 'white' : '#666'};border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">Per ${p.charAt(0).toUpperCase() + p.slice(1)}</button>`;
+      });
+      html += `</div>`;
+      html += `</div>`;
+
+      // ── Row 2: Key Inputs (editable) ──
+      html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">`;
+      html += `<div style="background:#f8f5fc;border-radius:8px;padding:12px;border:1px solid #e0d4f0;">`;
+      html += `<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:6px;">Avg Deal Size</div>`;
+      html += `<div style="display:flex;align-items:center;gap:4px;"><span style="color:#7030A0;font-weight:700;">$</span><input type="number" id="calcAvgDeal" value="${Math.round(avgDealSize)}" min="0" step="500" style="width:100%;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:16px;font-weight:700;color:#7030A0;" onchange="onCalcUpdate()"></div>`;
+      html += `</div>`;
+
+      html += `<div style="background:#f8f5fc;border-radius:8px;padding:12px;border:1px solid #e0d4f0;">`;
+      html += `<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:6px;">Close Rate %</div>`;
+      html += `<div style="display:flex;align-items:center;gap:4px;"><input type="number" id="calcCloseRate" value="${closeRate.toFixed(1)}" min="0" max="100" step="1" style="width:100%;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:16px;font-weight:700;color:#7030A0;" onchange="onCalcUpdate()"><span style="color:#7030A0;font-weight:700;">%</span></div>`;
+      html += `</div>`;
+
+      html += `<div style="background:#f8f5fc;border-radius:8px;padding:12px;border:1px solid #e0d4f0;">`;
+      html += `<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:6px;">Monthly Ad Spend</div>`;
+      html += `<div style="display:flex;align-items:center;gap:4px;"><span style="color:#7030A0;font-weight:700;">$</span><input type="number" id="calcAdSpend" value="${Math.round(baseMkt)}" min="0" step="500" style="width:100%;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:16px;font-weight:700;color:#7030A0;" onchange="onCalcUpdate()"></div>`;
+      html += `</div>`;
+      html += `</div>`;
+
+      // ── Row 3: Lead Source Acquisition Metrics (from GHL) ──
+      html += `<div id="calcLeadSources" style="background:#f0f7ff;border-radius:8px;padding:16px;margin-bottom:20px;border:1px solid #cce0ff;">`;
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">`;
+      html += `<span style="font-size:12px;font-weight:700;color:#2E75B6;text-transform:uppercase;letter-spacing:1px;">Lead-to-Contract Ratios (from GHL)</span>`;
+      html += `<span style="font-size:10px;color:#999;">How many leads to get 1 contract</span>`;
+      html += `</div>`;
+      html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;" id="calcLeadSourceCards">`;
+      html += `<div style="text-align:center;padding:10px;background:white;border-radius:6px;"><div class="spinner" style="width:20px;height:20px;border-width:2px;margin:0 auto;"></div><div style="font-size:10px;color:#999;margin-top:4px;">Loading GHL data...</div></div>`;
+      html += `</div></div>`;
+
+      // ── Row 4: Projected Output KPIs ──
+      html += `<div id="calcOutputKPIs">`;
+      html += `<div style="text-align:center;padding:12px;color:#999;font-size:13px;">Calculating...</div>`;
+      html += `</div>`;
+
+      html += `</div>`; // End calculator container
+
+      return { html, defaultContracts, avgDealSize, closeRate, actualContractsPerDay, actualContractsPerWeek, actualContractsPerMonth, actualContractsPerQuarter };
+    }
+
+    // ── Calculator update functions ──
+    window.onCalcSliderChange = () => {
+      const slider = document.getElementById('calcContractSlider');
+      const input = document.getElementById('calcContractInput');
+      if (slider && input) { input.value = parseFloat(slider.value).toFixed(1); }
+      onCalcUpdate();
+    };
+
+    window.onCalcPeriodChange = (period) => {
+      window._dealCalc.period = period;
+      ['day','week','month','quarter'].forEach(p => {
+        const btn = document.getElementById(`calcPeriodBtn_${p}`);
+        if (btn) {
+          const active = p === period;
+          btn.style.background = active ? '#7030A0' : 'white';
+          btn.style.color = active ? 'white' : '#666';
+          btn.style.borderColor = active ? '#7030A0' : '#ddd';
+        }
+      });
+      onCalcUpdate();
+    };
+
+    window.onCalcUpdate = () => {
+      const contractsInput = parseFloat(document.getElementById('calcContractInput')?.value) || 0;
+      const avgDeal = parseFloat(document.getElementById('calcAvgDeal')?.value) || 0;
+      const closeRate = (parseFloat(document.getElementById('calcCloseRate')?.value) || 0) / 100;
+      const adSpend = parseFloat(document.getElementById('calcAdSpend')?.value) || 0;
+      const period = window._dealCalc.period || 'month';
+
+      // Sync slider
+      const slider = document.getElementById('calcContractSlider');
+      if (slider) slider.value = contractsInput;
+
+      // Convert contracts to monthly basis for calculations
+      let contractsPerMonth;
+      switch (period) {
+        case 'day': contractsPerMonth = contractsInput * 30.44; break;
+        case 'week': contractsPerMonth = contractsInput * 4.35; break;
+        case 'quarter': contractsPerMonth = contractsInput / 3; break;
+        default: contractsPerMonth = contractsInput;
+      }
+
+      const closedPerMonth = contractsPerMonth * closeRate;
+      const grossRevenueMonth = closedPerMonth * avgDeal;
+      const netProfitMonth = grossRevenueMonth - adSpend - (window._dealCalc.baseNonMktExp || 0);
+
+      const grossRevenueQuarter = grossRevenueMonth * 3;
+      const grossRevenueYear = grossRevenueMonth * 12;
+      const netProfitQuarter = netProfitMonth * 3;
+      const netProfitYear = netProfitMonth * 12;
+      const partnerAnnual = netProfitYear / 3;
+
+      // Period labels for display
+      const periodContracts = contractsInput;
+      const periodLabel = period.charAt(0).toUpperCase() + period.slice(1);
+
+      let kpi = '';
+      kpi += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:12px;">`;
+
+      // Monthly
+      kpi += `<div class="kpi-card" style="background:linear-gradient(135deg,#548235,#70AD47);color:white;border:none;text-align:center;">`;
+      kpi += `<div style="font-size:9px;font-weight:700;opacity:0.8;text-transform:uppercase;margin-bottom:4px;">Gross Revenue / Month</div>`;
+      kpi += `<div style="font-size:22px;font-weight:800;">${fmt(grossRevenueMonth)}</div>`;
+      kpi += `<div style="font-size:10px;opacity:0.8;margin-top:2px;">${closedPerMonth.toFixed(1)} deals closed</div></div>`;
+
+      kpi += `<div class="kpi-card" style="background:linear-gradient(135deg,#2E75B6,#5B9BD5);color:white;border:none;text-align:center;">`;
+      kpi += `<div style="font-size:9px;font-weight:700;opacity:0.8;text-transform:uppercase;margin-bottom:4px;">Net Profit / Month</div>`;
+      kpi += `<div style="font-size:22px;font-weight:800;">${fmt(netProfitMonth)}</div></div>`;
+
+      // Quarterly
+      kpi += `<div class="kpi-card" style="border-left:4px solid #548235;text-align:center;">`;
+      kpi += `<div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:4px;">Gross Revenue / Quarter</div>`;
+      kpi += `<div style="font-size:20px;font-weight:800;color:#548235;">${fmt(grossRevenueQuarter)}</div></div>`;
+
+      kpi += `<div class="kpi-card" style="border-left:4px solid #2E75B6;text-align:center;">`;
+      kpi += `<div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:4px;">Net Profit / Quarter</div>`;
+      kpi += `<div style="font-size:20px;font-weight:800;color:#2E75B6;">${fmt(netProfitQuarter)}</div></div>`;
+      kpi += `</div>`;
+
+      // Annual row
+      kpi += `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">`;
+
+      kpi += `<div class="kpi-card" style="border-left:4px solid #7030A0;text-align:center;">`;
+      kpi += `<div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:4px;">Gross Revenue / Year</div>`;
+      kpi += `<div style="font-size:20px;font-weight:800;color:#7030A0;">${fmt(grossRevenueYear)}</div></div>`;
+
+      kpi += `<div class="kpi-card" style="border-left:4px solid #1B2A4A;text-align:center;">`;
+      kpi += `<div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:4px;">Net Profit / Year</div>`;
+      kpi += `<div style="font-size:20px;font-weight:800;color:${netProfitYear >= 0 ? '#1B2A4A' : '#C00000'};">${fmt(netProfitYear)}</div></div>`;
+
+      kpi += `<div class="kpi-card" style="text-align:center;background:linear-gradient(135deg,#ED7D31,#F4A460);color:white;border:none;">`;
+      kpi += `<div style="font-size:9px;font-weight:700;opacity:0.8;text-transform:uppercase;margin-bottom:4px;">Contracts / ${periodLabel}</div>`;
+      kpi += `<div style="font-size:22px;font-weight:800;">${periodContracts.toFixed(1)}</div>`;
+      kpi += `<div style="font-size:10px;opacity:0.8;margin-top:2px;">${contractsPerMonth.toFixed(1)}/mo</div></div>`;
+
+      // Partner split
+      kpi += `<div class="kpi-card" style="text-align:center;">`;
+      kpi += `<div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;margin-bottom:4px;">Per Partner / Year</div>`;
+      kpi += `<div style="font-size:20px;font-weight:800;color:${partnerAnnual >= 0 ? '#548235' : '#C00000'};">${fmt(partnerAnnual)}</div>`;
+      kpi += `<div style="font-size:10px;color:#999;margin-top:2px;">Aubrey / Luka / Brennen</div></div>`;
+      kpi += `</div>`;
+
+      const el = document.getElementById('calcOutputKPIs');
+      if (el) el.innerHTML = kpi;
+    };
+
+    // ── Populate lead source cards after GHL fetch ──
+    const populateLeadSourceCards = (data) => {
+      const container = document.getElementById('calcLeadSourceCards');
+      if (!container) return;
+      if (!data || !data.sources) {
+        container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:8px;color:#999;font-size:12px;">Connect GHL Worker to see lead source data</div>`;
+        return;
+      }
+      const s = data.sources;
+      let html = '';
+      const sources = [
+        { key: 'google', label: 'Google Ads', color: '#4285F4', icon: 'G' },
+        { key: 'facebook', label: 'Facebook Ads', color: '#1877F2', icon: 'f' },
+        { key: 'combined', label: 'All Sources', color: '#7030A0', icon: '*' },
+      ];
+      sources.forEach(src => {
+        const d = s[src.key] || {};
+        const lpc = d.leadsPerContract;
+        const conv = d.conversionRate || 0;
+        html += `<div style="background:white;border-radius:8px;padding:14px;text-align:center;border:2px solid ${src.color}20;">`;
+        html += `<div style="display:inline-block;width:28px;height:28px;border-radius:50%;background:${src.color};color:white;font-weight:800;font-size:14px;line-height:28px;margin-bottom:6px;">${src.icon}</div>`;
+        html += `<div style="font-size:11px;font-weight:600;color:#666;margin-bottom:6px;">${src.label}</div>`;
+        html += `<div style="font-size:24px;font-weight:800;color:${src.color};">${lpc !== null ? lpc + ':1' : 'N/A'}</div>`;
+        html += `<div style="font-size:10px;color:#999;">leads per contract</div>`;
+        html += `<div style="margin-top:6px;font-size:11px;color:#666;"><span style="font-weight:700;">${d.leads || 0}</span> leads &rarr; <span style="font-weight:700;">${d.contracts || 0}</span> contracts</div>`;
+        html += `<div style="font-size:10px;color:#999;margin-top:2px;">${conv}% conversion</div>`;
+        html += `</div>`;
+      });
+      container.innerHTML = html;
+    };
 
     const renderProjectionsTab = (baselinePeriod) => {
       const container = document.getElementById('projectionsContent');
@@ -2958,8 +3210,12 @@
 
       // Store for recalc
       window._projShared = { activeMonths, sortedMonths, monthlyActuals, lastAdSpend: defaultAdSpend };
+      window._dealCalc.baseNonMktExp = baseNonMktExp;
 
-      container.innerHTML = buildProjectionsHTML(defaultAdSpend, usedBaseline, baseMkt, baseIncome, baseExpense, baseNonMktExp, baseROAS, baseROI, baseMargin, baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, sortedMonths, monthlyActuals, activeMonths, period);
+      // Build Deal Flow Calculator
+      const calcResult = buildDealFlowCalcHTML(baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, baseMkt, baseIncome, baseExpense);
+
+      container.innerHTML = calcResult.html + buildProjectionsHTML(defaultAdSpend, usedBaseline, baseMkt, baseIncome, baseExpense, baseNonMktExp, baseROAS, baseROI, baseMargin, baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, sortedMonths, monthlyActuals, activeMonths, period);
 
       // Set the selector value
       setTimeout(() => {
@@ -2971,6 +3227,12 @@
           const cb = document.getElementById('projCb_' + m.replace(/\s/g, '_'));
           if (cb) cb.checked = !excludedMonths.includes(m);
         });
+
+        // Initialize the calculator outputs
+        onCalcUpdate();
+
+        // Fetch and populate lead source data from GHL
+        fetchLeadSourceData().then(data => { populateLeadSourceCards(data); });
 
         runProjection(defaultAdSpend, baseMkt, baseIncome, baseNonMktExp, baseROAS, baseDealsPerMonth, baseWonPerMonth, baseWinRate, baseAvgDealSize, sortedMonths, monthlyActuals);
       }, 10);
