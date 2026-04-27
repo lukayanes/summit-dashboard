@@ -4273,14 +4273,15 @@
           const type = getDealTypeCategory(deal);
           const typeBadge = getDealTypeBadge(type);
           const statusBadge = getStatusBadge(deal.status);
-          const isExpanded = dispoExpandedDeal === deal.address;
+          var safeAddr = deal.address.replace(/[^a-zA-Z0-9]/g, '_');
+          const isExpanded = dispoExpandedDeal === safeAddr;
           const daysUC = deal.ucDate ? daysAgo(deal.ucDate) : null;
           const daysToClose = deal.ucDate && deal.closeDate ? daysBetween(deal.ucDate, deal.closeDate) : null;
 
           html += '<div style="background:white;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.08);margin-bottom:12px;overflow:hidden;border:' + (isExpanded ? '2px solid #2E75B6' : '1px solid #eee') + ';transition:all 0.2s;">';
 
           // Card header (always visible)
-          html += '<div onclick="toggleDispoCard(\'' + deal.address.replace(/'/g, "\\'") + '\')" style="padding:16px 20px;cursor:pointer;display:grid;grid-template-columns:1fr auto auto auto auto auto;align-items:center;gap:16px;">';
+          html += '<div onclick="toggleDispoCard(\'' + safeAddr + '\')" style="padding:16px 20px;cursor:pointer;display:grid;grid-template-columns:1fr auto auto auto auto auto;align-items:center;gap:16px;">';
 
           // Address + seller
           html += '<div>';
@@ -4321,7 +4322,7 @@
               html += '<div style="font-size:11px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">📡 Auto-filled from GHL Webhook</div>';
               html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
               Object.entries(deal.meta).forEach(function(entry) {
-                var mk = entry[0]; var mv = entry[1];
+                var mk = entry[0]; var mv = String(entry[1]).replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
                 html += '<span style="background:white;border:1px solid #90CAF9;border-radius:4px;padding:3px 8px;font-size:12px;"><strong style="color:#1565C0;">' + mk.replace(/\b\w/g, function(l){return l.toUpperCase();}) + ':</strong> ' + mv + '</span>';
               });
               html += '</div></div>';
@@ -4418,8 +4419,8 @@
             html += '<div style="margin-top:16px;background:#F0F4FF;border:1px solid #2E75B6;border-radius:8px;padding:16px;text-align:center;">';
             html += '<div style="font-size:14px;font-weight:600;color:#2E75B6;">🏠 Zillow Property Data</div>';
             html += '<div style="font-size:12px;color:#666;margin-top:4px;">Pull photos, comps, Zestimate, and property details from Zillow. Auto-fills FB post fields.</div>';
-            html += '<button onclick="fetchZillowData(\'' + deal.address.replace(/'/g, "\\'") + '\')" style="margin-top:10px;padding:8px 20px;background:#2E75B6;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" id="zillowBtn_' + idx + '">Fetch Zillow Data</button>';
-            html += '<div id="zillowData_' + idx + '" style="margin-top:12px;display:none;"></div>';
+            html += '<button onclick="fetchZillowForDispo(\'' + safeAddr + '\')" style="margin-top:10px;padding:8px 20px;background:#2E75B6;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" id="zillowBtn_' + safeAddr + '">Fetch Zillow Data</button>';
+            html += '<div id="zillowData_' + safeAddr + '" style="margin-top:12px;display:none;"></div>';
             html += '</div>';
 
             // Rentometer rent estimate section
@@ -4434,7 +4435,7 @@
               html += '<option value="' + b + '"' + (b === 3 ? ' selected' : '') + '>' + bLabel + '</option>';
             }
             html += '</select>';
-            html += '<button onclick="fetchRentometer(\'' + deal.address.replace(/'/g, "\\'") + '\', document.getElementById(\'rentoBeds_' + safeAddr + '\').value, \'rentoData_' + safeAddr + '\', { safeAddr: \'' + safeAddr + '\', autoFillCalc: true })" style="padding:8px 20px;background:#2E7D32;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Get Rent Estimate</button>';
+            html += '<button onclick="fetchDispoRentometer(\'' + safeAddr + '\', \'' + deal.address.replace(/'/g, "\\'") + '\')" style="padding:8px 20px;background:#2E7D32;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Get Rent Estimate</button>';
             html += '</div>';
             html += '<div id="rentoData_' + safeAddr + '" style="margin-top:12px;"></div>';
             html += '</div>';
@@ -4452,8 +4453,8 @@
     /**
      * Toggle expanded state of a dispo card
      */
-    function toggleDispoCard(address) {
-      dispoExpandedDeal = (dispoExpandedDeal === address) ? null : address;
+    function toggleDispoCard(safeAddr) {
+      dispoExpandedDeal = (dispoExpandedDeal === safeAddr) ? null : safeAddr;
       renderDispoTab();
     }
 
@@ -5138,14 +5139,20 @@
     let zillowDataCache = {};
 
     /**
+     * Wrapper: look up deal address from safeAddr and call fetchZillowData
+     */
+    function fetchZillowForDispo(safeAddr) {
+      var deal = getDispoDeals().find(d => d.address.replace(/[^a-zA-Z0-9]/g, '_') === safeAddr);
+      if (deal) fetchZillowData(deal.address, safeAddr);
+    }
+
+    /**
      * Fetch Zillow data for a property address via the Worker proxy
      */
-    async function fetchZillowData(address) {
-      // Find the button and data container by looking for elements with matching address
-      const deals = getDispoDeals();
-      const idx = deals.findIndex(d => d.address === address);
-      const btn = document.getElementById('zillowBtn_' + idx);
-      const dataDiv = document.getElementById('zillowData_' + idx);
+    async function fetchZillowData(address, safeAddr) {
+      if (!safeAddr) safeAddr = address.replace(/[^a-zA-Z0-9]/g, '_');
+      const btn = document.getElementById('zillowBtn_' + safeAddr);
+      const dataDiv = document.getElementById('zillowData_' + safeAddr);
 
       if (!btn || !dataDiv) return;
 
@@ -5318,6 +5325,15 @@
 
       // Recalculate
       calcDispoARV(safeAddr);
+    }
+
+    /**
+     * Wrapper for Dispo tab Rentometer button — avoids complex inline onclick
+     */
+    function fetchDispoRentometer(safeAddr, address) {
+      var bedsEl = document.getElementById('rentoBeds_' + safeAddr);
+      var beds = bedsEl ? bedsEl.value : 3;
+      fetchRentometer(address, beds, 'rentoData_' + safeAddr, { safeAddr: safeAddr, autoFillCalc: true });
     }
 
     /**
@@ -5609,6 +5625,7 @@
         html += '<thead><tr style="background:#1B2A4A;color:white;">';
         html += '<th style="padding:8px;text-align:center;width:40px;">Use</th>';
         html += '<th style="padding:8px;text-align:center;width:50px;">Match</th>';
+        html += '<th style="padding:8px;text-align:center;width:40px;">📷</th>';
         html += '<th style="padding:8px;text-align:left;">Address</th>';
         html += '<th style="padding:8px;text-align:right;">Sale Price</th>';
         html += '<th style="padding:8px;text-align:center;">Beds</th>';
@@ -5638,10 +5655,25 @@
           var penalties = (comp.scoreBreakdown && comp.scoreBreakdown.penalties) || [];
           var soldDate = comp.soldDate ? new Date(comp.soldDate).toLocaleDateString('en-US', {month:'short', day:'numeric'}) : '—';
 
+          // Zillow link from zpid
+          var zillowLink = comp.zpid ? 'https://www.zillow.com/homedetails/' + comp.zpid + '_zpid/' : '';
+          var addrDisplay = zillowLink ? '<a href="' + zillowLink + '" target="_blank" style="color:#1565C0;text-decoration:none;font-weight:600;" title="View on Zillow">' + cAddr + ' ↗</a>' : cAddr;
+
+          // Thumbnail + photo expand
+          var thumbHtml = '';
+          if (comp.imgSrc) {
+            thumbHtml = '<img src="' + comp.imgSrc + '" style="width:36px;height:28px;object-fit:cover;border-radius:3px;cursor:pointer;" onclick="loadCompPhotos(' + c + ', \'' + (comp.zpid || '') + '\')" title="Click to view photos">';
+          } else if (comp.zpid) {
+            thumbHtml = '<button onclick="loadCompPhotos(' + c + ', \'' + comp.zpid + '\')" style="background:#E3F2FD;border:1px solid #90CAF9;border-radius:4px;padding:2px 6px;font-size:10px;cursor:pointer;color:#1565C0;font-weight:700;" title="Load photos">+</button>';
+          } else {
+            thumbHtml = '<span style="color:#ccc;font-size:10px;">—</span>';
+          }
+
           html += '<tr style="border-bottom:1px solid #f0f0f0;' + (c % 2 === 0 ? '' : 'background:#fafafa;') + '">';
           html += '<td style="padding:6px 8px;text-align:center;"><input type="checkbox" ' + checked + ' onchange="toggleARVCalcComp(' + c + ')" style="cursor:pointer;width:16px;height:16px;"></td>';
           html += '<td style="padding:6px 8px;text-align:center;"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:' + (gradeBgs[grade] || '#F5F5F5') + ';color:' + (gradeColors[grade] || '#666') + ';">' + grade + ' ' + matchPct + '%</span></td>';
-          html += '<td style="padding:6px 8px;font-size:12px;">' + cAddr + '</td>';
+          html += '<td style="padding:6px 8px;text-align:center;">' + thumbHtml + '</td>';
+          html += '<td style="padding:6px 8px;font-size:12px;">' + addrDisplay + '</td>';
           html += '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(cPrice) + '</td>';
           html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bedrooms || '—') + '</td>';
           html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bathrooms || '—') + '</td>';
@@ -5652,6 +5684,8 @@
           html += '<td style="padding:6px 8px;text-align:center;font-size:11px;">' + soldDate + '</td>';
           html += '<td style="padding:6px 8px;font-size:10px;color:#999;">' + (penalties.length > 0 ? penalties.join(', ') : '—') + '</td>';
           html += '</tr>';
+          // Photo gallery row (hidden by default, shown when + is clicked)
+          html += '<tr id="compPhotoRow_' + c + '" style="display:none;"><td colspan="13" style="padding:0;"><div id="compPhotos_' + c + '" style="padding:10px 16px;background:#f8f9fa;"></div></td></tr>';
         }
         html += '</tbody></table>';
         html += '</div>';
@@ -5746,6 +5780,79 @@
       var beds = document.getElementById('arvCalcRentoBeds');
       var bedrooms = beds ? beds.value : 3;
       fetchRentometer(address, bedrooms, 'arvCalcRentoResults', { autoFillARVCalc: true, autoFillCalc: false });
+    }
+
+    /**
+     * Load photos for a comp from Zillow by zpid
+     */
+    var compPhotoCache = {};
+
+    async function loadCompPhotos(compIdx, zpid) {
+      var photoRow = document.getElementById('compPhotoRow_' + compIdx);
+      var photoDiv = document.getElementById('compPhotos_' + compIdx);
+      if (!photoRow || !photoDiv) return;
+
+      // Toggle if already visible
+      if (photoRow.style.display !== 'none') {
+        photoRow.style.display = 'none';
+        return;
+      }
+
+      photoRow.style.display = '';
+
+      // Check cache
+      if (compPhotoCache[zpid]) {
+        renderCompPhotos(photoDiv, compPhotoCache[zpid]);
+        return;
+      }
+
+      if (!zpid) {
+        photoDiv.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;">No zpid available for this comp — cannot fetch photos.</div>';
+        return;
+      }
+
+      photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Loading photos...</div>';
+
+      try {
+        var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        var resp = await fetch(workerUrl + '/api/zillow/photos?zpid=' + zpid);
+        var data = await resp.json();
+        if (data.error) throw new Error(data.error);
+        compPhotoCache[zpid] = data.photos || [];
+        renderCompPhotos(photoDiv, data.photos || []);
+      } catch (e) {
+        photoDiv.innerHTML = '<div style="color:#C62828;font-size:12px;padding:8px;">Failed to load photos: ' + e.message + '</div>';
+      }
+    }
+
+    function renderCompPhotos(container, photos) {
+      if (!photos || photos.length === 0) {
+        container.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;">No photos found for this property.</div>';
+        return;
+      }
+      var html = '<div style="display:flex;gap:8px;overflow-x:auto;padding:4px 0;">';
+      for (var i = 0; i < photos.length; i++) {
+        html += '<img src="' + photos[i] + '" style="height:120px;border-radius:6px;object-fit:cover;cursor:pointer;border:2px solid transparent;flex-shrink:0;" onclick="openCompPhotoModal(this.src)" onmouseover="this.style.borderColor=\'#2E75B6\'" onmouseout="this.style.borderColor=\'transparent\'">';
+      }
+      html += '</div>';
+      html += '<div style="font-size:10px;color:#999;margin-top:4px;">' + photos.length + ' photos found</div>';
+      container.innerHTML = html;
+    }
+
+    function openCompPhotoModal(src) {
+      // Create fullscreen overlay for the photo
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.9);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
+      overlay.onclick = function() { document.body.removeChild(overlay); };
+      var img = document.createElement('img');
+      img.src = src;
+      img.style.cssText = 'max-width:90vw;max-height:90vh;border-radius:8px;box-shadow:0 4px 30px rgba(0,0,0,0.5);';
+      overlay.appendChild(img);
+      var closeBtn = document.createElement('div');
+      closeBtn.textContent = '✕';
+      closeBtn.style.cssText = 'position:absolute;top:20px;right:30px;color:white;font-size:32px;font-weight:700;cursor:pointer;';
+      overlay.appendChild(closeBtn);
+      document.body.appendChild(overlay);
     }
 
     function toggleARVCalcComp(idx) {
