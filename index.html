@@ -520,6 +520,7 @@
     <button class="tab-button" onclick="switchTab('projections')">Projections</button>
     <button class="tab-button" onclick="switchTab('pipelineflow')">Pipeline Flow</button>
     <button class="tab-button" onclick="switchTab('callledger')">Call Ledger</button>
+    <button class="tab-button" onclick="switchTab('dispo')">Dispo</button>
   </div>
 
   <!-- Main Content Area -->
@@ -796,6 +797,11 @@
           </tbody>
         </table>
       </div>
+    </div>
+
+    <!-- DISPO TAB -->
+    <div id="dispo" class="tab-content">
+      <div id="dispoContent"></div>
     </div>
 
   </div>
@@ -3800,6 +3806,8 @@
         // Pipeline flow already has its controls, no additional render needed
       } else if (tab === 'callledger') {
         renderCallLedgerTab();
+      } else if (tab === 'dispo') {
+        renderDispoTab();
       }
 
       // Give charts time to render
@@ -4046,6 +4054,741 @@
       ledgerFilteredDeals = [...DEALS];
       renderLedgerTab();
     });
+
+    // ==================== DISPO TAB ====================
+
+    // State for dispo tab
+    let dispoExpandedDeal = null;
+    let dispoFilter = 'all'; // 'all', 'cash', 'novation', 'seller-finance', 'subject-to'
+
+    /**
+     * Get active deals (Under Contract + Listed/Posted) from DEALS array
+     */
+    function getDispoDeals() {
+      const activeStatuses = ['under contract', 'listed/posted'];
+      return (DEALS || []).filter(d => activeStatuses.includes((d.status || '').toLowerCase()));
+    }
+
+    /**
+     * Determine deal type category for dispo purposes
+     */
+    function getDealTypeCategory(deal) {
+      const strategy = (deal.strategy || '').toLowerCase();
+      if (strategy.includes('cash')) return 'cash';
+      if (strategy.includes('novation')) return 'novation';
+      if (strategy.includes('seller') || strategy.includes('finance')) return 'seller-finance';
+      if (strategy.includes('subject') || strategy.includes('sub')) return 'subject-to';
+      return 'other';
+    }
+
+    /**
+     * Get badge color for deal type
+     */
+    function getDealTypeBadge(type) {
+      const colors = {
+        'cash': { bg: '#E8F5E9', text: '#2E7D32', label: 'Cash' },
+        'novation': { bg: '#E3F2FD', text: '#1565C0', label: 'Novation' },
+        'seller-finance': { bg: '#FFF3E0', text: '#E65100', label: 'Seller Finance' },
+        'subject-to': { bg: '#F3E5F5', text: '#7B1FA2', label: 'Subject-To' },
+        'other': { bg: '#F5F5F5', text: '#616161', label: 'Other' },
+      };
+      return colors[type] || colors['other'];
+    }
+
+    /**
+     * Get status badge
+     */
+    function getStatusBadge(status) {
+      const s = (status || '').toLowerCase();
+      if (s.includes('under contract')) return { bg: '#FFF8E1', text: '#F57F17', label: 'Under Contract' };
+      if (s.includes('listed')) return { bg: '#E8F5E9', text: '#2E7D32', label: 'Listed/Posted' };
+      return { bg: '#F5F5F5', text: '#616161', label: status };
+    }
+
+    /**
+     * Render the Dispo tab
+     */
+    function renderDispoTab() {
+      const deals = getDispoDeals();
+      const container = document.getElementById('dispoContent');
+
+      // Count by type
+      const typeCounts = { all: deals.length, cash: 0, novation: 0, 'seller-finance': 0, 'subject-to': 0 };
+      deals.forEach(d => {
+        const type = getDealTypeCategory(d);
+        if (typeCounts[type] !== undefined) typeCounts[type]++;
+      });
+
+      let html = '';
+
+      // Header area
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">';
+      html += '<div>';
+      html += '<h2 style="font-size:22px;font-weight:700;color:#1B2A4A;margin:0;">Dispo Center</h2>';
+      html += '<p style="font-size:13px;color:#666;margin:4px 0 0;">Manage dispositions, ARV calculations, and listing posts for active deals</p>';
+      html += '</div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;">';
+
+      // Filter pills
+      const filters = [
+        { key: 'all', label: 'All', count: typeCounts.all },
+        { key: 'cash', label: 'Cash', count: typeCounts.cash },
+        { key: 'novation', label: 'Novation', count: typeCounts.novation },
+        { key: 'seller-finance', label: 'Seller Finance', count: typeCounts['seller-finance'] },
+        { key: 'subject-to', label: 'Subject-To', count: typeCounts['subject-to'] },
+      ];
+
+      filters.forEach(f => {
+        const active = dispoFilter === f.key;
+        html += '<button onclick="setDispoFilter(\'' + f.key + '\')" style="padding:6px 14px;border-radius:20px;border:' + (active ? '2px solid #1B2A4A' : '1px solid #ddd') + ';background:' + (active ? '#1B2A4A' : '#fff') + ';color:' + (active ? '#fff' : '#333') + ';font-size:12px;font-weight:600;cursor:pointer;transition:all 0.15s;">';
+        html += f.label + ' <span style="opacity:0.7;">(' + f.count + ')</span>';
+        html += '</button>';
+      });
+      html += '</div></div>';
+
+      // Summary cards row
+      html += '<div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:12px;margin-bottom:20px;">';
+
+      const totalValue = deals.reduce((sum, d) => sum + (d.contract || 0), 0);
+      const listedValue = deals.reduce((sum, d) => sum + (d.listed || 0), 0);
+      const potentialProfit = deals.reduce((sum, d) => sum + (d.potential || 0), 0);
+
+      const summaryCards = [
+        { label: 'Active Deals', value: deals.length, color: '#1B2A4A' },
+        { label: 'Total UC Value', value: fmt(totalValue), color: '#2E75B6' },
+        { label: 'Total Listed Value', value: fmt(listedValue), color: '#7030A0' },
+        { label: 'Est. Potential Profit', value: fmt(potentialProfit), color: '#2E7D32' },
+      ];
+
+      summaryCards.forEach(card => {
+        html += '<div style="background:white;border-radius:8px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);border-left:4px solid ' + card.color + ';">';
+        html += '<div style="font-size:11px;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:0.5px;">' + card.label + '</div>';
+        html += '<div style="font-size:24px;font-weight:700;color:' + card.color + ';margin-top:4px;">' + card.value + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+
+      // Deal cards
+      const filtered = dispoFilter === 'all' ? deals : deals.filter(d => getDealTypeCategory(d) === dispoFilter);
+
+      if (filtered.length === 0) {
+        html += '<div style="text-align:center;padding:60px 20px;color:#999;">';
+        html += '<div style="font-size:48px;margin-bottom:12px;">📋</div>';
+        html += '<div style="font-size:16px;font-weight:600;">No active ' + (dispoFilter === 'all' ? '' : dispoFilter + ' ') + 'deals</div>';
+        html += '<div style="font-size:13px;margin-top:4px;">Deals will appear here when they are Under Contract or Listed/Posted</div>';
+        html += '</div>';
+      } else {
+        filtered.forEach((deal, idx) => {
+          const type = getDealTypeCategory(deal);
+          const typeBadge = getDealTypeBadge(type);
+          const statusBadge = getStatusBadge(deal.status);
+          const isExpanded = dispoExpandedDeal === deal.address;
+          const daysUC = deal.ucDate ? daysAgo(deal.ucDate) : null;
+          const daysToClose = deal.ucDate && deal.closeDate ? daysBetween(deal.ucDate, deal.closeDate) : null;
+
+          html += '<div style="background:white;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.08);margin-bottom:12px;overflow:hidden;border:' + (isExpanded ? '2px solid #2E75B6' : '1px solid #eee') + ';transition:all 0.2s;">';
+
+          // Card header (always visible)
+          html += '<div onclick="toggleDispoCard(\'' + deal.address.replace(/'/g, "\\'") + '\')" style="padding:16px 20px;cursor:pointer;display:grid;grid-template-columns:1fr auto auto auto auto auto;align-items:center;gap:16px;">';
+
+          // Address + seller
+          html += '<div>';
+          html += '<div style="font-size:15px;font-weight:700;color:#1B2A4A;">' + deal.address + '</div>';
+          html += '<div style="font-size:12px;color:#999;margin-top:2px;">' + deal.id + ' &middot; ' + deal.market + ' &middot; Dispo: ' + deal.dispo + '</div>';
+          html += '</div>';
+
+          // Strategy badge
+          html += '<span style="padding:4px 10px;border-radius:12px;font-size:11px;font-weight:700;background:' + typeBadge.bg + ';color:' + typeBadge.text + ';">' + typeBadge.label + '</span>';
+
+          // Status badge
+          html += '<span style="padding:4px 10px;border-radius:12px;font-size:11px;font-weight:700;background:' + statusBadge.bg + ';color:' + statusBadge.text + ';">' + statusBadge.label + '</span>';
+
+          // Contract price
+          html += '<div style="text-align:right;">';
+          html += '<div style="font-size:11px;color:#999;">Contract</div>';
+          html += '<div style="font-size:15px;font-weight:700;color:#1B2A4A;">' + fmt(deal.contract) + '</div>';
+          html += '</div>';
+
+          // Listed price
+          html += '<div style="text-align:right;">';
+          html += '<div style="font-size:11px;color:#999;">Listed</div>';
+          html += '<div style="font-size:15px;font-weight:700;color:' + (deal.listed ? '#2E7D32' : '#ccc') + ';">' + (deal.listed ? fmt(deal.listed) : '—') + '</div>';
+          html += '</div>';
+
+          // Expand arrow
+          html += '<div style="font-size:18px;color:#999;transition:transform 0.2s;' + (isExpanded ? 'transform:rotate(180deg);' : '') + '">' + (isExpanded ? '▲' : '▼') + '</div>';
+
+          html += '</div>'; // end header
+
+          // Expanded content
+          if (isExpanded) {
+            html += '<div style="border-top:1px solid #eee;padding:20px;">';
+
+            // Deal info row
+            html += '<div style="display:grid;grid-template-columns:repeat(6, 1fr);gap:12px;margin-bottom:20px;">';
+            var infoItems = [
+              { label: 'UC Date', value: deal.ucDate || '—' },
+              { label: 'Close Date', value: deal.closeDate || '—' },
+              { label: 'Days UC', value: daysUC !== null ? daysUC + ' days' : '—' },
+              { label: 'Days to Close', value: daysToClose !== null ? daysToClose + ' days' : '—' },
+              { label: 'Est. Potential', value: deal.potential ? fmt(deal.potential) : '—' },
+              { label: 'Exit Strategy', value: deal.exit || '—' },
+            ];
+            infoItems.forEach(item => {
+              html += '<div style="background:#F8F9FA;border-radius:6px;padding:10px;">';
+              html += '<div style="font-size:10px;font-weight:600;color:#999;text-transform:uppercase;">' + item.label + '</div>';
+              html += '<div style="font-size:14px;font-weight:600;color:#1B2A4A;margin-top:2px;">' + item.value + '</div>';
+              html += '</div>';
+            });
+            html += '</div>';
+
+            // Action sections based on deal type
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">';
+
+            // LEFT: ARV Calculator / Novation Estimator
+            html += '<div>';
+            if (type === 'novation') {
+              html += buildNovationEstimator(deal);
+            } else {
+              html += buildInlineARVCalculator(deal);
+            }
+            html += '</div>';
+
+            // RIGHT: Facebook Post Generator (or Novation profit summary)
+            html += '<div>';
+            if (type === 'novation') {
+              html += '<div style="background:#F8F9FA;border-radius:8px;padding:16px;">';
+              html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-bottom:8px;">📋 Novation Notes</div>';
+              html += '<p style="font-size:13px;color:#666;line-height:1.5;">Novation deals are listed with a realtor. No Facebook post needed — profit is estimated from the realtor commission and spread between UC and sale price.</p>';
+              html += '</div>';
+            } else {
+              html += buildFacebookPostGenerator(deal, type);
+            }
+            html += '</div>';
+
+            html += '</div>'; // end grid
+
+            // Zillow data placeholder
+            html += '<div style="margin-top:16px;background:#F0F4FF;border:1px dashed #2E75B6;border-radius:8px;padding:16px;text-align:center;">';
+            html += '<div style="font-size:14px;font-weight:600;color:#2E75B6;">🏠 Zillow Property Data</div>';
+            html += '<div style="font-size:12px;color:#666;margin-top:4px;">Connect your RapidAPI key to auto-pull photos, comps, and property details from Zillow</div>';
+            html += '<button onclick="fetchZillowData(\'' + deal.address.replace(/'/g, "\\'") + '\')" style="margin-top:10px;padding:8px 20px;background:#2E75B6;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" id="zillowBtn_' + idx + '">Fetch Zillow Data</button>';
+            html += '<div id="zillowData_' + idx + '" style="margin-top:12px;display:none;"></div>';
+            html += '</div>';
+
+            html += '</div>'; // end expanded
+          }
+
+          html += '</div>'; // end card
+        });
+      }
+
+      container.innerHTML = html;
+    }
+
+    /**
+     * Toggle expanded state of a dispo card
+     */
+    function toggleDispoCard(address) {
+      dispoExpandedDeal = (dispoExpandedDeal === address) ? null : address;
+      renderDispoTab();
+    }
+
+    /**
+     * Set dispo filter
+     */
+    function setDispoFilter(filter) {
+      dispoFilter = filter;
+      dispoExpandedDeal = null;
+      renderDispoTab();
+    }
+
+    /**
+     * Build inline ARV calculator for a deal (for cash, seller finance, subject-to)
+     */
+    function buildInlineARVCalculator(deal) {
+      var safeAddr = deal.address.replace(/[^a-zA-Z0-9]/g, '_');
+      var html = '';
+      html += '<div style="background:#F8F9FA;border-radius:8px;padding:16px;">';
+      html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-bottom:12px;">📊 ARV Calculator</div>';
+
+      // Quick ARV inputs
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">';
+      html += '<div>';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Estimated ARV ($)</label>';
+      html += '<input type="number" id="arv_' + safeAddr + '" value="' + (deal.listed || '') + '" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '</div>';
+      html += '<div>';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Repairs ($)</label>';
+      html += '<input type="number" id="repairs_' + safeAddr + '" value="' + (deal.repairs || 0) + '" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '</div>';
+      html += '</div>';
+
+      // Contract price (read-only)
+      html += '<div style="margin-bottom:12px;">';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Contract Price</label>';
+      html += '<div style="font-size:16px;font-weight:700;color:#1B2A4A;">' + fmt(deal.contract) + '</div>';
+      html += '</div>';
+
+      // Results
+      html += '<div id="arvResults_' + safeAddr + '" style="border-top:1px solid #ddd;padding-top:12px;">';
+      html += calcDispoARVHTML(safeAddr, deal);
+      html += '</div>';
+
+      // Link to full ARV calculator
+      html += '<div style="margin-top:12px;">';
+      html += '<a href="https://arvcalculator.thesummitgroup300.workers.dev/?address=' + encodeURIComponent(deal.address) + '" target="_blank" style="font-size:12px;color:#2E75B6;font-weight:600;text-decoration:none;">Open Full ARV Calculator →</a>';
+      html += '</div>';
+
+      html += '</div>';
+      return html;
+    }
+
+    /**
+     * Calculate and display ARV results inline
+     */
+    function calcDispoARV(safeAddr) {
+      var resultsDiv = document.getElementById('arvResults_' + safeAddr);
+      if (!resultsDiv) return;
+      var deal = getDispoDeals().find(d => d.address.replace(/[^a-zA-Z0-9]/g, '_') === safeAddr);
+      if (!deal) return;
+      resultsDiv.innerHTML = calcDispoARVHTML(safeAddr, deal);
+    }
+
+    function calcDispoARVHTML(safeAddr, deal) {
+      var arvInput = document.getElementById('arv_' + safeAddr);
+      var repairsInput = document.getElementById('repairs_' + safeAddr);
+      var arv = arvInput ? parseFloat(arvInput.value) || 0 : (deal.listed || 0);
+      var repairs = repairsInput ? parseFloat(repairsInput.value) || 0 : (deal.repairs || 0);
+      var contract = deal.contract || 0;
+
+      var cashMAO = arv * 0.70 - repairs;
+      var novMAO = arv * 0.85 - repairs;
+      var spread = arv - contract - repairs;
+      var roi = contract > 0 ? ((spread) / contract * 100) : 0;
+
+      var html = '';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+
+      html += '<div style="background:#E8F5E9;border-radius:6px;padding:8px 10px;">';
+      html += '<div style="font-size:10px;font-weight:600;color:#2E7D32;">CASH MAO (70%)</div>';
+      html += '<div style="font-size:16px;font-weight:700;color:#2E7D32;">' + fmt(cashMAO) + '</div>';
+      html += '</div>';
+
+      html += '<div style="background:#E3F2FD;border-radius:6px;padding:8px 10px;">';
+      html += '<div style="font-size:10px;font-weight:600;color:#1565C0;">NOV MAO (85%)</div>';
+      html += '<div style="font-size:16px;font-weight:700;color:#1565C0;">' + fmt(novMAO) + '</div>';
+      html += '</div>';
+
+      html += '<div style="background:' + (spread >= 0 ? '#E8F5E9' : '#FFEBEE') + ';border-radius:6px;padding:8px 10px;">';
+      html += '<div style="font-size:10px;font-weight:600;color:' + (spread >= 0 ? '#2E7D32' : '#C62828') + ';">SPREAD</div>';
+      html += '<div style="font-size:16px;font-weight:700;color:' + (spread >= 0 ? '#2E7D32' : '#C62828') + ';">' + fmt(spread) + '</div>';
+      html += '</div>';
+
+      html += '<div style="background:#F3E5F5;border-radius:6px;padding:8px 10px;">';
+      html += '<div style="font-size:10px;font-weight:600;color:#7B1FA2;">BUYER ROI</div>';
+      html += '<div style="font-size:16px;font-weight:700;color:#7B1FA2;">' + roi.toFixed(1) + '%</div>';
+      html += '</div>';
+
+      html += '</div>';
+      return html;
+    }
+
+    /**
+     * Build novation profit estimator
+     */
+    function buildNovationEstimator(deal) {
+      var safeAddr = deal.address.replace(/[^a-zA-Z0-9]/g, '_');
+      var html = '';
+      html += '<div style="background:#F8F9FA;border-radius:8px;padding:16px;">';
+      html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-bottom:12px;">💰 Novation Profit Estimator</div>';
+
+      // Inputs
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">';
+
+      html += '<div>';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Listed/Sale Price ($)</label>';
+      html += '<input type="number" id="novSale_' + safeAddr + '" value="' + (deal.listed || '') + '" oninput="calcNovation(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '</div>';
+
+      html += '<div>';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Realtor Commission (%)</label>';
+      html += '<input type="number" id="novComm_' + safeAddr + '" value="6" step="0.5" oninput="calcNovation(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '</div>';
+
+      html += '<div>';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Repairs ($)</label>';
+      html += '<input type="number" id="novRepairs_' + safeAddr + '" value="' + (deal.repairs || 0) + '" oninput="calcNovation(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '</div>';
+
+      html += '<div>';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Closing Costs ($)</label>';
+      html += '<input type="number" id="novCC_' + safeAddr + '" value="0" oninput="calcNovation(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '</div>';
+
+      html += '</div>';
+
+      // Contract price (read-only)
+      html += '<div style="margin-bottom:12px;">';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">UC Price</label>';
+      html += '<div style="font-size:16px;font-weight:700;color:#1B2A4A;">' + fmt(deal.contract) + '</div>';
+      html += '</div>';
+
+      // Results
+      html += '<div id="novResults_' + safeAddr + '" style="border-top:1px solid #ddd;padding-top:12px;">';
+      html += calcNovationHTML(safeAddr, deal);
+      html += '</div>';
+
+      html += '</div>';
+      return html;
+    }
+
+    /**
+     * Calculate novation profit
+     */
+    function calcNovation(safeAddr) {
+      var resultsDiv = document.getElementById('novResults_' + safeAddr);
+      if (!resultsDiv) return;
+      var deal = getDispoDeals().find(d => d.address.replace(/[^a-zA-Z0-9]/g, '_') === safeAddr);
+      if (!deal) return;
+      resultsDiv.innerHTML = calcNovationHTML(safeAddr, deal);
+    }
+
+    function calcNovationHTML(safeAddr, deal) {
+      var saleEl = document.getElementById('novSale_' + safeAddr);
+      var commEl = document.getElementById('novComm_' + safeAddr);
+      var repairsEl = document.getElementById('novRepairs_' + safeAddr);
+      var ccEl = document.getElementById('novCC_' + safeAddr);
+
+      var salePrice = saleEl ? parseFloat(saleEl.value) || 0 : (deal.listed || 0);
+      var commPct = commEl ? parseFloat(commEl.value) || 6 : 6;
+      var repairs = repairsEl ? parseFloat(repairsEl.value) || 0 : (deal.repairs || 0);
+      var closingCosts = ccEl ? parseFloat(ccEl.value) || 0 : 0;
+      var ucPrice = deal.contract || 0;
+
+      var realtorFee = salePrice * (commPct / 100);
+      var totalCosts = ucPrice + repairs + closingCosts;
+      var netProceeds = salePrice - realtorFee;
+      var estProfit = netProceeds - totalCosts;
+      var margin = salePrice > 0 ? (estProfit / salePrice * 100) : 0;
+
+      var html = '';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+
+      html += '<div style="background:#FFF3E0;border-radius:6px;padding:8px 10px;">';
+      html += '<div style="font-size:10px;font-weight:600;color:#E65100;">REALTOR FEE (' + commPct + '%)</div>';
+      html += '<div style="font-size:16px;font-weight:700;color:#E65100;">' + fmt(realtorFee) + '</div>';
+      html += '</div>';
+
+      html += '<div style="background:#E3F2FD;border-radius:6px;padding:8px 10px;">';
+      html += '<div style="font-size:10px;font-weight:600;color:#1565C0;">NET PROCEEDS</div>';
+      html += '<div style="font-size:16px;font-weight:700;color:#1565C0;">' + fmt(netProceeds) + '</div>';
+      html += '</div>';
+
+      html += '<div style="background:' + (estProfit >= 0 ? '#E8F5E9' : '#FFEBEE') + ';border-radius:6px;padding:8px 10px;">';
+      html += '<div style="font-size:10px;font-weight:600;color:' + (estProfit >= 0 ? '#2E7D32' : '#C62828') + ';">EST. PROFIT</div>';
+      html += '<div style="font-size:16px;font-weight:700;color:' + (estProfit >= 0 ? '#2E7D32' : '#C62828') + ';">' + fmt(estProfit) + '</div>';
+      html += '</div>';
+
+      html += '<div style="background:#F3E5F5;border-radius:6px;padding:8px 10px;">';
+      html += '<div style="font-size:10px;font-weight:600;color:#7B1FA2;">MARGIN</div>';
+      html += '<div style="font-size:16px;font-weight:700;color:#7B1FA2;">' + margin.toFixed(1) + '%</div>';
+      html += '</div>';
+
+      html += '</div>';
+
+      // Breakdown
+      html += '<div style="margin-top:10px;font-size:12px;color:#666;line-height:1.8;">';
+      html += '<div>Sale Price: ' + fmt(salePrice) + ' &minus; Realtor Fee: ' + fmt(realtorFee) + ' = Net: ' + fmt(netProceeds) + '</div>';
+      html += '<div>Net: ' + fmt(netProceeds) + ' &minus; UC: ' + fmt(ucPrice) + ' &minus; Repairs: ' + fmt(repairs) + ' &minus; CC: ' + fmt(closingCosts) + ' = <strong style="color:' + (estProfit >= 0 ? '#2E7D32' : '#C62828') + ';">' + fmt(estProfit) + '</strong></div>';
+      html += '</div>';
+
+      return html;
+    }
+
+    /**
+     * Build Facebook post generator for non-novation deals
+     */
+    function buildFacebookPostGenerator(deal, type) {
+      var safeAddr = deal.address.replace(/[^a-zA-Z0-9]/g, '_');
+      var html = '';
+      html += '<div style="background:#F8F9FA;border-radius:8px;padding:16px;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+      html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;">📱 Facebook Post Generator</div>';
+      html += '<button onclick="generateFBPost(\'' + safeAddr + '\', \'' + type + '\')" style="padding:6px 14px;background:#1877F2;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Generate Post</button>';
+      html += '</div>';
+
+      // Additional inputs needed for FB post
+      if (type === 'cash') {
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Beds</label>';
+        html += '<input type="number" id="fb_beds_' + safeAddr + '" placeholder="3" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Baths</label>';
+        html += '<input type="number" id="fb_baths_' + safeAddr + '" placeholder="2" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Sqft</label>';
+        html += '<input type="number" id="fb_sqft_' + safeAddr + '" placeholder="1200" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Lot Sqft</label>';
+        html += '<input type="number" id="fb_lot_' + safeAddr + '" placeholder="8000" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Year Built</label>';
+        html += '<input type="number" id="fb_year_' + safeAddr + '" placeholder="1960" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">ARV ($)</label>';
+        html += '<input type="number" id="fb_arv_' + safeAddr + '" value="' + (deal.listed || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '</div>';
+        html += '<div style="margin-bottom:10px;">';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Selling Points (one per line)</label>';
+        html += '<textarea id="fb_points_' + safeAddr + '" rows="3" placeholder="Great starter home&#10;Near schools and shopping&#10;Strong rental area" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;resize:vertical;"></textarea>';
+        html += '</div>';
+      } else if (type === 'seller-finance') {
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Beds</label>';
+        html += '<input type="number" id="fb_beds_' + safeAddr + '" placeholder="3" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Baths</label>';
+        html += '<input type="number" id="fb_baths_' + safeAddr + '" placeholder="2" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Sqft</label>';
+        html += '<input type="number" id="fb_sqft_' + safeAddr + '" placeholder="1200" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Interest Rate (%)</label>';
+        html += '<input type="number" id="fb_rate_' + safeAddr + '" value="0" step="0.5" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Payment to Seller ($/mo)</label>';
+        html += '<input type="number" id="fb_payment_' + safeAddr + '" placeholder="550" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">SF Amount ($)</label>';
+        html += '<input type="number" id="fb_sfamt_' + safeAddr + '" value="' + (deal.contract || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Term (Years)</label>';
+        html += '<input type="number" id="fb_term_' + safeAddr + '" value="7" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Total Purchase Price ($)</label>';
+        html += '<input type="number" id="fb_total_' + safeAddr + '" value="' + (deal.contract || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Rent Estimate ($/mo)</label>';
+        html += '<input type="number" id="fb_rent_' + safeAddr + '" placeholder="1400" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Entry Cost ($)</label>';
+        html += '<input type="number" id="fb_entry_' + safeAddr + '" placeholder="9900" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '</div>';
+        html += '<div style="margin-bottom:10px;">';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Home Features (one per line)</label>';
+        html += '<textarea id="fb_features_' + safeAddr + '" rows="3" placeholder="Corner lot&#10;Furnished&#10;Detached garage" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;resize:vertical;"></textarea>';
+        html += '</div>';
+      } else if (type === 'subject-to') {
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Beds</label>';
+        html += '<input type="number" id="fb_beds_' + safeAddr + '" placeholder="3" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Baths</label>';
+        html += '<input type="number" id="fb_baths_' + safeAddr + '" placeholder="2" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Sqft</label>';
+        html += '<input type="number" id="fb_sqft_' + safeAddr + '" placeholder="1200" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Monthly PITI ($)</label>';
+        html += '<input type="number" id="fb_piti_' + safeAddr + '" placeholder="950" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Rent Estimate ($)</label>';
+        html += '<input type="number" id="fb_rent_' + safeAddr + '" placeholder="1400" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Loan Balance ($)</label>';
+        html += '<input type="number" id="fb_balance_' + safeAddr + '" value="' + (deal.contract || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Entry Cost ($)</label>';
+        html += '<input type="number" id="fb_entry_' + safeAddr + '" placeholder="5000" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '<div>';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Interest Rate (%)</label>';
+        html += '<input type="number" id="fb_rate_' + safeAddr + '" placeholder="4.5" step="0.125" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '</div>';
+        html += '</div>';
+        html += '<div style="margin-bottom:10px;">';
+        html += '<label style="font-size:11px;font-weight:600;color:#666;">Selling Points (one per line)</label>';
+        html += '<textarea id="fb_points_' + safeAddr + '" rows="3" placeholder="No bank qualifying&#10;Move-in ready&#10;Great school district" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:12px;resize:vertical;"></textarea>';
+        html += '</div>';
+      }
+
+      // Generated post output
+      html += '<div id="fbPost_' + safeAddr + '" style="display:none;margin-top:12px;">';
+      html += '</div>';
+
+      html += '</div>';
+      return html;
+    }
+
+    /**
+     * Generate Facebook post
+     */
+    function generateFBPost(safeAddr, type) {
+      var deal = getDispoDeals().find(d => d.address.replace(/[^a-zA-Z0-9]/g, '_') === safeAddr);
+      if (!deal) return;
+
+      var getVal = function(id) {
+        var el = document.getElementById(id);
+        return el ? el.value : '';
+      };
+      var getNum = function(id) { return parseFloat(getVal(id)) || 0; };
+
+      var post = '';
+      var address = deal.address;
+      // Extract city/state from address
+      var addrParts = address.split(',').map(function(p) { return p.trim(); });
+      var cityState = addrParts.length >= 2 ? addrParts.slice(1).join(', ').replace(/\d{5}/, '').trim() : '';
+
+      if (type === 'cash') {
+        var beds = getVal('fb_beds_' + safeAddr) || '?';
+        var baths = getVal('fb_baths_' + safeAddr) || '?';
+        var sqft = getNum('fb_sqft_' + safeAddr);
+        var lot = getNum('fb_lot_' + safeAddr);
+        var year = getVal('fb_year_' + safeAddr) || '?';
+        var arv = getNum('fb_arv_' + safeAddr);
+        var points = getVal('fb_points_' + safeAddr).split('\n').filter(function(p) { return p.trim(); });
+
+        post += address + '\n\n';
+        post += '💰 ' + fmt(deal.contract) + ' + CC\n';
+        if (arv) post += '📈 ARV ~' + fmt(arv) + '\n';
+        post += '🛏 ' + beds + ' Bed / ' + baths + ' Bath\n';
+        if (sqft) post += '📐 ' + sqft.toLocaleString() + ' Sq Ft\n';
+        if (lot) post += '🏡 ' + lot.toLocaleString() + ' Sq Ft Lot\n';
+        post += '📅 Built ' + year + '\n\n';
+        points.forEach(function(p) { post += '✅ ' + p.trim() + '\n'; });
+        post += '\nPerfect Fix & Flip or Buy & Hold in a steady cash-flow market.\n\n';
+        post += '💵 Cash buyers only\n';
+        post += '📩 DM for more details';
+
+      } else if (type === 'seller-finance') {
+        var beds = getVal('fb_beds_' + safeAddr) || '?';
+        var baths = getVal('fb_baths_' + safeAddr) || '?';
+        var sqft = getNum('fb_sqft_' + safeAddr);
+        var rate = getVal('fb_rate_' + safeAddr) || '0';
+        var payment = getNum('fb_payment_' + safeAddr);
+        var sfAmt = getNum('fb_sfamt_' + safeAddr);
+        var term = getVal('fb_term_' + safeAddr) || '?';
+        var totalPrice = getNum('fb_total_' + safeAddr);
+        var rent = getNum('fb_rent_' + safeAddr);
+        var entry = getNum('fb_entry_' + safeAddr);
+        var features = getVal('fb_features_' + safeAddr).split('\n').filter(function(p) { return p.trim(); });
+        var cashflow = rent - payment;
+
+        post += cityState + ' | SELLER FINANCING ' + rate + '% Interest | CASHFLOW\n\n';
+        post += address + '\n';
+        post += beds + ' Bed, ' + baths + ' Bath' + (sqft ? ', ' + sqft.toLocaleString() + 'sqft' : '') + '.\n\n';
+        post += 'Deal break down:\n';
+        if (payment) post += 'PAYMENT TO SELLER: ' + fmt(payment) + '\n';
+        post += 'SELLER FINANCE ' + fmt(sfAmt) + ' @' + rate + '%' + (rate === '0' ? '!!!' : '') + '\n';
+        if (totalPrice) post += 'Total Purchase Price: ' + fmt(totalPrice) + '\n';
+        if (term) post += 'Term: ' + term + ' Years\n\n';
+        post += 'EXIT STRATEGY: LTR, FLIP, WRAP\n';
+        if (rent) post += 'LTR: ' + fmt(rent) + ' (RENTOMETER)\n';
+        if (cashflow > 0) post += 'CASHFLOW: ' + fmt(cashflow) + '/mo\n\n';
+        if (entry) post += 'ENTRY COST:\nTotal Entry: ' + fmt(entry) + ' + CC\n\n';
+        if (features.length > 0) {
+          post += 'Home features:\n';
+          features.forEach(function(f) { post += f.trim().toUpperCase() + '\n'; });
+        }
+        post += '\n***Buyers do their own due diligence BEFORE SIGNING';
+
+      } else if (type === 'subject-to') {
+        var beds = getVal('fb_beds_' + safeAddr) || '?';
+        var baths = getVal('fb_baths_' + safeAddr) || '?';
+        var sqft = getNum('fb_sqft_' + safeAddr);
+        var piti = getNum('fb_piti_' + safeAddr);
+        var rent = getNum('fb_rent_' + safeAddr);
+        var balance = getNum('fb_balance_' + safeAddr);
+        var entry = getNum('fb_entry_' + safeAddr);
+        var rate = getVal('fb_rate_' + safeAddr) || '?';
+        var points = getVal('fb_points_' + safeAddr).split('\n').filter(function(p) { return p.trim(); });
+        var cashflow = rent - piti;
+
+        // Extract state from address for header
+        var stateMatch = address.match(/,\s*([A-Z]{2})\s*\d{5}/);
+        var stateName = stateMatch ? stateMatch[1] : (deal.market || '');
+        var stateNames = {AL:'ALABAMA',AK:'ALASKA',AZ:'ARIZONA',AR:'ARKANSAS',CA:'CALIFORNIA',CO:'COLORADO',CT:'CONNECTICUT',DE:'DELAWARE',FL:'FLORIDA',GA:'GEORGIA',HI:'HAWAII',ID:'IDAHO',IL:'ILLINOIS',IN:'INDIANA',IA:'IOWA',KS:'KANSAS',KY:'KENTUCKY',LA:'LOUISIANA',ME:'MAINE',MD:'MARYLAND',MA:'MASSACHUSETTS',MI:'MICHIGAN',MN:'MINNESOTA',MS:'MISSISSIPPI',MO:'MISSOURI',MT:'MONTANA',NE:'NEBRASKA',NV:'NEVADA',NH:'NEW HAMPSHIRE',NJ:'NEW JERSEY',NM:'NEW MEXICO',NY:'NEW YORK',NC:'NORTH CAROLINA',ND:'NORTH DAKOTA',OH:'OHIO',OK:'OKLAHOMA',OR:'OREGON',PA:'PENNSYLVANIA',RI:'RHODE ISLAND',SC:'SOUTH CAROLINA',SD:'SOUTH DAKOTA',TN:'TENNESSEE',TX:'TEXAS',UT:'UTAH',VT:'VERMONT',VA:'VIRGINIA',WA:'WASHINGTON',WV:'WEST VIRGINIA',WI:'WISCONSIN',WY:'WYOMING'};
+        var fullState = stateNames[stateName] || stateName;
+        var purchasePrice = getNum('fb_balance_' + safeAddr) + (entry || 0);
+
+        post += fullState + ' SUB TO | LOW RATE\n\n';
+        post += address + '\n';
+        post += beds + ' bed, ' + baths + ' bath, ' + (sqft ? sqft.toLocaleString() + ' SQFT' : '') + '\n\n';
+        post += 'Deal break down:\n';
+        if (purchasePrice) post += 'Purchase Price: ' + fmt(purchasePrice) + '\n';
+        if (balance) post += 'Loan Balance: ' + fmt(balance) + '\n';
+        if (piti) post += 'PITI: ' + fmt(piti) + '\n';
+        if (rate !== '?') post += 'IR: ' + rate + '%\n';
+        post += 'Term: Until Maturity\n\n';
+        post += 'Exit Strategies:\nLTR\nWrap\n\n';
+        post += 'ENTRY COST:\n';
+        if (entry) post += 'TOTAL ENTRY: ' + fmt(entry) + '+ CC\n';
+        post += 'Closing Costs (BOTH SIDES)\n\n';
+        post += 'Buyers do their own due diligence BEFORE SIGNING';
+      }
+
+      // Show the generated post
+      var postDiv = document.getElementById('fbPost_' + safeAddr);
+      if (postDiv) {
+        postDiv.style.display = 'block';
+        postDiv.innerHTML = '<div style="background:white;border:1px solid #ddd;border-radius:8px;padding:14px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+          '<span style="font-size:12px;font-weight:600;color:#1877F2;">Generated Facebook Post</span>' +
+          '<button onclick="copyFBPost(\'' + safeAddr + '\')" style="padding:4px 10px;background:#1877F2;color:white;border:none;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;">📋 Copy</button>' +
+          '</div>' +
+          '<pre id="fbPostText_' + safeAddr + '" style="white-space:pre-wrap;font-family:inherit;font-size:13px;line-height:1.5;color:#333;margin:0;background:#F8F9FA;padding:12px;border-radius:6px;">' + post + '</pre>' +
+          '</div>';
+      }
+    }
+
+    /**
+     * Copy FB post to clipboard
+     */
+    function copyFBPost(safeAddr) {
+      var pre = document.getElementById('fbPostText_' + safeAddr);
+      if (!pre) return;
+      navigator.clipboard.writeText(pre.textContent).then(function() {
+        var btn = pre.parentElement.querySelector('button');
+        if (btn) {
+          btn.textContent = '✅ Copied!';
+          setTimeout(function() { btn.innerHTML = '📋 Copy'; }, 2000);
+        }
+      });
+    }
+
+    /**
+     * Placeholder for Zillow data fetch (needs RapidAPI key)
+     */
+    function fetchZillowData(address) {
+      alert('Zillow API integration requires your RapidAPI key.\nThis will be wired up once the key is added to the Worker.');
+    }
+
   </script>
 </body>
 </html>
