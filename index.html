@@ -1277,6 +1277,15 @@
       const closedDays = won.map(d => daysBetween(d.ucDate, d.closeDate));
       const avgClose = closedDays.length > 0 ? closedDays.reduce((s, d) => s + d, 0) / closedDays.length : 0;
 
+      // Split avg days to close by strategy group
+      const traditionalStrategies = ['cash', 'subject-to', 'seller finance', 'listing agent'];
+      const wonTraditional = won.filter(d => traditionalStrategies.includes((d.strategy || '').toLowerCase()));
+      const wonNovation = won.filter(d => (d.strategy || '').toLowerCase() === 'novation');
+      const tradDays = wonTraditional.map(d => daysBetween(d.ucDate, d.closeDate));
+      const novDays = wonNovation.map(d => daysBetween(d.ucDate, d.closeDate));
+      const avgCloseTrad = tradDays.length > 0 ? Math.round(tradDays.reduce((s, d) => s + d, 0) / tradDays.length) : 0;
+      const avgCloseNov = novDays.length > 0 ? Math.round(novDays.reduce((s, d) => s + d, 0) / novDays.length) : 0;
+
       const over60 = active.filter(d => daysAgo(d.ucDate) > 60);
 
       return {
@@ -1293,6 +1302,10 @@
         largest,
         pipelineValue,
         avgClose: Math.round(avgClose),
+        avgCloseTrad,
+        avgCloseNov,
+        wonTraditional,
+        wonNovation,
         over60Count: over60.length,
         over60,
         avgWonDays: closedDays.length > 0 ? Math.round(closedDays.reduce((s, d) => s + d, 0) / closedDays.length) : 0,
@@ -1942,7 +1955,10 @@
         () => showDrillDown('exec', 'POTENTIAL PROFIT', potentialDeals)));
 
       kpis2.appendChild(createKpiCard('Pipeline Value', fmt(metrics.pipelineValue), '#FFC000'));
-      kpis2.appendChild(createKpiCard('Avg Days Close', metrics.avgClose + ' days', '#7030A0'));
+      kpis2.appendChild(createKpiCard('Avg Days Cash/SF', metrics.avgCloseTrad ? metrics.avgCloseTrad + ' days' : '—', '#7030A0',
+        metrics.wonTraditional.length > 0 ? () => showDrillDown('exec', 'CASH / SUB-TO / SELLER FINANCE CLOSES', metrics.wonTraditional) : null));
+      kpis2.appendChild(createKpiCard('Avg Days Novation', metrics.avgCloseNov ? metrics.avgCloseNov + ' days' : '—', '#5B2C6F',
+        metrics.wonNovation.length > 0 ? () => showDrillDown('exec', 'NOVATION CLOSES', metrics.wonNovation) : null));
       const avgContract = DEALS.filter(d => d.contract).reduce((s, d) => s + d.contract, 0) / DEALS.filter(d => d.contract).length;
       kpis2.appendChild(createKpiCard('Avg Contract', fmt(avgContract), '#2F9599'));
 
@@ -5502,7 +5518,8 @@
       contractPrice: 0,
       repairs: 10000,
       calculatedARV: 0,
-      daysBack: 90
+      daysBack: 90,
+      lastAddress: ''
     };
 
     function renderARVCalcTab() {
@@ -5515,34 +5532,58 @@
       html += '</div>';
 
       html += '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
-      html += '<input type="text" id="arvCalcAddress" placeholder="Enter full property address (e.g. 123 Main St, City, ST 12345)" style="flex:1;min-width:300px;padding:12px 16px;border:1px solid #ddd;border-radius:8px;font-size:15px;" onkeydown="if(event.key===\'Enter\')fetchARVCalcData()">';
+      html += '<input type="text" id="arvCalcAddress" value="' + (arvCalcState.lastAddress || '').replace(/"/g, '&quot;') + '" placeholder="Enter full property address (e.g. 123 Main St, City, ST 12345)" style="flex:1;min-width:300px;padding:12px 16px;border:1px solid #ddd;border-radius:8px;font-size:15px;" onkeydown="if(event.key===\'Enter\')fetchARVCalcData()">';
       html += '<button onclick="fetchARVCalcData()" id="arvCalcFetchBtn" style="padding:12px 24px;background:#1B2A4A;color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;">🔍 Find Comps</button>';
       html += '</div>';
 
       // Days filter
-      html += '<div style="display:flex;gap:8px;margin-bottom:20px;align-items:center;">';
-      html += '<span style="font-size:12px;font-weight:600;color:#666;">Sold within:</span>';
-      var dayOptions = [30, 60, 90];
-      for (var di = 0; di < dayOptions.length; di++) {
-        var dVal = dayOptions[di];
-        var dActive = (arvCalcState.daysBack || 90) === dVal;
-        html += '<button onclick="setARVCalcDays(' + dVal + ')" style="padding:6px 14px;border-radius:20px;border:' + (dActive ? '2px solid #1B2A4A' : '1px solid #ddd') + ';background:' + (dActive ? '#1B2A4A' : '#fff') + ';color:' + (dActive ? '#fff' : '#333') + ';font-size:12px;font-weight:600;cursor:pointer;">' + dVal + ' days</button>';
-      }
-      html += '</div>';
+      html += renderDaysFilter();
 
       html += '<div id="arvCalcResults"></div>';
 
       container.innerHTML = html;
+
+      // Re-render results if we already have data
+      if (arvCalcState.data) {
+        renderARVCalcResults(arvCalcState.data);
+      }
+    }
+
+    function renderDaysFilter() {
+      var html = '<div id="arvDaysFilter" style="display:flex;gap:8px;margin-bottom:20px;align-items:center;flex-wrap:wrap;">';
+      html += '<span style="font-size:12px;font-weight:600;color:#666;">Sold within:</span>';
+      var dayOptions = [
+        { val: 30, label: '30 days' },
+        { val: 60, label: '60 days' },
+        { val: 90, label: '90 days' },
+        { val: 180, label: '6 months' },
+        { val: 365, label: '1 year' }
+      ];
+      for (var di = 0; di < dayOptions.length; di++) {
+        var dVal = dayOptions[di].val;
+        var dLabel = dayOptions[di].label;
+        var dActive = (arvCalcState.daysBack || 90) === dVal;
+        html += '<button onclick="setARVCalcDays(' + dVal + ')" style="padding:6px 14px;border-radius:20px;border:' + (dActive ? '2px solid #1B2A4A' : '1px solid #ddd') + ';background:' + (dActive ? '#1B2A4A' : '#fff') + ';color:' + (dActive ? '#fff' : '#333') + ';font-size:12px;font-weight:600;cursor:pointer;">' + dLabel + '</button>';
+      }
+      html += '</div>';
+      return html;
     }
 
     function setARVCalcDays(days) {
       arvCalcState.daysBack = days;
-      // Re-fetch if we have an address
+      // Save current address before re-rendering
       var addressInput = document.getElementById('arvCalcAddress');
-      if (addressInput && addressInput.value.trim()) {
+      if (addressInput) arvCalcState.lastAddress = addressInput.value.trim();
+
+      // Update the days filter buttons without wiping the whole tab
+      var filterDiv = document.getElementById('arvDaysFilter');
+      if (filterDiv) {
+        filterDiv.outerHTML = renderDaysFilter();
+      }
+
+      // Re-fetch if we have an address
+      if (arvCalcState.lastAddress) {
         fetchARVCalcData();
-      } else {
-        renderARVCalcTab();
       }
     }
 
@@ -5550,6 +5591,7 @@
       var addressInput = document.getElementById('arvCalcAddress');
       var address = addressInput ? addressInput.value.trim() : '';
       if (!address) { alert('Please enter a property address.'); return; }
+      arvCalcState.lastAddress = address;
 
       var days = arvCalcState.daysBack || 90;
       var btn = document.getElementById('arvCalcFetchBtn');
@@ -5587,6 +5629,41 @@
       var resultsDiv = document.getElementById('arvCalcResults');
       var html = '';
       var subj = data.subject || {};
+
+      // Subject property photos
+      var subjPhotos = subj.photos || [];
+      var subjImg = subj.imgSrc || (subjPhotos.length > 0 ? subjPhotos[0] : null);
+      if (subjImg || subjPhotos.length > 0) {
+        html += '<div style="margin-bottom:20px;">';
+        // Main photo + thumbnail strip
+        html += '<div style="display:flex;gap:12px;flex-wrap:wrap;">';
+        // Large hero image
+        if (subjImg) {
+          html += '<div style="flex:0 0 auto;">';
+          html += '<img id="subjHeroPhoto" src="' + subjImg + '" style="width:360px;height:240px;object-fit:cover;border-radius:10px;cursor:pointer;border:2px solid #1B2A4A;" onclick="openCompPhotoModal(this.src)">';
+          html += '</div>';
+        }
+        // Thumbnail strip (scrollable)
+        if (subjPhotos.length > 1) {
+          html += '<div style="flex:1;min-width:200px;overflow-x:auto;">';
+          html += '<div style="display:flex;gap:6px;flex-wrap:wrap;max-height:240px;overflow-y:auto;">';
+          for (var sp = 0; sp < subjPhotos.length; sp++) {
+            var activeBorder = (subjPhotos[sp] === subjImg) ? '2px solid #ED7D31' : '2px solid transparent';
+            html += '<img src="' + subjPhotos[sp] + '" style="width:80px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer;border:' + activeBorder + ';" onclick="document.getElementById(\'subjHeroPhoto\').src=this.src;this.parentNode.querySelectorAll(\'img\').forEach(function(i){i.style.border=\'2px solid transparent\';});this.style.border=\'2px solid #ED7D31\';" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">';
+          }
+          html += '</div>';
+          html += '<div style="font-size:11px;color:#999;margin-top:4px;">' + subjPhotos.length + ' photos · Click to preview · Click main photo to enlarge</div>';
+          html += '</div>';
+        }
+        html += '</div>';
+        html += '</div>';
+      }
+      // If no photos from API, try loading them via zpid
+      if (subjPhotos.length === 0 && subj.zpid) {
+        html += '<div id="subjPhotoLoader" style="margin-bottom:20px;text-align:center;">';
+        html += '<button onclick="loadSubjectPhotos(\'' + subj.zpid + '\')" style="padding:8px 20px;background:#E3F2FD;color:#1565C0;border:1px solid #90CAF9;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">📷 Load Subject Property Photos</button>';
+        html += '</div>';
+      }
 
       // Subject property details cards
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px;">';
@@ -5830,8 +5907,8 @@
         .addTo(map)
         .bindPopup('<div style="font-size:13px;"><strong style="color:#1B2A4A;">SUBJECT PROPERTY</strong><br>' + subjAddr + '<br><span style="color:#2E7D32;font-weight:700;">Zestimate: ' + (subj.zestimate ? fmt(subj.zestimate) : 'N/A') + '</span></div>');
 
-      // Comp markers
-      var gradeMarkerColors = { A: '#2E7D32', B: '#1565C0', C: '#F57F17', D: '#E65100', F: '#C62828' };
+      // Comp markers — numbered to match comp table
+      var gradePopupColors = { A: '#2E7D32', B: '#1565C0', C: '#F57F17', D: '#E65100', F: '#C62828' };
       var bounds = [[lat, lng]];
 
       comps.forEach(function(comp, idx) {
@@ -5841,14 +5918,16 @@
 
         bounds.push([cLat, cLng]);
 
+        var compNum = idx + 1;
         var grade = comp.grade || 'F';
-        var markerColor = gradeMarkerColors[grade] || '#999';
+        var gradeColor = gradePopupColors[grade] || '#999';
         var selected = arvCalcState.selectedComps[idx] ? true : false;
-        var borderStyle = selected ? '3px solid ' + markerColor : '2px solid white';
+        var markerBg = selected ? '#1B2A4A' : '#ED7D31';
+        var borderStyle = selected ? '3px solid #2E7D32' : '2px solid white';
 
         var compIcon = L.divIcon({
           className: '',
-          html: '<div style="background:' + markerColor + ';color:white;min-width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:' + borderStyle + ';box-shadow:0 2px 6px rgba(0,0,0,0.3);padding:0 4px;">' + grade + '</div>',
+          html: '<div style="background:' + markerBg + ';color:white;min-width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;border:' + borderStyle + ';box-shadow:0 2px 6px rgba(0,0,0,0.3);">' + compNum + '</div>',
           iconSize: [28, 28],
           iconAnchor: [14, 14],
           popupAnchor: [0, -16],
@@ -5861,9 +5940,9 @@
         var zLink = comp.zpid ? '<br><a href="https://www.zillow.com/homedetails/' + comp.zpid + '_zpid/" target="_blank" style="color:#1565C0;font-size:11px;">View on Zillow ↗</a>' : '';
 
         var popupHtml = '<div style="font-size:12px;min-width:180px;">';
-        popupHtml += '<strong>' + cAddr + '</strong><br>';
-        popupHtml += '<span style="color:' + markerColor + ';font-weight:700;font-size:14px;">' + fmt(cPrice) + '</span>';
-        popupHtml += ' <span style="background:' + markerColor + ';color:white;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;">' + grade + ' ' + (comp.matchPct || 0) + '%</span><br>';
+        popupHtml += '<strong style="color:#1B2A4A;">Comp #' + compNum + '</strong> — ' + cAddr + '<br>';
+        popupHtml += '<span style="color:' + gradeColor + ';font-weight:700;font-size:14px;">' + fmt(cPrice) + '</span>';
+        popupHtml += ' <span style="background:' + gradeColor + ';color:white;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;">' + grade + ' ' + (comp.matchPct || 0) + '%</span><br>';
         popupHtml += (comp.bedrooms || '?') + ' bd / ' + (comp.bathrooms || '?') + ' ba · ' + (comp.livingArea ? comp.livingArea.toLocaleString() + ' sqft' : '') + '<br>';
         popupHtml += '<span style="color:#666;">' + cDist + ' away · Built ' + (comp.yearBuilt || '?') + '</span>';
         popupHtml += zLink;
@@ -5888,6 +5967,29 @@
       var beds = document.getElementById('arvCalcRentoBeds');
       var bedrooms = beds ? beds.value : 3;
       fetchRentometer(address, bedrooms, 'arvCalcRentoResults', { autoFillARVCalc: true, autoFillCalc: false });
+    }
+
+    /**
+     * Load subject property photos by zpid (fallback when API doesn't include photos inline)
+     */
+    async function loadSubjectPhotos(zpid) {
+      var loader = document.getElementById('subjPhotoLoader');
+      if (loader) loader.innerHTML = '<span style="color:#666;font-size:12px;">Loading photos...</span>';
+      try {
+        var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        var resp = await fetch(workerUrl + '/api/zillow/photos?zpid=' + zpid);
+        var result = await resp.json();
+        var photos = result.photos || [];
+        if (photos.length > 0 && arvCalcState.data && arvCalcState.data.subject) {
+          arvCalcState.data.subject.photos = photos;
+          arvCalcState.data.subject.imgSrc = arvCalcState.data.subject.imgSrc || photos[0];
+          renderARVCalcResults(arvCalcState.data);
+        } else if (loader) {
+          loader.innerHTML = '<span style="color:#999;font-size:12px;">No photos available for this property</span>';
+        }
+      } catch (err) {
+        if (loader) loader.innerHTML = '<span style="color:#C62828;font-size:12px;">Failed to load photos: ' + err.message + '</span>';
+      }
     }
 
     /**
