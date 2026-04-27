@@ -11,6 +11,10 @@
   <!-- Chart.js from CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+  <!-- Leaflet map library (free, no API key) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -5612,8 +5616,17 @@
       }
       html += '</div>';
 
-      // Comps table with match scoring
+      // Comp map
       var comps = data.comps || [];
+      var hasMapData = subj.latitude && subj.longitude && comps.some(function(c) { return c.latitude && c.longitude; });
+      if (hasMapData) {
+        html += '<div style="margin-bottom:20px;">';
+        html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-bottom:8px;">📍 Comp Map</div>';
+        html += '<div id="arvCompMap" style="height:400px;border-radius:10px;border:1px solid #ddd;overflow:hidden;"></div>';
+        html += '</div>';
+      }
+
+      // Comps table with match scoring
       if (comps.length > 0) {
         html += '<div style="margin-bottom:20px;">';
         html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
@@ -5771,6 +5784,101 @@
       html += '</div>';
 
       resultsDiv.innerHTML = html;
+
+      // Initialize Leaflet map if we have coords
+      if (hasMapData) {
+        initARVCompMap(subj, comps);
+      }
+    }
+
+    var arvCompMapInstance = null;
+
+    function initARVCompMap(subj, comps) {
+      var mapDiv = document.getElementById('arvCompMap');
+      if (!mapDiv) return;
+
+      // Destroy previous map instance if exists
+      if (arvCompMapInstance) {
+        arvCompMapInstance.remove();
+        arvCompMapInstance = null;
+      }
+
+      var lat = parseFloat(subj.latitude);
+      var lng = parseFloat(subj.longitude);
+      if (isNaN(lat) || isNaN(lng)) return;
+
+      var map = L.map('arvCompMap').setView([lat, lng], 14);
+      arvCompMapInstance = map;
+
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors',
+        maxZoom: 19,
+      }).addTo(map);
+
+      // Subject property marker — large blue star
+      var subjectIcon = L.divIcon({
+        className: '',
+        html: '<div style="background:#1B2A4A;color:white;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.4);">★</div>',
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
+        popupAnchor: [0, -20],
+      });
+
+      var subjAddr = subj.address || '';
+      if (typeof subjAddr === 'object') subjAddr = (subjAddr.streetAddress || '') + ', ' + (subjAddr.city || '');
+      L.marker([lat, lng], { icon: subjectIcon })
+        .addTo(map)
+        .bindPopup('<div style="font-size:13px;"><strong style="color:#1B2A4A;">SUBJECT PROPERTY</strong><br>' + subjAddr + '<br><span style="color:#2E7D32;font-weight:700;">Zestimate: ' + (subj.zestimate ? fmt(subj.zestimate) : 'N/A') + '</span></div>');
+
+      // Comp markers
+      var gradeMarkerColors = { A: '#2E7D32', B: '#1565C0', C: '#F57F17', D: '#E65100', F: '#C62828' };
+      var bounds = [[lat, lng]];
+
+      comps.forEach(function(comp, idx) {
+        var cLat = parseFloat(comp.latitude);
+        var cLng = parseFloat(comp.longitude);
+        if (isNaN(cLat) || isNaN(cLng)) return;
+
+        bounds.push([cLat, cLng]);
+
+        var grade = comp.grade || 'F';
+        var markerColor = gradeMarkerColors[grade] || '#999';
+        var selected = arvCalcState.selectedComps[idx] ? true : false;
+        var borderStyle = selected ? '3px solid ' + markerColor : '2px solid white';
+
+        var compIcon = L.divIcon({
+          className: '',
+          html: '<div style="background:' + markerColor + ';color:white;min-width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:' + borderStyle + ';box-shadow:0 2px 6px rgba(0,0,0,0.3);padding:0 4px;">' + grade + '</div>',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+          popupAnchor: [0, -16],
+        });
+
+        var cAddr = comp.address || '—';
+        if (typeof cAddr === 'object') cAddr = (cAddr.streetAddress || '') + ', ' + (cAddr.city || '');
+        var cPrice = comp.price || 0;
+        var cDist = comp.distance !== null ? comp.distance.toFixed(1) + ' mi' : '?';
+        var zLink = comp.zpid ? '<br><a href="https://www.zillow.com/homedetails/' + comp.zpid + '_zpid/" target="_blank" style="color:#1565C0;font-size:11px;">View on Zillow ↗</a>' : '';
+
+        var popupHtml = '<div style="font-size:12px;min-width:180px;">';
+        popupHtml += '<strong>' + cAddr + '</strong><br>';
+        popupHtml += '<span style="color:' + markerColor + ';font-weight:700;font-size:14px;">' + fmt(cPrice) + '</span>';
+        popupHtml += ' <span style="background:' + markerColor + ';color:white;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;">' + grade + ' ' + (comp.matchPct || 0) + '%</span><br>';
+        popupHtml += (comp.bedrooms || '?') + ' bd / ' + (comp.bathrooms || '?') + ' ba · ' + (comp.livingArea ? comp.livingArea.toLocaleString() + ' sqft' : '') + '<br>';
+        popupHtml += '<span style="color:#666;">' + cDist + ' away · Built ' + (comp.yearBuilt || '?') + '</span>';
+        popupHtml += zLink;
+        popupHtml += '<br><button onclick="toggleARVCalcComp(' + idx + ');initARVCompMap(arvCalcState.data.subject, arvCalcState.data.comps);" style="margin-top:4px;padding:3px 10px;background:' + (selected ? '#FFEBEE' : '#E8F5E9') + ';color:' + (selected ? '#C62828' : '#2E7D32') + ';border:1px solid ' + (selected ? '#C62828' : '#2E7D32') + ';border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">' + (selected ? 'Remove from ARV' : 'Use for ARV') + '</button>';
+        popupHtml += '</div>';
+
+        L.marker([cLat, cLng], { icon: compIcon })
+          .addTo(map)
+          .bindPopup(popupHtml);
+      });
+
+      // Fit map to show all markers
+      if (bounds.length > 1) {
+        map.fitBounds(bounds, { padding: [40, 40] });
+      }
     }
 
     function fetchRentometerForARVCalc() {
