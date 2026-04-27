@@ -173,6 +173,30 @@
       display: block;
     }
 
+    .call-summary-cell {
+      transition: max-height 0.3s ease;
+    }
+    .call-summary-cell.expanded {
+      max-height: none !important;
+      overflow: visible !important;
+    }
+    .call-summary-cell:not(.expanded)::after {
+      content: '▼ click to expand';
+      display: block;
+      font-size: 9px;
+      color: #2E75B6;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+    .call-summary-cell.expanded::after {
+      content: '▲ click to collapse';
+      display: block;
+      font-size: 9px;
+      color: #2E75B6;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
     .sort-arrow {
       margin-left: 4px;
       font-size: 11px;
@@ -520,6 +544,7 @@
     <button class="tab-button" onclick="switchTab('projections')">Projections</button>
     <button class="tab-button" onclick="switchTab('pipelineflow')">Pipeline Flow</button>
     <button class="tab-button" onclick="switchTab('callledger')">Call Ledger</button>
+    <button class="tab-button" onclick="switchTab('arvcalc')">ARV Calculator</button>
     <button class="tab-button" onclick="switchTab('dispo')">Dispo</button>
   </div>
 
@@ -797,6 +822,11 @@
           </tbody>
         </table>
       </div>
+    </div>
+
+    <!-- ARV CALCULATOR TAB -->
+    <div id="arvcalc" class="tab-content">
+      <div id="arvcalcContent"></div>
     </div>
 
     <!-- DISPO TAB -->
@@ -3836,6 +3866,8 @@
         // Pipeline flow already has its controls, no additional render needed
       } else if (tab === 'callledger') {
         renderCallLedgerTab();
+      } else if (tab === 'arvcalc') {
+        renderARVCalcTab();
       } else if (tab === 'dispo') {
         renderDispoTab();
       }
@@ -3953,8 +3985,8 @@
           <td style="white-space:nowrap;">${c.price}</td>
           <td>${c.type}</td>
           <td>${getMotivationBadge(c.motivation)}</td>
-          <td style="font-size:12px;max-width:350px;">${c.summary}</td>
-          <td style="font-size:12px;max-width:280px;">${c.nextSteps}</td>
+          <td style="font-size:12px;max-width:350px;"><div class="call-summary-cell" onclick="this.classList.toggle('expanded')" style="max-height:4.8em;overflow:hidden;cursor:pointer;position:relative;line-height:1.2em;" title="Click to expand">${c.summary}</div></td>
+          <td style="font-size:12px;max-width:280px;"><div class="call-summary-cell" onclick="this.classList.toggle('expanded')" style="max-height:4.8em;overflow:hidden;cursor:pointer;position:relative;line-height:1.2em;" title="Click to expand">${c.nextSteps}</div></td>
           <td style="white-space:nowrap;">${c.callback}</td>
         </tr>
       `).join('');
@@ -4280,7 +4312,7 @@
             if (type === 'novation') {
               html += buildNovationEstimator(deal);
             } else {
-              html += buildInlineARVCalculator(deal);
+              html += buildInlineARVCalculator(deal, type);
             }
             html += '</div>';
 
@@ -4334,15 +4366,31 @@
     }
 
     /**
-     * Build inline ARV calculator for a deal (for cash, seller finance, subject-to)
+     * Global map to store deal type for recalc functions
      */
-    function buildInlineARVCalculator(deal) {
+    var dispoDealTypeMap = {};
+
+    /**
+     * Build inline ARV calculator for a deal — branches by deal type
+     */
+    function buildInlineARVCalculator(deal, type) {
       var safeAddr = deal.address.replace(/[^a-zA-Z0-9]/g, '_');
+      dispoDealTypeMap[safeAddr] = type || 'cash';
+
+      if (type === 'seller-finance') return buildSellerFinanceCalc(deal, safeAddr);
+      if (type === 'subject-to') return buildSubjectToCalc(deal, safeAddr);
+      // Default: cash deal ARV calculator
+      return buildCashARVCalc(deal, safeAddr);
+    }
+
+    /**
+     * Cash deal ARV calculator
+     */
+    function buildCashARVCalc(deal, safeAddr) {
       var html = '';
       html += '<div style="background:#F8F9FA;border-radius:8px;padding:16px;">';
-      html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-bottom:12px;">📊 ARV Calculator</div>';
+      html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-bottom:12px;">📊 Cash ARV Calculator</div>';
 
-      // Quick ARV inputs
       html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">';
       html += '<div>';
       html += '<label style="font-size:11px;font-weight:600;color:#666;">Estimated ARV ($)</label>';
@@ -4354,18 +4402,15 @@
       html += '</div>';
       html += '</div>';
 
-      // Contract price (read-only)
       html += '<div style="margin-bottom:12px;">';
       html += '<label style="font-size:11px;font-weight:600;color:#666;">Contract Price</label>';
       html += '<div style="font-size:16px;font-weight:700;color:#1B2A4A;">' + fmt(deal.contract) + '</div>';
       html += '</div>';
 
-      // Results
       html += '<div id="arvResults_' + safeAddr + '" style="border-top:1px solid #ddd;padding-top:12px;">';
-      html += calcDispoARVHTML(safeAddr, deal);
+      html += calcDispoARVHTML(safeAddr, deal, 'cash');
       html += '</div>';
 
-      // Link to full ARV calculator
       html += '<div style="margin-top:12px;">';
       html += '<div style="font-size:11px;color:#999;margin-top:2px;">Fetch Zillow data below to auto-fill ARV from Zestimate + comps</div>';
       html += '</div>';
@@ -4375,25 +4420,191 @@
     }
 
     /**
-     * Calculate and display ARV results inline
+     * Seller Finance cashflow calculator
+     */
+    function buildSellerFinanceCalc(deal, safeAddr) {
+      var html = '';
+      html += '<div style="background:#F8F9FA;border-radius:8px;padding:16px;">';
+      html += '<div style="font-size:14px;font-weight:700;color:#E65100;margin-bottom:12px;">💰 Seller Finance Cashflow Calculator</div>';
+
+      html += '<div style="margin-bottom:12px;">';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Contract Price</label>';
+      html += '<div style="font-size:16px;font-weight:700;color:#1B2A4A;">' + fmt(deal.contract) + '</div>';
+      html += '</div>';
+
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">';
+      html += '<div>';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Rent Estimate ($/mo)</label>';
+      html += '<input type="number" id="sfRent_' + safeAddr + '" value="" placeholder="1500" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '</div>';
+      html += '<div>';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Payment to Seller ($/mo)</label>';
+      html += '<input type="number" id="sfPayment_' + safeAddr + '" value="" placeholder="800" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '</div>';
+      html += '<div>';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Entry Cost ($)</label>';
+      html += '<input type="number" id="sfEntry_' + safeAddr + '" value="" placeholder="5000" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '</div>';
+      html += '</div>';
+
+      html += '<div id="arvResults_' + safeAddr + '" style="border-top:1px solid #ddd;padding-top:12px;">';
+      html += calcDispoARVHTML(safeAddr, deal, 'seller-finance');
+      html += '</div>';
+
+      html += '</div>';
+      return html;
+    }
+
+    /**
+     * Subject-To cashflow calculator
+     */
+    function buildSubjectToCalc(deal, safeAddr) {
+      var html = '';
+      html += '<div style="background:#F8F9FA;border-radius:8px;padding:16px;">';
+      html += '<div style="font-size:14px;font-weight:700;color:#7B1FA2;margin-bottom:12px;">🏦 Subject-To Cashflow Calculator</div>';
+
+      html += '<div style="margin-bottom:12px;">';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Contract Price</label>';
+      html += '<div style="font-size:16px;font-weight:700;color:#1B2A4A;">' + fmt(deal.contract) + '</div>';
+      html += '</div>';
+
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">';
+      html += '<div>';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Estimated ARV ($)</label>';
+      html += '<input type="number" id="stARV_' + safeAddr + '" value="' + (deal.listed || '') + '" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '</div>';
+      html += '<div>';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Monthly PITI ($)</label>';
+      html += '<input type="number" id="stPITI_' + safeAddr + '" value="" placeholder="1200" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '</div>';
+      html += '<div>';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Rent Estimate ($/mo)</label>';
+      html += '<input type="number" id="stRent_' + safeAddr + '" value="" placeholder="1500" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '</div>';
+      html += '<div>';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Loan Balance ($)</label>';
+      html += '<input type="number" id="stLoanBal_' + safeAddr + '" value="" placeholder="150000" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '</div>';
+      html += '</div>';
+
+      html += '<div id="arvResults_' + safeAddr + '" style="border-top:1px solid #ddd;padding-top:12px;">';
+      html += calcDispoARVHTML(safeAddr, deal, 'subject-to');
+      html += '</div>';
+
+      html += '</div>';
+      return html;
+    }
+
+    /**
+     * Calculate and display ARV results inline — looks up type from dispoDealTypeMap
      */
     function calcDispoARV(safeAddr) {
       var resultsDiv = document.getElementById('arvResults_' + safeAddr);
       if (!resultsDiv) return;
       var deal = getDispoDeals().find(d => d.address.replace(/[^a-zA-Z0-9]/g, '_') === safeAddr);
       if (!deal) return;
-      resultsDiv.innerHTML = calcDispoARVHTML(safeAddr, deal);
+      var type = dispoDealTypeMap[safeAddr] || 'cash';
+      resultsDiv.innerHTML = calcDispoARVHTML(safeAddr, deal, type);
     }
 
-    function calcDispoARVHTML(safeAddr, deal) {
+    function calcDispoARVHTML(safeAddr, deal, type) {
+      var contract = deal.contract || 0;
+
+      if (type === 'seller-finance') {
+        var rentEl = document.getElementById('sfRent_' + safeAddr);
+        var payEl = document.getElementById('sfPayment_' + safeAddr);
+        var entryEl = document.getElementById('sfEntry_' + safeAddr);
+        var rent = rentEl ? parseFloat(rentEl.value) || 0 : 0;
+        var payment = payEl ? parseFloat(payEl.value) || 0 : 0;
+        var entry = entryEl ? parseFloat(entryEl.value) || 0 : 0;
+        var cashflow = rent - payment;
+        var annualCF = cashflow * 12;
+        var cocROI = entry > 0 ? (annualCF / entry * 100) : 0;
+
+        var html = '';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+
+        html += '<div style="background:#FFF3E0;border-radius:6px;padding:8px 10px;">';
+        html += '<div style="font-size:10px;font-weight:600;color:#E65100;">MONTHLY PAYMENT</div>';
+        html += '<div style="font-size:16px;font-weight:700;color:#E65100;">' + fmt(payment) + '/mo</div>';
+        html += '</div>';
+
+        html += '<div style="background:#E8F5E9;border-radius:6px;padding:8px 10px;">';
+        html += '<div style="font-size:10px;font-weight:600;color:#2E7D32;">RENT ESTIMATE</div>';
+        html += '<div style="font-size:16px;font-weight:700;color:#2E7D32;">' + fmt(rent) + '/mo</div>';
+        html += '</div>';
+
+        html += '<div style="background:' + (cashflow >= 0 ? '#E8F5E9' : '#FFEBEE') + ';border-radius:6px;padding:8px 10px;">';
+        html += '<div style="font-size:10px;font-weight:600;color:' + (cashflow >= 0 ? '#2E7D32' : '#C62828') + ';">MONTHLY CASHFLOW</div>';
+        html += '<div style="font-size:16px;font-weight:700;color:' + (cashflow >= 0 ? '#2E7D32' : '#C62828') + ';">' + fmt(cashflow) + '/mo</div>';
+        html += '</div>';
+
+        html += '<div style="background:#E3F2FD;border-radius:6px;padding:8px 10px;">';
+        html += '<div style="font-size:10px;font-weight:600;color:#1565C0;">ANNUAL CASHFLOW</div>';
+        html += '<div style="font-size:16px;font-weight:700;color:#1565C0;">' + fmt(annualCF) + '/yr</div>';
+        html += '</div>';
+
+        html += '<div style="background:#F3E5F5;border-radius:6px;padding:8px 10px;grid-column:span 2;">';
+        html += '<div style="font-size:10px;font-weight:600;color:#7B1FA2;">CASH-ON-CASH ROI</div>';
+        html += '<div style="font-size:16px;font-weight:700;color:#7B1FA2;">' + cocROI.toFixed(1) + '%' + (entry > 0 ? ' (' + fmt(annualCF) + ' / ' + fmt(entry) + ' entry)' : '') + '</div>';
+        html += '</div>';
+
+        html += '</div>';
+        return html;
+      }
+
+      if (type === 'subject-to') {
+        var arvEl = document.getElementById('stARV_' + safeAddr);
+        var pitiEl = document.getElementById('stPITI_' + safeAddr);
+        var rentEl2 = document.getElementById('stRent_' + safeAddr);
+        var loanEl = document.getElementById('stLoanBal_' + safeAddr);
+        var arv = arvEl ? parseFloat(arvEl.value) || 0 : (deal.listed || 0);
+        var piti = pitiEl ? parseFloat(pitiEl.value) || 0 : 0;
+        var rent2 = rentEl2 ? parseFloat(rentEl2.value) || 0 : 0;
+        var loanBal = loanEl ? parseFloat(loanEl.value) || 0 : 0;
+        var monthlyCF = rent2 - piti;
+        var rentPITI = piti > 0 ? (rent2 / piti) : 0;
+        var equity = arv - loanBal;
+
+        var html = '';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+
+        html += '<div style="background:#F3E5F5;border-radius:6px;padding:8px 10px;">';
+        html += '<div style="font-size:10px;font-weight:600;color:#7B1FA2;">MONTHLY PITI</div>';
+        html += '<div style="font-size:16px;font-weight:700;color:#7B1FA2;">' + fmt(piti) + '/mo</div>';
+        html += '</div>';
+
+        html += '<div style="background:#E8F5E9;border-radius:6px;padding:8px 10px;">';
+        html += '<div style="font-size:10px;font-weight:600;color:#2E7D32;">RENT ESTIMATE</div>';
+        html += '<div style="font-size:16px;font-weight:700;color:#2E7D32;">' + fmt(rent2) + '/mo</div>';
+        html += '</div>';
+
+        html += '<div style="background:' + (monthlyCF >= 0 ? '#E8F5E9' : '#FFEBEE') + ';border-radius:6px;padding:8px 10px;">';
+        html += '<div style="font-size:10px;font-weight:600;color:' + (monthlyCF >= 0 ? '#2E7D32' : '#C62828') + ';">MONTHLY CASHFLOW</div>';
+        html += '<div style="font-size:16px;font-weight:700;color:' + (monthlyCF >= 0 ? '#2E7D32' : '#C62828') + ';">' + fmt(monthlyCF) + '/mo</div>';
+        html += '</div>';
+
+        html += '<div style="background:#E3F2FD;border-radius:6px;padding:8px 10px;">';
+        html += '<div style="font-size:10px;font-weight:600;color:#1565C0;">RENT/PITI RATIO</div>';
+        html += '<div style="font-size:16px;font-weight:700;color:#1565C0;">' + rentPITI.toFixed(2) + 'x</div>';
+        html += '</div>';
+
+        html += '<div style="background:' + (equity >= 0 ? '#E8F5E9' : '#FFEBEE') + ';border-radius:6px;padding:8px 10px;grid-column:span 2;">';
+        html += '<div style="font-size:10px;font-weight:600;color:' + (equity >= 0 ? '#2E7D32' : '#C62828') + ';">EQUITY POSITION (ARV - Loan Balance)</div>';
+        html += '<div style="font-size:16px;font-weight:700;color:' + (equity >= 0 ? '#2E7D32' : '#C62828') + ';">' + fmt(equity) + '</div>';
+        html += '</div>';
+
+        html += '</div>';
+        return html;
+      }
+
+      // Default: Cash deal
       var arvInput = document.getElementById('arv_' + safeAddr);
       var repairsInput = document.getElementById('repairs_' + safeAddr);
       var arv = arvInput ? parseFloat(arvInput.value) || 0 : (deal.listed || 0);
       var repairs = repairsInput ? parseFloat(repairsInput.value) || 0 : (deal.repairs || 0);
-      var contract = deal.contract || 0;
 
       var cashMAO = arv * 0.70 - repairs;
-      var novMAO = arv * 0.85 - repairs;
       var spread = arv - contract - repairs;
       var roi = contract > 0 ? ((spread) / contract * 100) : 0;
 
@@ -4405,17 +4616,12 @@
       html += '<div style="font-size:16px;font-weight:700;color:#2E7D32;">' + fmt(cashMAO) + '</div>';
       html += '</div>';
 
-      html += '<div style="background:#E3F2FD;border-radius:6px;padding:8px 10px;">';
-      html += '<div style="font-size:10px;font-weight:600;color:#1565C0;">NOV MAO (85%)</div>';
-      html += '<div style="font-size:16px;font-weight:700;color:#1565C0;">' + fmt(novMAO) + '</div>';
-      html += '</div>';
-
       html += '<div style="background:' + (spread >= 0 ? '#E8F5E9' : '#FFEBEE') + ';border-radius:6px;padding:8px 10px;">';
       html += '<div style="font-size:10px;font-weight:600;color:' + (spread >= 0 ? '#2E7D32' : '#C62828') + ';">SPREAD</div>';
       html += '<div style="font-size:16px;font-weight:700;color:' + (spread >= 0 ? '#2E7D32' : '#C62828') + ';">' + fmt(spread) + '</div>';
       html += '</div>';
 
-      html += '<div style="background:#F3E5F5;border-radius:6px;padding:8px 10px;">';
+      html += '<div style="background:#F3E5F5;border-radius:6px;padding:8px 10px;grid-column:span 2;">';
       html += '<div style="font-size:10px;font-weight:600;color:#7B1FA2;">BUYER ROI</div>';
       html += '<div style="font-size:16px;font-weight:700;color:#7B1FA2;">' + roi.toFixed(1) + '%</div>';
       html += '</div>';
@@ -5011,6 +5217,373 @@
       }
 
       container.innerHTML = html;
+    }
+
+    // ==========================================
+    // ARV CALCULATOR TAB (Standalone)
+    // ==========================================
+
+    var arvCalcState = {
+      data: null,
+      selectedComps: {},
+      contractPrice: 0,
+      repairs: 10000,
+      calculatedARV: 0,
+      daysBack: 90
+    };
+
+    function renderARVCalcTab() {
+      var container = document.getElementById('arvcalcContent');
+      var html = '';
+
+      html += '<div style="margin-bottom:16px;">';
+      html += '<h2 style="font-size:22px;font-weight:700;color:#1B2A4A;margin:0;">ARV Calculator</h2>';
+      html += '<p style="font-size:13px;color:#666;margin:4px 0 0;">Analyze any property before going under contract</p>';
+      html += '</div>';
+
+      html += '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
+      html += '<input type="text" id="arvCalcAddress" placeholder="Enter full property address (e.g. 123 Main St, City, ST 12345)" style="flex:1;min-width:300px;padding:12px 16px;border:1px solid #ddd;border-radius:8px;font-size:15px;" onkeydown="if(event.key===\'Enter\')fetchARVCalcData()">';
+      html += '<button onclick="fetchARVCalcData()" id="arvCalcFetchBtn" style="padding:12px 24px;background:#1B2A4A;color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;">🔍 Find Comps</button>';
+      html += '</div>';
+
+      // Days filter
+      html += '<div style="display:flex;gap:8px;margin-bottom:20px;align-items:center;">';
+      html += '<span style="font-size:12px;font-weight:600;color:#666;">Sold within:</span>';
+      var dayOptions = [30, 60, 90];
+      for (var di = 0; di < dayOptions.length; di++) {
+        var dVal = dayOptions[di];
+        var dActive = (arvCalcState.daysBack || 90) === dVal;
+        html += '<button onclick="setARVCalcDays(' + dVal + ')" style="padding:6px 14px;border-radius:20px;border:' + (dActive ? '2px solid #1B2A4A' : '1px solid #ddd') + ';background:' + (dActive ? '#1B2A4A' : '#fff') + ';color:' + (dActive ? '#fff' : '#333') + ';font-size:12px;font-weight:600;cursor:pointer;">' + dVal + ' days</button>';
+      }
+      html += '</div>';
+
+      html += '<div id="arvCalcResults"></div>';
+
+      container.innerHTML = html;
+    }
+
+    function setARVCalcDays(days) {
+      arvCalcState.daysBack = days;
+      // Re-fetch if we have an address
+      var addressInput = document.getElementById('arvCalcAddress');
+      if (addressInput && addressInput.value.trim()) {
+        fetchARVCalcData();
+      } else {
+        renderARVCalcTab();
+      }
+    }
+
+    function fetchARVCalcData() {
+      var addressInput = document.getElementById('arvCalcAddress');
+      var address = addressInput ? addressInput.value.trim() : '';
+      if (!address) { alert('Please enter a property address.'); return; }
+
+      var days = arvCalcState.daysBack || 90;
+      var btn = document.getElementById('arvCalcFetchBtn');
+      var resultsDiv = document.getElementById('arvCalcResults');
+      if (btn) { btn.disabled = true; btn.textContent = 'Finding comps...'; }
+      resultsDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#666;"><div style="font-size:32px;margin-bottom:8px;">⏳</div>Searching for similar recently sold properties near:<br><strong>' + address + '</strong><br><span style="font-size:12px;">Last ' + days + ' days</span></div>';
+
+      var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+      fetch(workerUrl + '/api/zillow/find-comps?address=' + encodeURIComponent(address) + '&days=' + days)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (btn) { btn.disabled = false; btn.textContent = '🔍 Find Comps'; }
+          if (data.error) {
+            resultsDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#C62828;"><div style="font-size:32px;margin-bottom:8px;">⚠️</div>' + (data.error || 'Failed to fetch data') + '</div>';
+            return;
+          }
+          arvCalcState.data = data;
+          arvCalcState.selectedComps = {};
+          // Auto-select A and B grade comps
+          var comps = data.comps || [];
+          for (var i = 0; i < comps.length; i++) {
+            arvCalcState.selectedComps[i] = (comps[i].grade === 'A' || comps[i].grade === 'B');
+          }
+          arvCalcState.contractPrice = arvCalcState.contractPrice || 0;
+          arvCalcState.repairs = arvCalcState.repairs || 10000;
+          renderARVCalcResults(data);
+        })
+        .catch(function(err) {
+          if (btn) { btn.disabled = false; btn.textContent = '🔍 Find Comps'; }
+          resultsDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#C62828;"><div style="font-size:32px;margin-bottom:8px;">⚠️</div>Network error: ' + err.message + '</div>';
+        });
+    }
+
+    function renderARVCalcResults(data) {
+      var resultsDiv = document.getElementById('arvCalcResults');
+      var html = '';
+      var subj = data.subject || {};
+
+      // Subject property details cards
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px;">';
+      var details = [
+        { label: 'Beds', value: subj.bedrooms || '—' },
+        { label: 'Baths', value: subj.bathrooms || '—' },
+        { label: 'Sqft', value: subj.livingArea ? subj.livingArea.toLocaleString() : '—' },
+        { label: 'Lot', value: subj.lotSize ? subj.lotSize.toLocaleString() : '—' },
+        { label: 'Year Built', value: subj.yearBuilt || '—' },
+        { label: 'Zestimate', value: subj.zestimate ? fmt(subj.zestimate) : '—' },
+        { label: 'Rent Est', value: subj.rentZestimate ? fmt(subj.rentZestimate) + '/mo' : '—' },
+        { label: 'Type', value: subj.propertyType || '—' }
+      ];
+      for (var d = 0; d < details.length; d++) {
+        html += '<div style="background:white;border:1px solid #eee;border-radius:8px;padding:12px;text-align:center;">';
+        html += '<div style="font-size:10px;font-weight:600;color:#999;text-transform:uppercase;margin-top:4px;">' + details[d].label + '</div>';
+        html += '<div style="font-size:15px;font-weight:700;color:#1B2A4A;margin-top:2px;">' + details[d].value + '</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+
+      // Search summary
+      html += '<div style="background:#F0F4FF;border-radius:8px;padding:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">';
+      html += '<div style="font-size:13px;color:#1B2A4A;"><strong>' + (data.compCount || 0) + ' matching comps found</strong> from ' + (data.totalSearchResults || 0) + ' recently sold (last ' + (data.daysBack || 90) + ' days)</div>';
+      if (data.suggestedARV) {
+        html += '<div style="font-size:13px;"><strong>Suggested ARV:</strong> <span style="color:#2E7D32;font-weight:700;">' + fmt(data.suggestedARV) + '</span> (avg of top ' + (data.arvCompsUsed || 0) + ' comps)</div>';
+      }
+      html += '</div>';
+
+      // Comps table with match scoring
+      var comps = data.comps || [];
+      if (comps.length > 0) {
+        html += '<div style="margin-bottom:20px;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+        html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;">Comparable Sales — Scored by Similarity</div>';
+        html += '<div style="font-size:11px;color:#999;">A = 85%+ match · B = 70%+ · C = 55%+ · D = 40%+ · F = below 40%</div>';
+        html += '</div>';
+        html += '<div style="overflow-x:auto;border:1px solid #eee;border-radius:8px;">';
+        html += '<table style="width:100%;font-size:12px;border-collapse:collapse;">';
+        html += '<thead><tr style="background:#1B2A4A;color:white;">';
+        html += '<th style="padding:8px;text-align:center;width:40px;">Use</th>';
+        html += '<th style="padding:8px;text-align:center;width:50px;">Match</th>';
+        html += '<th style="padding:8px;text-align:left;">Address</th>';
+        html += '<th style="padding:8px;text-align:right;">Sale Price</th>';
+        html += '<th style="padding:8px;text-align:center;">Beds</th>';
+        html += '<th style="padding:8px;text-align:center;">Baths</th>';
+        html += '<th style="padding:8px;text-align:right;">Sqft</th>';
+        html += '<th style="padding:8px;text-align:right;">$/Sqft</th>';
+        html += '<th style="padding:8px;text-align:right;">Dist</th>';
+        html += '<th style="padding:8px;text-align:right;">Year</th>';
+        html += '<th style="padding:8px;text-align:center;">Sold</th>';
+        html += '<th style="padding:8px;text-align:left;">Notes</th>';
+        html += '</tr></thead><tbody>';
+
+        var gradeColors = { A: '#2E7D32', B: '#1565C0', C: '#F57F17', D: '#E65100', F: '#C62828' };
+        var gradeBgs = { A: '#E8F5E9', B: '#E3F2FD', C: '#FFF8E1', D: '#FFF3E0', F: '#FFEBEE' };
+
+        for (var c = 0; c < comps.length; c++) {
+          var comp = comps[c];
+          var cPrice = comp.price || 0;
+          var cSqft = comp.livingArea || 0;
+          var cPpsf = cSqft > 0 ? Math.round(cPrice / cSqft) : 0;
+          var cAddr = comp.address || '—';
+          if (typeof cAddr === 'object') cAddr = (cAddr.streetAddress || '') + ', ' + (cAddr.city || '');
+          var cDist = comp.distance !== null ? comp.distance.toFixed(1) + ' mi' : '—';
+          var checked = arvCalcState.selectedComps[c] ? 'checked' : '';
+          var grade = comp.grade || 'F';
+          var matchPct = comp.matchPct || 0;
+          var penalties = (comp.scoreBreakdown && comp.scoreBreakdown.penalties) || [];
+          var soldDate = comp.soldDate ? new Date(comp.soldDate).toLocaleDateString('en-US', {month:'short', day:'numeric'}) : '—';
+
+          html += '<tr style="border-bottom:1px solid #f0f0f0;' + (c % 2 === 0 ? '' : 'background:#fafafa;') + '">';
+          html += '<td style="padding:6px 8px;text-align:center;"><input type="checkbox" ' + checked + ' onchange="toggleARVCalcComp(' + c + ')" style="cursor:pointer;width:16px;height:16px;"></td>';
+          html += '<td style="padding:6px 8px;text-align:center;"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:' + (gradeBgs[grade] || '#F5F5F5') + ';color:' + (gradeColors[grade] || '#666') + ';">' + grade + ' ' + matchPct + '%</span></td>';
+          html += '<td style="padding:6px 8px;font-size:12px;">' + cAddr + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(cPrice) + '</td>';
+          html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bedrooms || '—') + '</td>';
+          html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bathrooms || '—') + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;">' + (cSqft ? cSqft.toLocaleString() : '—') + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;">' + (cPpsf ? '$' + cPpsf : '—') + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;">' + cDist + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;">' + (comp.yearBuilt || '—') + '</td>';
+          html += '<td style="padding:6px 8px;text-align:center;font-size:11px;">' + soldDate + '</td>';
+          html += '<td style="padding:6px 8px;font-size:10px;color:#999;">' + (penalties.length > 0 ? penalties.join(', ') : '—') + '</td>';
+          html += '</tr>';
+        }
+        html += '</tbody></table>';
+        html += '</div>';
+        html += '</div>';
+      } else {
+        html += '<div style="text-align:center;padding:30px;background:#FFF8E1;border-radius:8px;margin-bottom:20px;">';
+        html += '<div style="font-size:14px;color:#F57F17;font-weight:600;">No matching comps found in the last ' + (data.daysBack || 90) + ' days</div>';
+        html += '<div style="font-size:12px;color:#999;margin-top:4px;">Try expanding to 90 days or check the address format</div>';
+        html += '</div>';
+      }
+
+      // ARV summary + deal analysis
+      var calcARV = recalcARVFromCompsValue();
+      arvCalcState.calculatedARV = calcARV;
+
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">';
+
+      // Left: ARV summary
+      html += '<div style="background:#E8F5E9;border-radius:10px;padding:20px;text-align:center;">';
+      html += '<div style="font-size:12px;font-weight:600;color:#2E7D32;text-transform:uppercase;">Calculated ARV</div>';
+      html += '<div id="arvCalcARVDisplay" style="font-size:28px;font-weight:800;color:#2E7D32;margin-top:4px;">' + fmt(calcARV) + '</div>';
+      var selectedCount = 0;
+      for (var k in arvCalcState.selectedComps) { if (arvCalcState.selectedComps[k]) selectedCount++; }
+      html += '<div style="font-size:11px;color:#666;margin-top:4px;">' + (comps.length > 0 ? 'Avg of ' + selectedCount + ' selected comps' : 'Based on Zestimate') + '</div>';
+      html += '</div>';
+
+      // Right: Deal inputs
+      html += '<div style="background:white;border:1px solid #eee;border-radius:10px;padding:20px;">';
+      html += '<div style="font-size:13px;font-weight:700;color:#1B2A4A;margin-bottom:12px;">Deal Analysis Inputs</div>';
+
+      html += '<div style="margin-bottom:10px;">';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Contract Price ($)</label>';
+      html += '<input type="number" id="arvCalcContract" value="' + (arvCalcState.contractPrice || '') + '" placeholder="Enter contract price" oninput="updateARVCalcDeal()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;margin-top:2px;">';
+      html += '</div>';
+
+      html += '<div style="margin-bottom:8px;">';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Repairs</label>';
+      html += '<div style="display:flex;gap:6px;margin-top:4px;">';
+      var presets = [{label:'Light $10K',val:10000},{label:'Medium $25K',val:25000},{label:'Heavy $50K',val:50000}];
+      for (var pr = 0; pr < presets.length; pr++) {
+        var isActive = arvCalcState.repairs === presets[pr].val;
+        html += '<button onclick="setARVCalcRepairs(' + presets[pr].val + ')" style="padding:6px 10px;border:1px solid ' + (isActive ? '#2E75B6' : '#ddd') + ';background:' + (isActive ? '#E3F2FD' : 'white') + ';border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;color:' + (isActive ? '#1565C0' : '#666') + ';">' + presets[pr].label + '</button>';
+      }
+      html += '</div>';
+      html += '<input type="number" id="arvCalcRepairs" value="' + arvCalcState.repairs + '" placeholder="Custom" oninput="updateARVCalcDeal()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;margin-top:6px;">';
+      html += '</div>';
+
+      html += '</div>';
+      html += '</div>';
+
+      // MAO results grid
+      html += '<div id="arvCalcMAOGrid">';
+      html += buildARVCalcMAOGrid();
+      html += '</div>';
+
+      resultsDiv.innerHTML = html;
+    }
+
+    function toggleARVCalcComp(idx) {
+      arvCalcState.selectedComps[idx] = !arvCalcState.selectedComps[idx];
+      recalcARVFromComps();
+    }
+
+    function recalcARVFromCompsValue() {
+      if (!arvCalcState.data) return 0;
+      var comps = arvCalcState.data.comps || [];
+      var sum = 0;
+      var count = 0;
+      for (var i = 0; i < comps.length; i++) {
+        if (arvCalcState.selectedComps[i]) {
+          var price = comps[i].price || 0;
+          if (price > 0) { sum += price; count++; }
+        }
+      }
+      if (count > 0) return Math.round(sum / count);
+      // Fallback to zestimate or suggested ARV
+      var subj = arvCalcState.data.subject || {};
+      return arvCalcState.data.suggestedARV || subj.zestimate || 0;
+    }
+
+    function recalcARVFromComps() {
+      var arv = recalcARVFromCompsValue();
+      arvCalcState.calculatedARV = arv;
+      var arvDisplay = document.getElementById('arvCalcARVDisplay');
+      if (arvDisplay) arvDisplay.textContent = fmt(arv);
+
+      var selectedCount = 0;
+      for (var k in arvCalcState.selectedComps) { if (arvCalcState.selectedComps[k]) selectedCount++; }
+      if (arvDisplay && arvDisplay.nextElementSibling) {
+        arvDisplay.nextElementSibling.textContent = selectedCount > 0 ? 'Avg of ' + selectedCount + ' selected comps' : 'Based on Zestimate (no comps selected)';
+      }
+
+      var maoGrid = document.getElementById('arvCalcMAOGrid');
+      if (maoGrid) maoGrid.innerHTML = buildARVCalcMAOGrid();
+    }
+
+    function updateARVCalcDeal() {
+      var contractEl = document.getElementById('arvCalcContract');
+      var repairsEl = document.getElementById('arvCalcRepairs');
+      arvCalcState.contractPrice = contractEl ? parseFloat(contractEl.value) || 0 : 0;
+      arvCalcState.repairs = repairsEl ? parseFloat(repairsEl.value) || 0 : 0;
+
+      var maoGrid = document.getElementById('arvCalcMAOGrid');
+      if (maoGrid) maoGrid.innerHTML = buildARVCalcMAOGrid();
+    }
+
+    function setARVCalcRepairs(val) {
+      arvCalcState.repairs = val;
+      var repairsEl = document.getElementById('arvCalcRepairs');
+      if (repairsEl) repairsEl.value = val;
+      updateARVCalcDeal();
+
+      // Re-render to update button active states
+      if (arvCalcState.data) renderARVCalcResults(arvCalcState.data);
+    }
+
+    function buildARVCalcMAOGrid() {
+      var arv = arvCalcState.calculatedARV || 0;
+      var repairs = arvCalcState.repairs || 0;
+      var contract = arvCalcState.contractPrice || 0;
+
+      var cashMAO = arv * 0.70 - repairs;
+      var novMAO = arv * 0.85 - repairs;
+      var cashSpread = contract > 0 ? cashMAO - contract : 0;
+      var novSpread = contract > 0 ? novMAO - contract : 0;
+
+      var html = '';
+      html += '<div style="background:white;border:1px solid #eee;border-radius:10px;padding:20px;margin-bottom:20px;">';
+      html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-bottom:16px;">MAO Analysis — All Strategies</div>';
+
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">';
+
+      // Cash MAO
+      html += '<div style="background:#E8F5E9;border-radius:8px;padding:16px;">';
+      html += '<div style="font-size:11px;font-weight:600;color:#2E7D32;text-transform:uppercase;">Cash MAO (70%)</div>';
+      html += '<div style="font-size:24px;font-weight:800;color:#2E7D32;margin-top:4px;">' + fmt(cashMAO) + '</div>';
+      html += '<div style="font-size:11px;color:#666;margin-top:4px;">70% x ' + fmt(arv) + ' - ' + fmt(repairs) + ' repairs</div>';
+      if (contract > 0) {
+        var cashColor = cashSpread >= 10000 ? '#2E7D32' : (cashSpread >= 0 ? '#F57F17' : '#C62828');
+        var cashLabel = cashSpread >= 10000 ? 'Deal works!' : (cashSpread >= 0 ? 'Tight — negotiate' : 'No margin');
+        var cashBg = cashSpread >= 10000 ? '#C8E6C9' : (cashSpread >= 0 ? '#FFF8E1' : '#FFCDD2');
+        html += '<div style="margin-top:8px;padding:6px 10px;background:' + cashBg + ';border-radius:4px;font-size:12px;font-weight:700;color:' + cashColor + ';">' + cashLabel + ' (spread: ' + fmt(cashSpread) + ')</div>';
+      }
+      html += '</div>';
+
+      // Novation MAO
+      html += '<div style="background:#E3F2FD;border-radius:8px;padding:16px;">';
+      html += '<div style="font-size:11px;font-weight:600;color:#1565C0;text-transform:uppercase;">Novation MAO (85%)</div>';
+      html += '<div style="font-size:24px;font-weight:800;color:#1565C0;margin-top:4px;">' + fmt(novMAO) + '</div>';
+      html += '<div style="font-size:11px;color:#666;margin-top:4px;">85% x ' + fmt(arv) + ' - ' + fmt(repairs) + ' repairs</div>';
+      if (contract > 0) {
+        var novColor = novSpread >= 10000 ? '#2E7D32' : (novSpread >= 0 ? '#F57F17' : '#C62828');
+        var novLabel = novSpread >= 10000 ? 'Deal works!' : (novSpread >= 0 ? 'Tight — negotiate' : 'No margin');
+        var novBg = novSpread >= 10000 ? '#C8E6C9' : (novSpread >= 0 ? '#FFF8E1' : '#FFCDD2');
+        html += '<div style="margin-top:8px;padding:6px 10px;background:' + novBg + ';border-radius:4px;font-size:12px;font-weight:700;color:' + novColor + ';">' + novLabel + ' (spread: ' + fmt(novSpread) + ')</div>';
+      }
+      html += '</div>';
+
+      html += '</div>';
+
+      // Quick summary
+      if (contract > 0) {
+        var bestStrategy = novSpread >= cashSpread ? 'Novation' : 'Cash';
+        var bestSpread = Math.max(cashSpread, novSpread);
+        var summaryColor = bestSpread >= 10000 ? '#2E7D32' : (bestSpread >= 0 ? '#F57F17' : '#C62828');
+        var summaryBg = bestSpread >= 10000 ? '#E8F5E9' : (bestSpread >= 0 ? '#FFF8E1' : '#FFEBEE');
+        html += '<div style="background:' + summaryBg + ';border-radius:8px;padding:16px;text-align:center;">';
+        html += '<div style="font-size:13px;font-weight:700;color:' + summaryColor + ';">';
+        if (bestSpread >= 10000) {
+          html += 'This deal works as a <strong>' + bestStrategy + '</strong> deal with ' + fmt(bestSpread) + ' spread';
+        } else if (bestSpread >= 0) {
+          html += 'Margins are tight. Best option: <strong>' + bestStrategy + '</strong> with ' + fmt(bestSpread) + ' spread. Consider negotiating.';
+        } else {
+          html += 'Contract price of ' + fmt(contract) + ' exceeds both MAOs. This deal does not pencil at current numbers.';
+        }
+        html += '</div>';
+        html += '</div>';
+      } else {
+        html += '<div style="background:#F0F4FF;border-radius:8px;padding:16px;text-align:center;">';
+        html += '<div style="font-size:13px;color:#666;">Enter a contract price above to see if this deal works</div>';
+        html += '</div>';
+      }
+
+      html += '</div>';
+      return html;
     }
 
   </script>
