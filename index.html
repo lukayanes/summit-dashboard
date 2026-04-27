@@ -1293,18 +1293,48 @@
     const calculateTeamMetrics = () => {
       const teams = {};
       ['Aubrey', 'Luka', 'Brennen'].forEach(name => {
-        const deals = DEALS.filter(d => d.dispo === name);
-        const won = deals.filter(d => d.status === 'Closed - Won');
-        const lost = deals.filter(d => d.status === 'Closed - Lost');
-        const active = deals.filter(d => ['Under Contract', 'Listed/Posted'].includes(d.status));
+        // Credit deals where person is acq OR dispo
+        // If both acq and dispo on same deal, each gets 50% credit
+        // If person is only acq or only dispo, they get 50% credit (their role's share)
+        let totalCredit = 0;
+        let wonCredit = 0;
+        let lostCredit = 0;
+        let activeCredit = 0;
+        let revenueCredit = 0;
+        const relatedDeals = [];
+
+        DEALS.forEach(d => {
+          const isAcq = d.acq === name;
+          const isDispo = d.dispo === name;
+          if (!isAcq && !isDispo) return;
+
+          // Each role (acq/dispo) gets 50% credit for the deal
+          const credit = (isAcq ? 0.5 : 0) + (isDispo ? 0.5 : 0);
+
+          totalCredit += credit;
+          relatedDeals.push(d);
+
+          if (d.status === 'Closed - Won') {
+            wonCredit += credit;
+            const rev = d.final !== null ? d.final : d.potential || 0;
+            revenueCredit += rev * credit;
+          }
+          if (d.status === 'Closed - Lost') {
+            lostCredit += credit;
+          }
+          if (['Under Contract', 'Listed/Posted'].includes(d.status)) {
+            activeCredit += credit;
+          }
+        });
+
         teams[name] = {
-          total: deals.length,
-          won: won.length,
-          lost: lost.length,
-          active: active.length,
-          winRate: deals.length > 0 ? won.length / deals.length : 0,
-          revenue: won.reduce((s, d) => s + (d.final !== null ? d.final : d.potential || 0), 0),
-          deals
+          total: Math.round(totalCredit * 10) / 10,
+          won: Math.round(wonCredit * 10) / 10,
+          lost: Math.round(lostCredit * 10) / 10,
+          active: Math.round(activeCredit * 10) / 10,
+          winRate: totalCredit > 0 ? wonCredit / totalCredit : 0,
+          revenue: Math.round(revenueCredit),
+          deals: relatedDeals
         };
       });
       return teams;
@@ -1995,7 +2025,7 @@
       const teams = calculateTeamMetrics();
       const colors = {Aubrey: '#2E75B6', Luka: '#548235', Brennen: '#ED7D31'};
       const photos = {Aubrey: 'images/aubrey.jpg', Luka: 'images/luka.jpg', Brennen: 'images/brennen.jpg'};
-      const roles = {Aubrey: 'Disposition Manager', Luka: 'Disposition Manager', Brennen: 'Acquisition Manager'};
+      const roles = {Aubrey: 'Disposition Manager', Luka: 'Acq + Disposition Manager', Brennen: 'Acquisition Manager'};
 
       let container = document.getElementById('teamCards');
       container.innerHTML = '';
