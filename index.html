@@ -4269,9 +4269,9 @@
             html += '</div>'; // end grid
 
             // Zillow data placeholder
-            html += '<div style="margin-top:16px;background:#F0F4FF;border:1px dashed #2E75B6;border-radius:8px;padding:16px;text-align:center;">';
+            html += '<div style="margin-top:16px;background:#F0F4FF;border:1px solid #2E75B6;border-radius:8px;padding:16px;text-align:center;">';
             html += '<div style="font-size:14px;font-weight:600;color:#2E75B6;">🏠 Zillow Property Data</div>';
-            html += '<div style="font-size:12px;color:#666;margin-top:4px;">Connect your RapidAPI key to auto-pull photos, comps, and property details from Zillow</div>';
+            html += '<div style="font-size:12px;color:#666;margin-top:4px;">Pull photos, comps, Zestimate, and property details from Zillow. Auto-fills FB post fields.</div>';
             html += '<button onclick="fetchZillowData(\'' + deal.address.replace(/'/g, "\\'") + '\')" style="margin-top:10px;padding:8px 20px;background:#2E75B6;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" id="zillowBtn_' + idx + '">Fetch Zillow Data</button>';
             html += '<div id="zillowData_' + idx + '" style="margin-top:12px;display:none;"></div>';
             html += '</div>';
@@ -4783,10 +4783,204 @@
     }
 
     /**
-     * Placeholder for Zillow data fetch (needs RapidAPI key)
+     * Zillow data cache on frontend
      */
-    function fetchZillowData(address) {
-      alert('Zillow API integration requires your RapidAPI key.\nThis will be wired up once the key is added to the Worker.');
+    let zillowDataCache = {};
+
+    /**
+     * Fetch Zillow data for a property address via the Worker proxy
+     */
+    async function fetchZillowData(address) {
+      // Find the button and data container by looking for elements with matching address
+      const deals = getDispoDeals();
+      const idx = deals.findIndex(d => d.address === address);
+      const btn = document.getElementById('zillowBtn_' + idx);
+      const dataDiv = document.getElementById('zillowData_' + idx);
+
+      if (!btn || !dataDiv) return;
+
+      // Check cache first
+      if (zillowDataCache[address]) {
+        dataDiv.style.display = 'block';
+        renderZillowData(dataDiv, zillowDataCache[address], address);
+        return;
+      }
+
+      // Show loading state
+      btn.disabled = true;
+      btn.textContent = '⏳ Fetching from Zillow...';
+      btn.style.opacity = '0.6';
+
+      try {
+        const workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        const resp = await fetch(workerUrl + '/api/zillow/lookup?address=' + encodeURIComponent(address));
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(function() { return { error: resp.statusText }; });
+          throw new Error(err.error || 'API request failed');
+        }
+
+        const data = await resp.json();
+        zillowDataCache[address] = data;
+
+        dataDiv.style.display = 'block';
+        renderZillowData(dataDiv, data, address);
+
+        btn.textContent = '✅ Data Loaded — Click to Refresh';
+        btn.style.opacity = '1';
+        btn.disabled = false;
+
+      } catch (err) {
+        btn.textContent = '❌ ' + err.message;
+        btn.style.opacity = '1';
+        btn.disabled = false;
+        setTimeout(function() {
+          btn.textContent = 'Retry Zillow Fetch';
+        }, 3000);
+      }
+    }
+
+    /**
+     * Render Zillow data into the data container
+     */
+    function renderZillowData(container, data, address) {
+      if (!data.found) {
+        container.innerHTML = '<div style="padding:12px;color:#C62828;font-size:13px;">No Zillow data found for this address. ' + (data.message || '') + '</div>';
+        return;
+      }
+
+      var html = '';
+
+      // Property details row
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(120px, 1fr));gap:8px;margin-bottom:12px;text-align:left;">';
+
+      var details = [
+        { label: 'Beds', value: data.bedrooms || '—' },
+        { label: 'Baths', value: data.bathrooms || '—' },
+        { label: 'Sqft', value: data.livingArea ? data.livingArea.toLocaleString() : '—' },
+        { label: 'Lot', value: data.lotSize ? (data.lotSize > 1000 ? data.lotSize.toLocaleString() + ' sqft' : (data.lotSize + ' ' + (data.lotUnit || 'acres'))) : '—' },
+        { label: 'Year Built', value: data.yearBuilt || '—' },
+        { label: 'Type', value: data.propertyType || '—' },
+        { label: 'Zestimate', value: data.zestimate ? fmt(data.zestimate) : '—' },
+        { label: 'Rent Estimate', value: data.rentZestimate ? fmt(data.rentZestimate) + '/mo' : '—' },
+      ];
+
+      details.forEach(function(d) {
+        html += '<div style="background:white;border-radius:6px;padding:8px;border:1px solid #e0e0e0;">';
+        html += '<div style="font-size:10px;font-weight:600;color:#999;text-transform:uppercase;">' + d.label + '</div>';
+        html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-top:2px;">' + d.value + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+
+      // Auto-fill property data into FB post fields if they exist
+      var safeAddr = address.replace(/[^a-zA-Z0-9]/g, '_');
+      if (data.bedrooms) {
+        var bedEl = document.getElementById('fb_beds_' + safeAddr);
+        if (bedEl && !bedEl.value) bedEl.value = data.bedrooms;
+      }
+      if (data.bathrooms) {
+        var bathEl = document.getElementById('fb_baths_' + safeAddr);
+        if (bathEl && !bathEl.value) bathEl.value = data.bathrooms;
+      }
+      if (data.livingArea) {
+        var sqftEl = document.getElementById('fb_sqft_' + safeAddr);
+        if (sqftEl && !sqftEl.value) sqftEl.value = data.livingArea;
+      }
+      if (data.lotSize) {
+        var lotEl = document.getElementById('fb_lot_' + safeAddr);
+        if (lotEl && !lotEl.value) lotEl.value = data.lotSize;
+      }
+      if (data.yearBuilt) {
+        var yearEl = document.getElementById('fb_year_' + safeAddr);
+        if (yearEl && !yearEl.value) yearEl.value = data.yearBuilt;
+      }
+      if (data.zestimate) {
+        var arvEl = document.getElementById('fb_arv_' + safeAddr) || document.getElementById('arv_' + safeAddr);
+        if (arvEl && !arvEl.value) arvEl.value = data.zestimate;
+      }
+      if (data.rentZestimate) {
+        var rentEl = document.getElementById('fb_rent_' + safeAddr);
+        if (rentEl && !rentEl.value) rentEl.value = data.rentZestimate;
+      }
+
+      // Photos grid
+      var photos = data.photos || [];
+      if (photos.length > 0) {
+        html += '<div style="margin-bottom:12px;">';
+        html += '<div style="font-size:13px;font-weight:600;color:#1B2A4A;margin-bottom:6px;">📸 Property Photos (' + photos.length + ')</div>';
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(150px, 1fr));gap:6px;max-height:300px;overflow-y:auto;">';
+        photos.slice(0, 20).forEach(function(photo) {
+          var imgUrl = typeof photo === 'string' ? photo : (photo.url || photo.mixedSources?.jpeg?.[0]?.url || photo.subjectType?.url || '');
+          if (imgUrl) {
+            html += '<img src="' + imgUrl + '" style="width:100%;height:120px;object-fit:cover;border-radius:6px;cursor:pointer;" onclick="window.open(\'' + imgUrl + '\', \'_blank\')" loading="lazy">';
+          }
+        });
+        html += '</div></div>';
+      }
+
+      // Comps section
+      var comps = data.comps || [];
+      if (comps.length > 0) {
+        html += '<div>';
+        html += '<div style="font-size:13px;font-weight:600;color:#1B2A4A;margin-bottom:6px;">🏘️ Comparable Sales (' + comps.length + ')</div>';
+        html += '<div style="overflow-x:auto;">';
+        html += '<table style="width:100%;font-size:12px;border-collapse:collapse;">';
+        html += '<thead><tr style="background:#1B2A4A;color:white;">';
+        html += '<th style="padding:6px 8px;text-align:left;">Address</th>';
+        html += '<th style="padding:6px 8px;text-align:right;">Sale Price</th>';
+        html += '<th style="padding:6px 8px;text-align:center;">Beds</th>';
+        html += '<th style="padding:6px 8px;text-align:center;">Baths</th>';
+        html += '<th style="padding:6px 8px;text-align:right;">Sqft</th>';
+        html += '<th style="padding:6px 8px;text-align:right;">$/Sqft</th>';
+        html += '<th style="padding:6px 8px;text-align:right;">Distance</th>';
+        html += '</tr></thead><tbody>';
+
+        comps.slice(0, 10).forEach(function(comp, i) {
+          var compAddr = comp.address || comp.streetAddress || (comp.addressStreet ? comp.addressStreet + ', ' + comp.addressCity : '—');
+          var compPrice = comp.price || comp.lastSoldPrice || comp.soldPrice || 0;
+          var compBeds = comp.bedrooms || comp.beds || '—';
+          var compBaths = comp.bathrooms || comp.baths || '—';
+          var compSqft = comp.livingArea || comp.sqft || 0;
+          var pricePerSqft = compSqft > 0 ? Math.round(compPrice / compSqft) : 0;
+          var distance = comp.distance ? comp.distance.toFixed(1) + ' mi' : '—';
+
+          html += '<tr style="border-bottom:1px solid #eee;' + (i % 2 === 0 ? '' : 'background:#f9f9f9;') + '">';
+          html += '<td style="padding:6px 8px;">' + compAddr + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;font-weight:600;">' + (compPrice ? fmt(compPrice) : '—') + '</td>';
+          html += '<td style="padding:6px 8px;text-align:center;">' + compBeds + '</td>';
+          html += '<td style="padding:6px 8px;text-align:center;">' + compBaths + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;">' + (compSqft ? compSqft.toLocaleString() : '—') + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;">' + (pricePerSqft ? '$' + pricePerSqft : '—') + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;">' + distance + '</td>';
+          html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+
+        // Comps summary
+        var compPrices = comps.filter(function(c) { return c.price || c.lastSoldPrice || c.soldPrice; })
+          .map(function(c) { return c.price || c.lastSoldPrice || c.soldPrice; });
+        if (compPrices.length > 0) {
+          var avgComp = compPrices.reduce(function(a, b) { return a + b; }, 0) / compPrices.length;
+          var medianComp = compPrices.sort(function(a, b) { return a - b; })[Math.floor(compPrices.length / 2)];
+          html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px;">';
+          html += '<div style="background:#E8F5E9;border-radius:6px;padding:8px;text-align:center;"><div style="font-size:10px;font-weight:600;color:#2E7D32;">AVG COMP</div><div style="font-size:16px;font-weight:700;color:#2E7D32;">' + fmt(avgComp) + '</div></div>';
+          html += '<div style="background:#E3F2FD;border-radius:6px;padding:8px;text-align:center;"><div style="font-size:10px;font-weight:600;color:#1565C0;">MEDIAN COMP</div><div style="font-size:16px;font-weight:700;color:#1565C0;">' + fmt(medianComp) + '</div></div>';
+          html += '<div style="background:#F3E5F5;border-radius:6px;padding:8px;text-align:center;"><div style="font-size:10px;font-weight:600;color:#7B1FA2;">COMP COUNT</div><div style="font-size:16px;font-weight:700;color:#7B1FA2;">' + compPrices.length + '</div></div>';
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+
+      // Description
+      if (data.description) {
+        html += '<div style="margin-top:12px;font-size:12px;color:#666;line-height:1.5;max-height:100px;overflow-y:auto;background:white;padding:10px;border-radius:6px;border:1px solid #e0e0e0;">';
+        html += '<strong style="color:#1B2A4A;">Zillow Description:</strong> ' + data.description.substring(0, 500) + (data.description.length > 500 ? '...' : '');
+        html += '</div>';
+      }
+
+      container.innerHTML = html;
     }
 
   </script>
