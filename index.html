@@ -5665,6 +5665,16 @@
         html += '</div>';
       }
 
+      // Zillow link for subject property
+      if (subj.zpid) {
+        var subjZillowUrl = 'https://www.zillow.com/homedetails/' + subj.zpid + '_zpid/';
+        var subjAddrDisplay = subj.address || '';
+        if (typeof subjAddrDisplay === 'object') subjAddrDisplay = (subjAddrDisplay.streetAddress || '') + ', ' + (subjAddrDisplay.city || '') + ', ' + (subjAddrDisplay.state || '') + ' ' + (subjAddrDisplay.zipcode || '');
+        html += '<div style="margin-bottom:12px;">';
+        html += '<a href="' + subjZillowUrl + '" target="_blank" style="font-size:15px;font-weight:700;color:#1565C0;text-decoration:none;">' + (subjAddrDisplay || 'Subject Property') + ' — View on Zillow ↗</a>';
+        html += '</div>';
+      }
+
       // Subject property details cards
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px;">';
       var details = [
