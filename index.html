@@ -957,6 +957,22 @@
           const closeDate = parseDate(r[iCloseDate]);
           const month = (iMonth >= 0 && r[iMonth]) ? r[iMonth] : deriveMonth(closeDate || ucDate);
 
+          // Parse notes field for structured GHL webhook data
+          // Format: "Auto-added from GHL webhook. | Monthly Payment: $2,500 | EMD: $500 | Existing Mortgage: $326,971"
+          const rawNotes = (iNotes >= 0 ? r[iNotes] : '') || '';
+          const parsedMeta = {};
+          if (rawNotes.includes('|')) {
+            rawNotes.split('|').forEach(segment => {
+              const s = segment.trim();
+              const colonIdx = s.indexOf(':');
+              if (colonIdx > 0) {
+                const key = s.substring(0, colonIdx).trim().toLowerCase();
+                const val = s.substring(colonIdx + 1).trim();
+                parsedMeta[key] = val;
+              }
+            });
+          }
+
           deals.push({
             id: name,
             address: r[iAddr] || '',
@@ -975,7 +991,20 @@
             repairs: parseNum(r[iRepairs]),
             potential: parseNum(r[iPotential]),
             final: parseNum(r[iFinal]),
-            notes: (iNotes >= 0 ? r[iNotes] : '') || ''
+            notes: rawNotes,
+            // Parsed GHL webhook data from notes column
+            meta: parsedMeta,
+            monthlyPayment: parseNum(parsedMeta['monthly payment']),
+            emd: parseNum(parsedMeta['emd']),
+            existingMortgage: parseNum(parsedMeta['existing mortgage']),
+            loanBalance: parseNum(parsedMeta['loan balance'] || parsedMeta['existing mortgage']),
+            piti: parseNum(parsedMeta['piti'] || parsedMeta['monthly payment']),
+            interestRate: parseNum(parsedMeta['interest rate'] || parsedMeta['ir'] || parsedMeta['rate']),
+            downPayment: parseNum(parsedMeta['down payment'] || parsedMeta['dp']),
+            sellerPayment: parseNum(parsedMeta['seller payment'] || parsedMeta['payment to seller']),
+            entryFee: parseNum(parsedMeta['entry'] || parsedMeta['entry cost'] || parsedMeta['total entry']),
+            rent: parseNum(parsedMeta['rent'] || parsedMeta['ltr']),
+            arv: parseNum(parsedMeta['arv']),
           });
         }
         return deals;
@@ -4256,7 +4285,7 @@
           // Address + seller
           html += '<div>';
           html += '<div style="font-size:15px;font-weight:700;color:#1B2A4A;">' + deal.address + '</div>';
-          html += '<div style="font-size:12px;color:#999;margin-top:2px;">' + deal.id + ' &middot; ' + deal.market + ' &middot; Dispo: ' + deal.dispo + '</div>';
+          html += '<div style="font-size:12px;color:#999;margin-top:2px;">' + deal.id + ' &middot; ' + deal.market + ' &middot; Dispo: ' + deal.dispo + (deal.meta && Object.keys(deal.meta).length > 0 ? ' &middot; <span style="color:#2E75B6;font-weight:600;">GHL DATA ✓</span>' : '') + '</div>';
           html += '</div>';
 
           // Strategy badge
@@ -4285,6 +4314,18 @@
           // Expanded content
           if (isExpanded) {
             html += '<div style="border-top:1px solid #eee;padding:20px;">';
+
+            // GHL webhook data summary (if parsed from column R)
+            if (deal.meta && Object.keys(deal.meta).length > 0) {
+              html += '<div style="background:#E3F2FD;border:1px solid #BBDEFB;border-radius:8px;padding:12px 16px;margin-bottom:16px;">';
+              html += '<div style="font-size:11px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">📡 Auto-filled from GHL Webhook</div>';
+              html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+              Object.entries(deal.meta).forEach(function(entry) {
+                var mk = entry[0]; var mv = entry[1];
+                html += '<span style="background:white;border:1px solid #90CAF9;border-radius:4px;padding:3px 8px;font-size:12px;"><strong style="color:#1565C0;">' + mk.replace(/\b\w/g, function(l){return l.toUpperCase();}) + ':</strong> ' + mv + '</span>';
+              });
+              html += '</div></div>';
+            }
 
             // Deal info row
             html += '<div style="display:grid;grid-template-columns:repeat(6, 1fr);gap:12px;margin-bottom:20px;">';
@@ -4394,7 +4435,7 @@
       html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">';
       html += '<div>';
       html += '<label style="font-size:11px;font-weight:600;color:#666;">Estimated ARV ($)</label>';
-      html += '<input type="number" id="arv_' + safeAddr + '" value="' + (deal.listed || '') + '" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '<input type="number" id="arv_' + safeAddr + '" value="' + (deal.arv || deal.listed || '') + '" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
       html += '</div>';
       html += '<div>';
       html += '<label style="font-size:11px;font-weight:600;color:#666;">Repairs ($)</label>';
@@ -4435,15 +4476,15 @@
       html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">';
       html += '<div>';
       html += '<label style="font-size:11px;font-weight:600;color:#666;">Rent Estimate ($/mo)</label>';
-      html += '<input type="number" id="sfRent_' + safeAddr + '" value="" placeholder="1500" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '<input type="number" id="sfRent_' + safeAddr + '" value="' + (deal.rent || '') + '" placeholder="1500" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
       html += '</div>';
       html += '<div>';
       html += '<label style="font-size:11px;font-weight:600;color:#666;">Payment to Seller ($/mo)</label>';
-      html += '<input type="number" id="sfPayment_' + safeAddr + '" value="" placeholder="800" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '<input type="number" id="sfPayment_' + safeAddr + '" value="' + (deal.sellerPayment || deal.monthlyPayment || '') + '" placeholder="800" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
       html += '</div>';
       html += '<div>';
       html += '<label style="font-size:11px;font-weight:600;color:#666;">Entry Cost ($)</label>';
-      html += '<input type="number" id="sfEntry_' + safeAddr + '" value="" placeholder="5000" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '<input type="number" id="sfEntry_' + safeAddr + '" value="' + (deal.entryFee || deal.emd || '') + '" placeholder="5000" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
       html += '</div>';
       html += '</div>';
 
@@ -4471,19 +4512,19 @@
       html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">';
       html += '<div>';
       html += '<label style="font-size:11px;font-weight:600;color:#666;">Estimated ARV ($)</label>';
-      html += '<input type="number" id="stARV_' + safeAddr + '" value="' + (deal.listed || '') + '" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '<input type="number" id="stARV_' + safeAddr + '" value="' + (deal.arv || deal.listed || '') + '" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
       html += '</div>';
       html += '<div>';
       html += '<label style="font-size:11px;font-weight:600;color:#666;">Monthly PITI ($)</label>';
-      html += '<input type="number" id="stPITI_' + safeAddr + '" value="" placeholder="1200" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '<input type="number" id="stPITI_' + safeAddr + '" value="' + (deal.piti || deal.monthlyPayment || '') + '" placeholder="1200" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
       html += '</div>';
       html += '<div>';
       html += '<label style="font-size:11px;font-weight:600;color:#666;">Rent Estimate ($/mo)</label>';
-      html += '<input type="number" id="stRent_' + safeAddr + '" value="" placeholder="1500" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '<input type="number" id="stRent_' + safeAddr + '" value="' + (deal.rent || '') + '" placeholder="1500" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
       html += '</div>';
       html += '<div>';
       html += '<label style="font-size:11px;font-weight:600;color:#666;">Loan Balance ($)</label>';
-      html += '<input type="number" id="stLoanBal_' + safeAddr + '" value="" placeholder="150000" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '<input type="number" id="stLoanBal_' + safeAddr + '" value="' + (deal.loanBalance || deal.existingMortgage || '') + '" placeholder="150000" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
       html += '</div>';
       html += '</div>';
 
@@ -4802,15 +4843,15 @@
         html += '</div>';
         html += '<div>';
         html += '<label style="font-size:11px;font-weight:600;color:#666;">Interest Rate (%)</label>';
-        html += '<input type="number" id="fb_rate_' + safeAddr + '" value="0" step="0.5" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '<input type="number" id="fb_rate_' + safeAddr + '" value="' + (deal.interestRate || 0) + '" step="0.5" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
         html += '</div>';
         html += '<div>';
         html += '<label style="font-size:11px;font-weight:600;color:#666;">Payment to Seller ($/mo)</label>';
-        html += '<input type="number" id="fb_payment_' + safeAddr + '" placeholder="550" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '<input type="number" id="fb_payment_' + safeAddr + '" value="' + (deal.sellerPayment || deal.monthlyPayment || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
         html += '</div>';
         html += '<div>';
         html += '<label style="font-size:11px;font-weight:600;color:#666;">SF Amount ($)</label>';
-        html += '<input type="number" id="fb_sfamt_' + safeAddr + '" value="' + (deal.contract || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '<input type="number" id="fb_sfamt_' + safeAddr + '" value="' + (deal.existingMortgage || deal.contract || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
         html += '</div>';
         html += '<div>';
         html += '<label style="font-size:11px;font-weight:600;color:#666;">Term (Years)</label>';
@@ -4822,11 +4863,11 @@
         html += '</div>';
         html += '<div>';
         html += '<label style="font-size:11px;font-weight:600;color:#666;">Rent Estimate ($/mo)</label>';
-        html += '<input type="number" id="fb_rent_' + safeAddr + '" placeholder="1400" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '<input type="number" id="fb_rent_' + safeAddr + '" value="' + (deal.rent || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
         html += '</div>';
         html += '<div>';
         html += '<label style="font-size:11px;font-weight:600;color:#666;">Entry Cost ($)</label>';
-        html += '<input type="number" id="fb_entry_' + safeAddr + '" placeholder="9900" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '<input type="number" id="fb_entry_' + safeAddr + '" value="' + (deal.entryFee || deal.emd || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
         html += '</div>';
         html += '</div>';
         html += '<div style="margin-bottom:10px;">';
@@ -4849,23 +4890,23 @@
         html += '</div>';
         html += '<div>';
         html += '<label style="font-size:11px;font-weight:600;color:#666;">Monthly PITI ($)</label>';
-        html += '<input type="number" id="fb_piti_' + safeAddr + '" placeholder="950" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '<input type="number" id="fb_piti_' + safeAddr + '" value="' + (deal.piti || deal.monthlyPayment || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
         html += '</div>';
         html += '<div>';
         html += '<label style="font-size:11px;font-weight:600;color:#666;">Rent Estimate ($)</label>';
-        html += '<input type="number" id="fb_rent_' + safeAddr + '" placeholder="1400" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '<input type="number" id="fb_rent_' + safeAddr + '" value="' + (deal.rent || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
         html += '</div>';
         html += '<div>';
         html += '<label style="font-size:11px;font-weight:600;color:#666;">Loan Balance ($)</label>';
-        html += '<input type="number" id="fb_balance_' + safeAddr + '" value="' + (deal.contract || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '<input type="number" id="fb_balance_' + safeAddr + '" value="' + (deal.loanBalance || deal.existingMortgage || deal.contract || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
         html += '</div>';
         html += '<div>';
         html += '<label style="font-size:11px;font-weight:600;color:#666;">Entry Cost ($)</label>';
-        html += '<input type="number" id="fb_entry_' + safeAddr + '" placeholder="5000" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '<input type="number" id="fb_entry_' + safeAddr + '" value="' + (deal.entryFee || deal.emd || '') + '" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
         html += '</div>';
         html += '<div>';
         html += '<label style="font-size:11px;font-weight:600;color:#666;">Interest Rate (%)</label>';
-        html += '<input type="number" id="fb_rate_' + safeAddr + '" placeholder="4.5" step="0.125" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
+        html += '<input type="number" id="fb_rate_' + safeAddr + '" value="' + (deal.interestRate || '') + '" step="0.125" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px;font-size:13px;">';
         html += '</div>';
         html += '</div>';
         html += '<div style="margin-bottom:10px;">';
