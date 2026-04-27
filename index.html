@@ -5837,6 +5837,59 @@
       html += buildARVCalcMAOGrid();
       html += '</div>';
 
+      // Equity projection section
+      var eqLastSale = subj.lastSalePrice || 0;
+      var eqLastDate = subj.lastSaleDate || '';
+      var eqDefRate = eqLastDate ? getHistoricalMortgageRate(eqLastDate) : 6.75;
+      var eqDefDown = arvCalcState.eqDown || 5;
+      var eqDefAppreciation = arvCalcState.eqAppreciation || 3;
+
+      html += '<div style="margin-top:20px;background:#EDE7F6;border:1px solid #B39DDB;border-radius:10px;padding:20px;">';
+      html += '<div style="font-size:16px;font-weight:700;color:#4A148C;margin-bottom:4px;">📈 Equity Projection — 30yr Fixed</div>';
+      html += '<div style="font-size:12px;color:#666;margin-bottom:4px;">Based on last known sale price + historical avg mortgage rate at time of purchase</div>';
+      if (eqLastSale && eqLastDate) {
+        html += '<div style="font-size:12px;color:#4A148C;font-weight:600;margin-bottom:14px;">Last sold ' + new Date(eqLastDate).toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'}) + ' for ' + fmt(eqLastSale) + ' · Est. rate at time: ' + eqDefRate.toFixed(2) + '%</div>';
+      } else if (eqLastSale) {
+        html += '<div style="font-size:12px;color:#4A148C;font-weight:600;margin-bottom:14px;">Last sold for ' + fmt(eqLastSale) + '</div>';
+      } else {
+        html += '<div style="font-size:12px;color:#F57F17;font-weight:600;margin-bottom:14px;">⚠ No sale history found — enter sale price manually</div>';
+      }
+
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">';
+
+      // Sale price
+      html += '<div><label style="font-size:11px;font-weight:600;color:#555;">Last Sale Price ($)</label>';
+      html += '<input type="number" id="eqSalePrice" value="' + (eqLastSale || '') + '" placeholder="Enter sale price" oninput="calcEquityProjection()" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:13px;font-weight:600;margin-top:2px;"></div>';
+
+      // Interest rate
+      html += '<div><label style="font-size:11px;font-weight:600;color:#555;">Interest Rate (%)</label>';
+      html += '<input type="number" id="eqInterestRate" value="' + eqDefRate.toFixed(2) + '" step="0.125" oninput="calcEquityProjection()" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:13px;font-weight:600;margin-top:2px;"></div>';
+
+      html += '</div>';
+
+      // Down payment slider
+      html += '<div style="margin-bottom:16px;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+      html += '<label style="font-size:11px;font-weight:600;color:#555;">Down Payment</label>';
+      html += '<span id="eqDownLabel" style="font-size:13px;font-weight:700;color:#4A148C;">' + eqDefDown + '%</span>';
+      html += '</div>';
+      html += '<input type="range" id="eqDownPct" min="0" max="100" step="1" value="' + eqDefDown + '" oninput="document.getElementById(\'eqDownLabel\').textContent=this.value+\'%\';calcEquityProjection()" style="width:100%;margin-top:4px;accent-color:#4A148C;cursor:pointer;">';
+      html += '<div style="display:flex;justify-content:space-between;font-size:10px;color:#999;margin-top:2px;"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>';
+      html += '</div>';
+
+      // Appreciation rate
+      html += '<div style="margin-bottom:16px;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;">';
+      html += '<label style="font-size:11px;font-weight:600;color:#555;">Annual Appreciation</label>';
+      html += '<span id="eqAppreciationLabel" style="font-size:13px;font-weight:700;color:#4A148C;">' + eqDefAppreciation + '%</span>';
+      html += '</div>';
+      html += '<input type="range" id="eqAppreciation" min="0" max="10" step="0.5" value="' + eqDefAppreciation + '" oninput="document.getElementById(\'eqAppreciationLabel\').textContent=this.value+\'%\';calcEquityProjection()" style="width:100%;margin-top:4px;accent-color:#4A148C;cursor:pointer;">';
+      html += '<div style="display:flex;justify-content:space-between;font-size:10px;color:#999;margin-top:2px;"><span>0%</span><span>2.5%</span><span>5%</span><span>7.5%</span><span>10%</span></div>';
+      html += '</div>';
+
+      html += '<div id="equityProjectionResults"></div>';
+      html += '</div>';
+
       // Rentometer section
       var arvBeds = subj.bedrooms || 3;
       var arvAddress = subj.address || '';
@@ -5866,6 +5919,9 @@
       if (hasMapData) {
         initARVCompMap(subj, comps);
       }
+
+      // Auto-calculate equity projection
+      calcEquityProjection();
     }
 
     var arvCompMapInstance = null;
@@ -6040,12 +6096,23 @@
         container.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;">No photos found for this property.</div>';
         return;
       }
-      var html = '<div style="display:flex;gap:8px;overflow-x:auto;padding:4px 0;">';
+      var heroId = 'compHero_' + Math.random().toString(36).substr(2, 6);
+      var html = '<div style="display:flex;gap:12px;padding:8px 0;flex-wrap:wrap;">';
+      // Hero image
+      html += '<div style="flex:0 0 auto;">';
+      html += '<img id="' + heroId + '" src="' + photos[0] + '" style="width:280px;height:190px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid #1B2A4A;" onclick="openCompPhotoModal(this.src)">';
+      html += '</div>';
+      // Thumbnail grid
+      html += '<div style="flex:1;min-width:180px;overflow-x:auto;">';
+      html += '<div style="display:flex;gap:5px;flex-wrap:wrap;max-height:190px;overflow-y:auto;">';
       for (var i = 0; i < photos.length; i++) {
-        html += '<img src="' + photos[i] + '" style="height:120px;border-radius:6px;object-fit:cover;cursor:pointer;border:2px solid transparent;flex-shrink:0;" onclick="openCompPhotoModal(this.src)" onmouseover="this.style.borderColor=\'#2E75B6\'" onmouseout="this.style.borderColor=\'transparent\'">';
+        var activeBorder = (i === 0) ? '2px solid #ED7D31' : '2px solid transparent';
+        html += '<img src="' + photos[i] + '" style="width:70px;height:52px;object-fit:cover;border-radius:4px;cursor:pointer;border:' + activeBorder + ';flex-shrink:0;" onclick="document.getElementById(\'' + heroId + '\').src=this.src;this.parentNode.querySelectorAll(\'img\').forEach(function(i){i.style.border=\'2px solid transparent\';});this.style.border=\'2px solid #ED7D31\';" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">';
       }
       html += '</div>';
-      html += '<div style="font-size:10px;color:#999;margin-top:4px;">' + photos.length + ' photos found</div>';
+      html += '<div style="font-size:10px;color:#999;margin-top:4px;">' + photos.length + ' photos · Click main photo to enlarge</div>';
+      html += '</div>';
+      html += '</div>';
       container.innerHTML = html;
     }
 
@@ -6121,6 +6188,120 @@
 
       // Re-render to update button active states
       if (arvCalcState.data) renderARVCalcResults(arvCalcState.data);
+    }
+
+    // Historical US 30yr fixed mortgage rate averages by year (Freddie Mac PMMS)
+    function getHistoricalMortgageRate(dateStr) {
+      var rates = {
+        1990:10.13,1991:9.25,1992:8.39,1993:7.31,1994:8.38,1995:7.93,
+        1996:7.81,1997:7.60,1998:6.94,1999:7.44,2000:8.05,2001:6.97,
+        2002:6.54,2003:5.83,2004:5.84,2005:5.87,2006:6.41,2007:6.34,
+        2008:6.03,2009:5.04,2010:4.69,2011:4.45,2012:3.66,2013:3.98,
+        2014:4.17,2015:3.85,2016:3.65,2017:3.99,2018:4.54,2019:3.94,
+        2020:3.11,2021:2.96,2022:5.34,2023:6.81,2024:6.72,2025:6.65,2026:6.75
+      };
+      if (!dateStr) return 6.75;
+      var yr = new Date(dateStr).getFullYear();
+      return rates[yr] || 6.75;
+    }
+
+    function calcEquityProjection() {
+      var container = document.getElementById('equityProjectionResults');
+      if (!container) return;
+
+      var salePrice = parseFloat(document.getElementById('eqSalePrice').value) || 0;
+      var downPct = parseFloat(document.getElementById('eqDownPct').value) || 0;
+      var rate = parseFloat(document.getElementById('eqInterestRate').value) || 0;
+      var appreciation = parseFloat(document.getElementById('eqAppreciation').value) || 0;
+
+      // Save to state
+      arvCalcState.eqDown = downPct;
+      arvCalcState.eqAppreciation = appreciation;
+
+      if (salePrice <= 0) { container.innerHTML = '<div style="color:#999;font-size:12px;text-align:center;padding:12px;">Enter a sale price to see equity projection</div>'; return; }
+
+      var downPayment = salePrice * (downPct / 100);
+      var loanAmount = salePrice - downPayment;
+      var monthlyRate = (rate / 100) / 12;
+      var totalPayments = 360;
+
+      // Monthly P&I
+      var monthlyPI = 0;
+      if (monthlyRate > 0 && loanAmount > 0) {
+        monthlyPI = loanAmount * (monthlyRate * Math.pow(1 + monthlyRate, totalPayments)) / (Math.pow(1 + monthlyRate, totalPayments) - 1);
+      } else if (loanAmount > 0) {
+        monthlyPI = loanAmount / totalPayments;
+      }
+
+      // Calculate years of ownership from last sale date
+      var ownershipYears = 0;
+      var subj = arvCalcState.data ? arvCalcState.data.subject : null;
+      var lastSaleDate = subj ? subj.lastSaleDate : null;
+      if (lastSaleDate) {
+        var diff = Date.now() - new Date(lastSaleDate).getTime();
+        ownershipYears = Math.max(0, Math.round((diff / (1000 * 60 * 60 * 24 * 365.25)) * 10) / 10);
+      }
+
+      // Amortize to current ownership years
+      var balance = loanAmount;
+      var totalInterest = 0;
+      var totalPrincipal = 0;
+      var monthsOwned = Math.round(ownershipYears * 12);
+      for (var mo = 0; mo < monthsOwned && balance > 0; mo++) {
+        var intPmt = balance * monthlyRate;
+        var prinPmt = monthlyPI - intPmt;
+        if (prinPmt > balance) prinPmt = balance;
+        balance -= prinPmt;
+        totalInterest += intPmt;
+        totalPrincipal += prinPmt;
+      }
+      if (balance < 0) balance = 0;
+
+      var currentHomeValue = salePrice * Math.pow(1 + appreciation / 100, ownershipYears);
+      var currentEquity = currentHomeValue - balance;
+      var equityPct = currentHomeValue > 0 ? (currentEquity / currentHomeValue) * 100 : 0;
+      var appreciationGain = currentHomeValue - salePrice;
+
+      var html = '';
+
+      // Summary cards
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;">';
+
+      html += '<div style="background:white;border-radius:8px;padding:12px;text-align:center;border:1px solid #D1C4E9;">';
+      html += '<div style="font-size:10px;font-weight:600;color:#7E57C2;text-transform:uppercase;">Ownership</div>';
+      html += '<div style="font-size:20px;font-weight:800;color:#4A148C;">' + ownershipYears.toFixed(1) + ' yrs</div></div>';
+
+      html += '<div style="background:white;border-radius:8px;padding:12px;text-align:center;border:1px solid #D1C4E9;">';
+      html += '<div style="font-size:10px;font-weight:600;color:#7E57C2;text-transform:uppercase;">Monthly P&I</div>';
+      html += '<div style="font-size:20px;font-weight:800;color:#4A148C;">' + fmt(Math.round(monthlyPI)) + '</div></div>';
+
+      html += '<div style="background:white;border-radius:8px;padding:12px;text-align:center;border:1px solid #D1C4E9;">';
+      html += '<div style="font-size:10px;font-weight:600;color:#7E57C2;text-transform:uppercase;">Current Value</div>';
+      html += '<div style="font-size:20px;font-weight:800;color:#4A148C;">' + fmt(Math.round(currentHomeValue)) + '</div></div>';
+
+      html += '<div style="background:white;border-radius:8px;padding:12px;text-align:center;border:1px solid #D1C4E9;">';
+      html += '<div style="font-size:10px;font-weight:600;color:#7E57C2;text-transform:uppercase;">Remaining Bal</div>';
+      html += '<div style="font-size:20px;font-weight:800;color:#4A148C;">' + fmt(Math.round(balance)) + '</div></div>';
+
+      html += '<div style="background:#E8F5E9;border-radius:8px;padding:12px;text-align:center;border:2px solid #2E7D32;">';
+      html += '<div style="font-size:10px;font-weight:600;color:#2E7D32;text-transform:uppercase;">Est. Equity</div>';
+      html += '<div style="font-size:22px;font-weight:800;color:#2E7D32;">' + fmt(Math.round(currentEquity)) + '</div>';
+      html += '<div style="font-size:10px;color:#666;">' + equityPct.toFixed(1) + '% of value</div></div>';
+
+      html += '<div style="background:white;border-radius:8px;padding:12px;text-align:center;border:1px solid #D1C4E9;">';
+      html += '<div style="font-size:10px;font-weight:600;color:#7E57C2;text-transform:uppercase;">Appreciation</div>';
+      html += '<div style="font-size:20px;font-weight:800;color:#1565C0;">+' + fmt(Math.round(appreciationGain)) + '</div></div>';
+
+      html += '</div>';
+
+      // Breakdown caption
+      if (ownershipYears > 0) {
+        html += '<div style="margin-top:12px;font-size:11px;color:#666;text-align:center;">';
+        html += 'Principal paid down: ' + fmt(Math.round(totalPrincipal)) + ' · Interest paid: ' + fmt(Math.round(totalInterest)) + ' · Down payment: ' + fmt(Math.round(downPayment));
+        html += '</div>';
+      }
+
+      container.innerHTML = html;
     }
 
     function buildARVCalcMAOGrid() {
