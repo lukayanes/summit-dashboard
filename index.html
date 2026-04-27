@@ -4345,6 +4345,49 @@
             });
             html += '</div>';
 
+            // Property condition & closing costs inputs
+            html += '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:14px 16px;margin-bottom:18px;">';
+            html += '<div style="font-size:12px;font-weight:700;color:#F57F17;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">🔧 Property Condition & Closing Costs</div>';
+            html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;">';
+
+            html += '<div>';
+            html += '<label style="font-size:10px;font-weight:600;color:#666;display:block;margin-bottom:3px;">HVAC Age (years)</label>';
+            html += '<input type="number" id="cond_hvac_' + safeAddr + '" value="' + (deal.meta && deal.meta['hvac age'] ? parseFloat(deal.meta['hvac age']) : '') + '" placeholder="e.g. 12" min="0" max="50" oninput="updateCondWarnings(\'' + safeAddr + '\')" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;font-size:13px;font-weight:600;">';
+            html += '<div style="font-size:9px;color:#999;margin-top:2px;">15+ yrs = replace soon</div>';
+            html += '</div>';
+
+            html += '<div>';
+            html += '<label style="font-size:10px;font-weight:600;color:#666;display:block;margin-bottom:3px;">Water Heater Age (yrs)</label>';
+            html += '<input type="number" id="cond_wh_' + safeAddr + '" value="' + (deal.meta && deal.meta['water heater age'] ? parseFloat(deal.meta['water heater age']) : '') + '" placeholder="e.g. 8" min="0" max="30" oninput="updateCondWarnings(\'' + safeAddr + '\')" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;font-size:13px;font-weight:600;">';
+            html += '<div style="font-size:9px;color:#999;margin-top:2px;">10+ yrs = replace soon</div>';
+            html += '</div>';
+
+            html += '<div>';
+            html += '<label style="font-size:10px;font-weight:600;color:#666;display:block;margin-bottom:3px;">Roof Age (years)</label>';
+            html += '<input type="number" id="cond_roof_' + safeAddr + '" value="' + (deal.meta && deal.meta['roof age'] ? parseFloat(deal.meta['roof age']) : '') + '" placeholder="e.g. 20" min="0" max="50" oninput="updateCondWarnings(\'' + safeAddr + '\')" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;font-size:13px;font-weight:600;">';
+            html += '<div style="font-size:9px;color:#999;margin-top:2px;">20+ yrs = replace soon</div>';
+            html += '</div>';
+
+            html += '<div>';
+            html += '<label style="font-size:10px;font-weight:600;color:#666;display:block;margin-bottom:3px;">Est. Closing Costs ($)</label>';
+            html += '<input type="number" id="cond_cc_' + safeAddr + '" value="' + (deal.meta && deal.meta['closing costs'] ? parseFloat(deal.meta['closing costs'].replace(/[^0-9.]/g,'')) : '') + '" placeholder="e.g. 5000" min="0" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;font-size:13px;font-weight:600;">';
+            html += '<div style="font-size:9px;color:#999;margin-top:2px;">Both sides typical</div>';
+            html += '</div>';
+
+            html += '</div>'; // end grid
+
+            // Warning flags for old systems
+            html += '<div id="condWarnings_' + safeAddr + '" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">';
+            var hvacVal = deal.meta && deal.meta['hvac age'] ? parseFloat(deal.meta['hvac age']) : null;
+            var whVal = deal.meta && deal.meta['water heater age'] ? parseFloat(deal.meta['water heater age']) : null;
+            var roofVal = deal.meta && deal.meta['roof age'] ? parseFloat(deal.meta['roof age']) : null;
+            if (hvacVal && hvacVal >= 15) html += '<span style="background:#FFCDD2;color:#C62828;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;">⚠️ HVAC ' + hvacVal + 'yr — budget $4-8K</span>';
+            if (whVal && whVal >= 10) html += '<span style="background:#FFCDD2;color:#C62828;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;">⚠️ Water Heater ' + whVal + 'yr — budget $1-2K</span>';
+            if (roofVal && roofVal >= 20) html += '<span style="background:#FFCDD2;color:#C62828;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;">⚠️ Roof ' + roofVal + 'yr — budget $5-15K</span>';
+            html += '</div>';
+
+            html += '</div>'; // end condition section
+
             // Action sections based on deal type
             html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">';
 
@@ -4377,6 +4420,23 @@
             html += '<div style="font-size:12px;color:#666;margin-top:4px;">Pull photos, comps, Zestimate, and property details from Zillow. Auto-fills FB post fields.</div>';
             html += '<button onclick="fetchZillowData(\'' + deal.address.replace(/'/g, "\\'") + '\')" style="margin-top:10px;padding:8px 20px;background:#2E75B6;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" id="zillowBtn_' + idx + '">Fetch Zillow Data</button>';
             html += '<div id="zillowData_' + idx + '" style="margin-top:12px;display:none;"></div>';
+            html += '</div>';
+
+            // Rentometer rent estimate section
+            html += '<div style="margin-top:12px;background:#E8F5E9;border:1px solid #A5D6A7;border-radius:8px;padding:16px;text-align:center;">';
+            html += '<div style="font-size:14px;font-weight:600;color:#2E7D32;">📊 Rentometer Rent Estimate</div>';
+            html += '<div style="font-size:12px;color:#666;margin-top:4px;">Get median rent, range (25th-75th percentile), and auto-fill your cashflow calculators.</div>';
+            html += '<div style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:10px;">';
+            html += '<label style="font-size:11px;font-weight:600;color:#555;">Beds:</label>';
+            html += '<select id="rentoBeds_' + safeAddr + '" style="padding:5px 8px;border:1px solid #ccc;border-radius:4px;font-size:13px;">';
+            for (var b = 0; b <= 6; b++) {
+              var bLabel = b === 0 ? 'Studio' : b + ' bed';
+              html += '<option value="' + b + '"' + (b === 3 ? ' selected' : '') + '>' + bLabel + '</option>';
+            }
+            html += '</select>';
+            html += '<button onclick="fetchRentometer(\'' + deal.address.replace(/'/g, "\\'") + '\', document.getElementById(\'rentoBeds_' + safeAddr + '\').value, \'rentoData_' + safeAddr + '\', { safeAddr: \'' + safeAddr + '\', autoFillCalc: true })" style="padding:8px 20px;background:#2E7D32;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">Get Rent Estimate</button>';
+            html += '</div>';
+            html += '<div id="rentoData_' + safeAddr + '" style="margin-top:12px;"></div>';
             html += '</div>';
 
             html += '</div>'; // end expanded
@@ -4539,6 +4599,19 @@
     /**
      * Calculate and display ARV results inline — looks up type from dispoDealTypeMap
      */
+    function updateCondWarnings(safeAddr) {
+      var w = document.getElementById('condWarnings_' + safeAddr);
+      if (!w) return;
+      var hvac = parseFloat((document.getElementById('cond_hvac_' + safeAddr) || {}).value) || 0;
+      var wh = parseFloat((document.getElementById('cond_wh_' + safeAddr) || {}).value) || 0;
+      var roof = parseFloat((document.getElementById('cond_roof_' + safeAddr) || {}).value) || 0;
+      var html = '';
+      if (hvac >= 15) html += '<span style="background:#FFCDD2;color:#C62828;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;">⚠️ HVAC ' + hvac + 'yr — budget $4-8K</span>';
+      if (wh >= 10) html += '<span style="background:#FFCDD2;color:#C62828;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;">⚠️ Water Heater ' + wh + 'yr — budget $1-2K</span>';
+      if (roof >= 20) html += '<span style="background:#FFCDD2;color:#C62828;font-size:10px;font-weight:700;padding:3px 8px;border-radius:4px;">⚠️ Roof ' + roof + 'yr — budget $5-15K</span>';
+      w.innerHTML = html;
+    }
+
     function calcDispoARV(safeAddr) {
       var resultsDiv = document.getElementById('arvResults_' + safeAddr);
       if (!resultsDiv) return;
@@ -5117,6 +5190,145 @@
       }
     }
 
+    // ==================== RENTOMETER API ====================
+    var rentometerCache = {};
+
+    /**
+     * Fetch Rentometer rent summary for an address
+     * @param {string} address - Full property address
+     * @param {number} bedrooms - Number of bedrooms
+     * @param {string} targetContainerId - DOM id to render results into
+     * @param {object} opts - { autoFillCalc: true, safeAddr: '...', calcType: 'seller-finance'|'subject-to' }
+     */
+    async function fetchRentometer(address, bedrooms, targetContainerId, opts) {
+      opts = opts || {};
+      var container = document.getElementById(targetContainerId);
+      if (!container) return;
+
+      // Cache check
+      var cacheKey = address + '_' + bedrooms;
+      if (rentometerCache[cacheKey]) {
+        renderRentometerData(container, rentometerCache[cacheKey], opts);
+        return;
+      }
+
+      container.innerHTML = '<div style="padding:12px;text-align:center;color:#1565C0;font-size:13px;">⏳ Fetching rent data from Rentometer...</div>';
+
+      try {
+        var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        var resp = await fetch(workerUrl + '/api/rentometer/summary?address=' + encodeURIComponent(address) + '&bedrooms=' + (bedrooms || 3));
+
+        if (!resp.ok) {
+          var err = await resp.json().catch(function() { return { error: resp.statusText }; });
+          throw new Error(err.error || 'Rentometer request failed');
+        }
+
+        var data = await resp.json();
+        rentometerCache[cacheKey] = data;
+        renderRentometerData(container, data, opts);
+
+      } catch (e) {
+        container.innerHTML = '<div style="padding:10px;color:#C62828;font-size:12px;background:#FFEBEE;border-radius:6px;">❌ Rentometer error: ' + e.message + '</div>';
+      }
+    }
+
+    /**
+     * Render Rentometer data into a container
+     */
+    function renderRentometerData(container, data, opts) {
+      opts = opts || {};
+      var median = data.median || 0;
+      var mean = data.mean || 0;
+      var low = data.percentile_25 || data.min || 0;
+      var high = data.percentile_75 || data.max || 0;
+      var samples = data.samples || 0;
+      var radius = data.radius_miles || 0;
+      var quickviewUrl = data.quickview_url || '';
+
+      var html = '';
+      html += '<div style="background:linear-gradient(135deg,#E8F5E9,#F1F8E9);border:1px solid #A5D6A7;border-radius:8px;padding:14px 16px;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
+      html += '<div style="font-size:12px;font-weight:700;color:#2E7D32;text-transform:uppercase;letter-spacing:0.5px;">📊 Rentometer Rent Estimate</div>';
+      if (quickviewUrl) html += '<a href="' + quickviewUrl + '" target="_blank" style="font-size:10px;color:#1565C0;text-decoration:none;font-weight:600;">View Full Report →</a>';
+      html += '</div>';
+
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:8px;">';
+
+      html += '<div style="background:white;border-radius:6px;padding:8px 10px;text-align:center;">';
+      html += '<div style="font-size:9px;font-weight:700;color:#999;text-transform:uppercase;">Median Rent</div>';
+      html += '<div style="font-size:20px;font-weight:800;color:#2E7D32;">$' + median.toLocaleString() + '</div>';
+      html += '<div style="font-size:9px;color:#666;">/month</div>';
+      html += '</div>';
+
+      html += '<div style="background:white;border-radius:6px;padding:8px 10px;text-align:center;">';
+      html += '<div style="font-size:9px;font-weight:700;color:#999;text-transform:uppercase;">Mean Rent</div>';
+      html += '<div style="font-size:20px;font-weight:800;color:#1565C0;">$' + mean.toLocaleString() + '</div>';
+      html += '<div style="font-size:9px;color:#666;">/month</div>';
+      html += '</div>';
+
+      html += '<div style="background:white;border-radius:6px;padding:8px 10px;text-align:center;">';
+      html += '<div style="font-size:9px;font-weight:700;color:#999;text-transform:uppercase;">Low (25th %)</div>';
+      html += '<div style="font-size:20px;font-weight:800;color:#E65100;">$' + low.toLocaleString() + '</div>';
+      html += '<div style="font-size:9px;color:#666;">/month</div>';
+      html += '</div>';
+
+      html += '<div style="background:white;border-radius:6px;padding:8px 10px;text-align:center;">';
+      html += '<div style="font-size:9px;font-weight:700;color:#999;text-transform:uppercase;">High (75th %)</div>';
+      html += '<div style="font-size:20px;font-weight:800;color:#7B1FA2;">$' + high.toLocaleString() + '</div>';
+      html += '<div style="font-size:9px;color:#666;">/month</div>';
+      html += '</div>';
+
+      html += '</div>'; // end grid
+
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#666;">';
+      html += '<span>' + samples + ' rental listings analyzed within ' + radius + ' mi</span>';
+      if (opts.safeAddr) {
+        html += '<button onclick="applyRentometerToCalc(\'' + opts.safeAddr + '\', ' + median + ')" style="padding:4px 10px;background:#2E7D32;color:white;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">✅ Apply $' + median.toLocaleString() + ' to Calculator</button>';
+      }
+      html += '</div>';
+
+      html += '</div>';
+      container.innerHTML = html;
+
+      // Auto-fill if requested
+      if (opts.autoFillCalc && opts.safeAddr && median > 0) {
+        applyRentometerToCalc(opts.safeAddr, median);
+      }
+      // Auto-fill ARV calculator rent estimate
+      if (opts.autoFillARVCalc && median > 0) {
+        applyRentometerToARVCalc(median);
+      }
+    }
+
+    /**
+     * Apply Rentometer median rent to the appropriate calculator fields
+     */
+    function applyRentometerToCalc(safeAddr, rentValue) {
+      // Seller Finance rent field
+      var sfRent = document.getElementById('sfRent_' + safeAddr);
+      if (sfRent && (!sfRent.value || sfRent.value === '0')) { sfRent.value = rentValue; }
+
+      // Subject-To rent field
+      var stRent = document.getElementById('stRent_' + safeAddr);
+      if (stRent && (!stRent.value || stRent.value === '0')) { stRent.value = rentValue; }
+
+      // FB post rent fields
+      var fbRent = document.getElementById('fb_rent_' + safeAddr);
+      if (fbRent && (!fbRent.value || fbRent.value === '0')) { fbRent.value = rentValue; }
+
+      // Recalculate
+      calcDispoARV(safeAddr);
+    }
+
+    /**
+     * Apply Rentometer to the standalone ARV Calculator rent field
+     */
+    function applyRentometerToARVCalc(rentValue) {
+      var el = document.getElementById('arvCalcRentEstimate');
+      if (el) { el.value = rentValue; }
+      if (typeof recalcARVFromComps === 'function') recalcARVFromComps();
+    }
+
     /**
      * Render Zillow data into the data container
      */
@@ -5487,15 +5699,53 @@
       html += '<input type="number" id="arvCalcRepairs" value="' + arvCalcState.repairs + '" placeholder="Custom" oninput="updateARVCalcDeal()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;margin-top:6px;">';
       html += '</div>';
 
+      // Rent estimate (inside deal inputs box)
+      html += '<div style="margin-top:10px;">';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Rent Estimate ($/mo)</label>';
+      html += '<input type="number" id="arvCalcRentEstimate" value="" placeholder="← Click Get Rent Estimate below" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;margin-top:2px;background:#F1F8E9;" readonly>';
       html += '</div>';
-      html += '</div>';
+
+      html += '</div>'; // end deal inputs box
+      html += '</div>'; // end grid row
 
       // MAO results grid
       html += '<div id="arvCalcMAOGrid">';
       html += buildARVCalcMAOGrid();
       html += '</div>';
 
+      // Rentometer section
+      var arvBeds = subj.bedrooms || 3;
+      var arvAddress = subj.address || '';
+      if (typeof arvAddress === 'object') arvAddress = (arvAddress.streetAddress || '') + ', ' + (arvAddress.city || '') + ', ' + (arvAddress.state || '') + ' ' + (arvAddress.zipcode || '');
+      html += '<div style="margin-top:20px;background:#E8F5E9;border:1px solid #A5D6A7;border-radius:10px;padding:20px;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">';
+      html += '<div>';
+      html += '<div style="font-size:16px;font-weight:700;color:#2E7D32;">📊 Rentometer Rent Analysis</div>';
+      html += '<div style="font-size:12px;color:#666;margin-top:2px;">Median rent, 25th-75th percentile range, samples analyzed</div>';
+      html += '</div>';
+      html += '<div style="display:flex;align-items:center;gap:8px;">';
+      html += '<label style="font-size:11px;font-weight:600;color:#555;">Beds:</label>';
+      html += '<select id="arvCalcRentoBeds" style="padding:5px 8px;border:1px solid #ccc;border-radius:4px;font-size:13px;">';
+      for (var rb = 0; rb <= 6; rb++) {
+        html += '<option value="' + rb + '"' + (rb === arvBeds ? ' selected' : '') + '>' + (rb === 0 ? 'Studio' : rb + ' bed') + '</option>';
+      }
+      html += '</select>';
+      html += '<button onclick="fetchRentometerForARVCalc()" style="padding:8px 20px;background:#2E7D32;color:white;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">Get Rent Estimate</button>';
+      html += '</div>';
+      html += '</div>';
+      html += '<div id="arvCalcRentoResults"></div>';
+      html += '</div>';
+
       resultsDiv.innerHTML = html;
+    }
+
+    function fetchRentometerForARVCalc() {
+      var addressInput = document.getElementById('arvCalcAddress');
+      var address = addressInput ? addressInput.value.trim() : '';
+      if (!address) { alert('Enter a property address first'); return; }
+      var beds = document.getElementById('arvCalcRentoBeds');
+      var bedrooms = beds ? beds.value : 3;
+      fetchRentometer(address, bedrooms, 'arvCalcRentoResults', { autoFillARVCalc: true, autoFillCalc: false });
     }
 
     function toggleARVCalcComp(idx) {
