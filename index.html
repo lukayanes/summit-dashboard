@@ -4425,8 +4425,12 @@
             html += '<div>';
             if (type === 'novation') {
               html += '<div style="background:#F8F9FA;border-radius:8px;padding:16px;">';
-              html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-bottom:8px;">📋 Novation Notes</div>';
-              html += '<p style="font-size:13px;color:#666;line-height:1.5;">Novation deals are listed with a realtor. No Facebook post needed — profit is estimated from the realtor commission and spread between UC and sale price.</p>';
+              html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
+              html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;">🏡 Active Listing Agents</div>';
+              html += '<button onclick="fetchListingAgents(\'' + safeAddr + '\', \'' + deal.address.replace(/'/g, "\\'") + '\')" id="agentBtn_' + safeAddr + '" style="padding:6px 16px;background:#1B2A4A;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Find Agents</button>';
+              html += '</div>';
+              html += '<div style="font-size:11px;color:#666;margin-bottom:8px;">Investor-friendly agents listing lower-priced properties near this deal</div>';
+              html += '<div id="agentResults_' + safeAddr + '"></div>';
               html += '</div>';
             } else {
               html += buildFacebookPostGenerator(deal, type);
@@ -5354,6 +5358,96 @@
       var bedsEl = document.getElementById('rentoBeds_' + safeAddr);
       var beds = bedsEl ? bedsEl.value : 3;
       fetchRentometer(address, beds, 'rentoData_' + safeAddr, { safeAddr: safeAddr, autoFillCalc: true });
+    }
+
+    /**
+     * Fetch active listing agents near a deal property
+     */
+    async function fetchListingAgents(safeAddr, address) {
+      var container = document.getElementById('agentResults_' + safeAddr);
+      var btn = document.getElementById('agentBtn_' + safeAddr);
+      if (!container) return;
+      if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
+      container.innerHTML = '<div style="text-align:center;padding:12px;color:#666;font-size:12px;">⏳ Finding investor-friendly listing agents...</div>';
+
+      try {
+        var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        var resp = await fetch(workerUrl + '/api/zillow/listing-agents?address=' + encodeURIComponent(address));
+        var data = await resp.json();
+        if (btn) { btn.disabled = false; btn.textContent = 'Find Agents'; }
+        if (data.error) {
+          container.innerHTML = '<div style="color:#C62828;font-size:12px;">Error: ' + data.error + '</div>';
+          return;
+        }
+        renderListingAgents(container, data);
+      } catch (err) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Find Agents'; }
+        container.innerHTML = '<div style="color:#C62828;font-size:12px;">Failed: ' + err.message + '</div>';
+      }
+    }
+
+    function renderListingAgents(container, data) {
+      var agents = data.agents || [];
+      if (agents.length === 0) {
+        container.innerHTML = '<div style="color:#999;font-size:12px;text-align:center;padding:8px;">No listing agents found in nearby properties</div>';
+        return;
+      }
+
+      var html = '';
+      html += '<div style="font-size:10px;color:#999;margin-bottom:8px;">' + data.totalAgentsFound + ' agents found · Median area price: ' + fmt(data.medianAreaPrice) + ' · Showing investor-friendly first</div>';
+      html += '<div style="max-height:400px;overflow-y:auto;">';
+
+      for (var i = 0; i < agents.length; i++) {
+        var a = agents[i];
+        var tagColor = a.investorFriendly ? '#2E7D32' : '#666';
+        var tagBg = a.investorFriendly ? '#E8F5E9' : '#F5F5F5';
+        var tagText = a.investorFriendly ? 'Investor Range' : 'Above Median';
+
+        html += '<div style="border:1px solid #eee;border-radius:6px;padding:10px;margin-bottom:6px;background:white;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;">';
+        html += '<div>';
+        html += '<div style="font-size:13px;font-weight:700;color:#1B2A4A;">' + a.agentName + '</div>';
+        if (a.brokerName) html += '<div style="font-size:11px;color:#666;">' + a.brokerName + '</div>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:6px;align-items:center;">';
+        html += '<span style="background:' + tagBg + ';color:' + tagColor + ';padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">' + tagText + '</span>';
+        html += '<span style="background:#E3F2FD;color:#1565C0;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">' + a.listingCount + ' listing' + (a.listingCount !== 1 ? 's' : '') + '</span>';
+        html += '</div>';
+        html += '</div>';
+
+        // Contact info
+        if (a.agentPhone) {
+          html += '<div style="margin-top:4px;"><a href="tel:' + a.agentPhone + '" style="font-size:12px;color:#1565C0;text-decoration:none;font-weight:600;">📞 ' + a.agentPhone + '</a></div>';
+        }
+
+        // Avg price
+        if (a.avgListPrice) {
+          html += '<div style="font-size:11px;color:#666;margin-top:4px;">Avg list price: <strong>' + fmt(a.avgListPrice) + '</strong></div>';
+        }
+
+        // Sample listings (show up to 3)
+        if (a.listings && a.listings.length > 0) {
+          html += '<div style="margin-top:6px;border-top:1px solid #f0f0f0;padding-top:6px;">';
+          var showCount = Math.min(a.listings.length, 3);
+          for (var li = 0; li < showCount; li++) {
+            var listing = a.listings[li];
+            var lAddr = listing.address || '—';
+            var lLink = listing.zpid ? '<a href="https://www.zillow.com/homedetails/' + listing.zpid + '_zpid/" target="_blank" style="color:#1565C0;text-decoration:none;font-size:11px;">' + lAddr + ' ↗</a>' : '<span style="font-size:11px;">' + lAddr + '</span>';
+            html += '<div style="font-size:11px;color:#555;padding:1px 0;">' + lLink + ' · <strong>' + fmt(listing.price) + '</strong>';
+            if (listing.beds || listing.sqft) html += ' · ' + (listing.beds || '?') + 'bd/' + (listing.baths || '?') + 'ba' + (listing.sqft ? ' · ' + listing.sqft.toLocaleString() + 'sf' : '');
+            html += '</div>';
+          }
+          if (a.listings.length > 3) {
+            html += '<div style="font-size:10px;color:#999;">+ ' + (a.listings.length - 3) + ' more</div>';
+          }
+          html += '</div>';
+        }
+
+        html += '</div>';
+      }
+
+      html += '</div>';
+      container.innerHTML = html;
     }
 
     /**
