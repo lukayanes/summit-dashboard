@@ -5415,22 +5415,24 @@
         html += '</div>';
         html += '</div>';
 
-        // Contact info — phone number prominent
+        // Contact: phone if available, plus quick-action links always
         var phoneNum = a.agentPhone || a.brokerPhone || null;
+        html += '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">';
         if (phoneNum) {
-          html += '<div style="margin-top:6px;background:#E3F2FD;border-radius:4px;padding:6px 10px;display:inline-block;">';
-          html += '<a href="tel:' + phoneNum + '" style="font-size:14px;color:#1565C0;text-decoration:none;font-weight:700;">📞 ' + phoneNum + '</a>';
-          if (a.agentPhone && a.brokerPhone && a.agentPhone !== a.brokerPhone) {
-            html += ' <span style="font-size:11px;color:#666;margin-left:8px;">Office: <a href="tel:' + a.brokerPhone + '" style="color:#1565C0;text-decoration:none;">' + a.brokerPhone + '</a></span>';
-          }
-          html += '</div>';
-        } else {
-          html += '<div style="margin-top:4px;font-size:11px;color:#999;">No phone available</div>';
+          html += '<a href="tel:' + phoneNum + '" style="background:#E3F2FD;border-radius:4px;padding:5px 12px;font-size:13px;color:#1565C0;text-decoration:none;font-weight:700;">📞 ' + phoneNum + '</a>';
         }
+        // Google search for agent phone — usually surfaces it immediately
+        var googleQ = encodeURIComponent(a.agentName + ' realtor ' + (a.brokerName || '') + ' phone number');
+        html += '<a href="https://www.google.com/search?q=' + googleQ + '" target="_blank" style="background:#F5F5F5;border-radius:4px;padding:5px 10px;font-size:11px;color:#333;text-decoration:none;font-weight:600;border:1px solid #ddd;">🔍 Google Agent</a>';
+        // First listing Zillow link (phone is on the listing page)
+        if (a.listings && a.listings.length > 0 && a.listings[0].zpid) {
+          html += '<a href="https://www.zillow.com/homedetails/' + a.listings[0].zpid + '_zpid/" target="_blank" style="background:#F5F5F5;border-radius:4px;padding:5px 10px;font-size:11px;color:#1565C0;text-decoration:none;font-weight:600;border:1px solid #ddd;">📋 Zillow Listing</a>';
+        }
+        html += '</div>';
 
         // Avg price
         if (a.avgListPrice) {
-          html += '<div style="font-size:11px;color:#666;margin-top:4px;">Avg list price: <strong>' + fmt(a.avgListPrice) + '</strong></div>';
+          html += '<div style="font-size:11px;color:#666;margin-top:6px;">Avg list price: <strong>' + fmt(a.avgListPrice) + '</strong></div>';
         }
 
         // Sample listings (show up to 3)
@@ -5455,6 +5457,24 @@
       }
 
       html += '</div>';
+
+      // Debug: show phone scan results if most agents have no phone
+      var noPhoneCount = agents.filter(function(a) { return !a.agentPhone && !a.brokerPhone; }).length;
+      if (data._debug && noPhoneCount > agents.length / 2) {
+        var dbg = data._debug;
+        html += '<div style="margin-top:8px;background:#FFF8E1;border:1px solid #FFE082;border-radius:6px;padding:8px;font-size:10px;color:#666;">';
+        html += '<strong>Debug:</strong> ' + (dbg.rawAgentsExtracted || 0) + ' agents extracted, ' + (dbg.agentsWithPhone || 0) + ' had phone, ' + (dbg.agentsWithBrokerPhone || 0) + ' had broker phone<br>';
+        if (dbg.phoneKeysFoundInResponse && dbg.phoneKeysFoundInResponse.length > 0) {
+          html += '<strong>Phone-like values found at:</strong><br>';
+          dbg.phoneKeysFoundInResponse.forEach(function(pk) {
+            html += '<span style="color:#333;">' + pk.path + '</span>: ' + pk.value + '<br>';
+          });
+        } else {
+          html += 'No phone-like values found anywhere in the API response';
+        }
+        html += '</div>';
+      }
+
       container.innerHTML = html;
     }
 
