@@ -5857,7 +5857,7 @@
       var btn = document.getElementById('arvCalcFetchBtn');
       var resultsDiv = document.getElementById('arvCalcResults');
       if (btn) { btn.disabled = true; btn.textContent = 'Finding comps...'; }
-      resultsDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#666;"><div style="font-size:32px;margin-bottom:8px;">⏳</div>Searching for recently sold properties near:<br><strong>' + address + '</strong><br><span style="font-size:12px;">Last ' + days + ' days · Fetching individual property details for accurate pricing</span></div>';
+      resultsDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#666;"><div style="font-size:32px;margin-bottom:8px;">⏳</div>Searching for recently sold properties near:<br><strong>' + address + '</strong><br><span style="font-size:12px;">Last ' + days + ' days · Searching Redfin + Zillow for verified sold comps</span><br><span style="font-size:11px;color:#999;">This may take 10-20 seconds</span></div>';
 
       var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
       fetch(workerUrl + '/api/zillow/find-comps?address=' + encodeURIComponent(address) + '&days=' + days)
@@ -6019,9 +6019,11 @@
           var soldDate = comp.soldDate ? new Date(comp.soldDate).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'2-digit'}) : '—';
           // Price source badge
           var priceSrc = comp._priceSource || '';
-          var priceVerified = priceSrc.includes('sold') || priceSrc.includes('pending') || priceSrc === 'soldPrice' || priceSrc === 'lastSoldPrice' || priceSrc === 'lastSalePrice';
+          var priceVerified = priceSrc.includes('sold') || priceSrc.includes('pending') || priceSrc === 'soldPrice' || priceSrc === 'lastSoldPrice' || priceSrc === 'lastSalePrice' || priceSrc.includes('redfin');
           var priceBadge = '';
-          if (priceVerified) {
+          if (priceSrc.includes('redfin')) {
+            priceBadge = '<span title="Verified sold price from Redfin MLS data" style="font-size:9px;color:#2E7D32;display:block;">✓ Redfin</span>';
+          } else if (priceVerified) {
             priceBadge = '<span title="Verified sale price from ' + priceSrc + '" style="font-size:9px;color:#2E7D32;display:block;">✓ Sold</span>';
           } else if (priceSrc === 'zestimate') {
             priceBadge = '<span title="Zestimate (automated estimate, not a verified sale)" style="font-size:9px;color:#C62828;display:block;">⚠ Zestimate</span>';
@@ -6029,9 +6031,12 @@
             priceBadge = '<span title="Price source: ' + priceSrc + '" style="font-size:9px;color:#E65100;display:block;">⚠ Est.</span>';
           }
 
-          // Zillow link from zpid
+          // Zillow or Redfin link
           var zillowLink = comp.zpid ? 'https://www.zillow.com/homedetails/' + comp.zpid + '_zpid/' : '';
-          var addrDisplay = zillowLink ? '<a href="' + zillowLink + '" target="_blank" style="color:#1565C0;text-decoration:none;font-weight:600;" title="View on Zillow">' + cAddr + ' ↗</a>' : cAddr;
+          var redfinLink = comp.redfinUrl || '';
+          var listingLink = zillowLink || redfinLink;
+          var linkLabel = zillowLink ? 'Zillow' : (redfinLink ? 'Redfin' : '');
+          var addrDisplay = listingLink ? '<a href="' + listingLink + '" target="_blank" style="color:#1565C0;text-decoration:none;font-weight:600;" title="View on ' + linkLabel + '">' + cAddr + ' ↗</a>' : cAddr;
 
           // Thumbnail + photo expand
           var thumbHtml = '';
@@ -6072,14 +6077,20 @@
           var dbg = data._debug;
           html += '<div style="margin-top:12px;text-align:left;background:#fff;border:1px solid #eee;border-radius:6px;padding:12px;font-size:11px;color:#666;">';
           html += '<div style="font-weight:700;color:#333;margin-bottom:6px;">Debug Info:</div>';
-          html += 'Extracted from subject response: <strong>' + (dbg.extractedFromSubject || dbg.extractedRaw || 0) + '</strong> · From search: <strong>' + (dbg.extractedFromSearch || 0) + '</strong> · Total: <strong>' + (dbg.totalExtracted || 0) + '</strong><br>';
+          html += '<strong>Redfin</strong>: ' + (dbg.redfinResults || 0) + ' sold homes found';
+          if (dbg.redfinError) html += ' <span style="color:#C62828;">(error: ' + dbg.redfinError + ')</span>';
+          html += ' · <strong>Zillow embedded</strong>: ' + (dbg.zillowEmbeddedProps || dbg.totalExtracted || 0) + '<br>';
           html += 'With zpid: <strong>' + (dbg.extractedWithZpid || 0) + '</strong> · With sold price: <strong>' + (dbg.extractedWithSoldPrice || 0) + '</strong> · With priceHistory: <strong>' + (dbg.extractedWithPriceHistory || 0) + '</strong> · Generic price only: <strong>' + (dbg.extractedWithGenericPrice || 0) + '</strong><br>';
-          html += 'Zpids fetched OK: <strong>' + (dbg.zpidsFetchedSuccessfully || 0) + '</strong> · Failed (used stub): <strong>' + (dbg.stubsUsedAsFallback || 0) + '</strong> · Full data total: <strong>' + (dbg.fullDataAfterFetch || 0) + '</strong> · With priceHistory: <strong>' + (dbg.fullDataWithPriceHistory || 0) + '</strong> · Verified: <strong>' + (dbg.verifiedPriceComps || 0) + '</strong><br>';
-          html += 'Filtered out (date/rent/active/no price): <strong>' + (dbg.filteredOut || 0) + '</strong>';
+          html += '<strong>Redfin geo-search</strong>: ' + (dbg.redfinResults || 0) + ' sold homes found in ' + (dbg.redfinRadius || 0.75) + ' mi radius';
+          if (dbg.redfinError) html += ' <span style="color:#C62828;">(error: ' + dbg.redfinError + ')</span>';
+          html += '<br>';
+          html += '<strong>Zillow</strong>: ' + (dbg.zillowEmbedded || 0) + ' embedded neighbors, ' + (dbg.zillowEnriched || 0) + ' enriched with details<br>';
+          html += 'Total candidates: <strong>' + (dbg.totalCandidates || 0) + '</strong> · With priceHistory: <strong>' + (dbg.fullDataWithPriceHistory || 0) + '</strong> · Verified price comps: <strong>' + (dbg.verifiedPriceComps || 0) + '</strong><br>';
+          html += 'Filtered out: <strong>' + (dbg.filteredOut || 0) + '</strong>';
           if (dbg.compPriceSources) {
-            html += '<br>Price sources: ';
+            html += ' · Price sources: ';
             var sources = dbg.compPriceSources;
-            for (var sk in sources) { html += sk + ':' + sources[sk] + ' '; }
+            for (var sk in sources) { html += '<em>' + sk + '</em>:' + sources[sk] + ' '; }
           }
           if (dbg.extractedSample && dbg.extractedSample.length > 0) {
             html += '<div style="margin-top:6px;font-weight:700;color:#333;">Sample extracted properties:</div>';
