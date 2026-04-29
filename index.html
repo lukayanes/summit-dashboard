@@ -630,6 +630,8 @@
                 <th style="cursor: pointer;" onclick="sortLedgerTable('market')">Market <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('acq')">Acquisition <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('dispo')">Disposition <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('buyerName')">Buyer</th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('agentName')">Listing Agent</th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('status')">Status <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('strategy')">Strategy <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('exit')">Exit <span class="sort-arrow"></span></th>
@@ -929,9 +931,9 @@
     const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSwypHrZcGSLGA0Ddb-a7GJwAOApyQGwqKW9xf7TNhaxfTnypAlM8W7KWyu9S3iN4JL2oYheTxvK_Kw/pub?gid=0&single=true&output=csv';
     const CALL_LEDGER_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQNgebGg8-sFOUJ-124bGrkIZkLOZsu7Zpibn-u_a1KKzC0K0eCbP6CvQRTc4i5oEnAUwk-DVi-mLKy/pub?gid=2087946942&single=true&output=csv';
 
-    // Contacts sheet URLs — UPDATE THESE after publishing your Contacts Google Sheet as CSV
-    const BUYERS_CSV_URL = ''; // Paste your Buyers tab published CSV URL here
-    const AGENTS_CSV_URL = ''; // Paste your Listing Agents tab published CSV URL here
+    // Contacts sheet URLs
+    const BUYERS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSvcHOH7sGL0R4gEvQDJVsxTmNL-8miq76cyXiMkpFa_wpYeyvZBk3UQyF7EbYGNYaTCoBA40BRMgiJ/pub?gid=4570463&single=true&output=csv';
+    const AGENTS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSvcHOH7sGL0R4gEvQDJVsxTmNL-8miq76cyXiMkpFa_wpYeyvZBk3UQyF7EbYGNYaTCoBA40BRMgiJ/pub?gid=822813584&single=true&output=csv';
     const CATEGORIES_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOpsTuv9CuraF1lW8ZnDtN-EnMSEcnFOSYSa_5Ws3oaZ3z8_OoTmfNcoN1yWbqq8ag4tWLZw5SxhNY/pub?gid=1007913777&single=true&output=csv';
 
     let EXPENSE_DATA = null; // Will hold parsed categories data
@@ -1037,6 +1039,8 @@
         const iBuyer = colIdx('buyer price');
         const iRepairs = colIdx('repairs');
         const iPotential = colIdx('potential profit');
+        const iBuyerName = headers.findIndex(h => h.includes('buyer name'));
+        const iAgentName = headers.findIndex(h => h.includes('listing agent'));
         const iFinal = colIdx('final profit');
         const iNotes = colIdx('notes');
 
@@ -1085,6 +1089,8 @@
             repairs: parseNum(r[iRepairs]),
             potential: parseNum(r[iPotential]),
             final: parseNum(r[iFinal]),
+            buyerName: (iBuyerName >= 0 ? (r[iBuyerName] || '').trim() : ''),
+            agentName: (iAgentName >= 0 ? (r[iAgentName] || '').trim() : ''),
             notes: rawNotes,
             // Parsed GHL webhook data from notes column
             meta: parsedMeta,
@@ -1743,7 +1749,7 @@
         var sellerPhoto = getSellerPhoto(safeAddrLedger);
         var photoCell = sellerPhoto
           ? '<img src="' + sellerPhoto + '" style="width:50px;height:38px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="viewSellerPhoto(\'' + safeAddrLedger + '\')">'
-          : '<label style="display:flex;align-items:center;justify-content:center;width:50px;height:38px;background:#f0f4ff;border:1px dashed #aac;border-radius:4px;cursor:pointer;font-size:10px;color:#2E75B6;" title="Upload photo"><input type="file" accept="image/*" style="display:none;" onchange="uploadSellerPhoto(event,\'' + safeAddrLedger + '\')">+Photo</label>';
+          : '<label style="display:flex;align-items:center;justify-content:center;width:50px;height:38px;background:#E8F0FE;border:2px dashed #2E75B6;border-radius:6px;cursor:pointer;font-size:18px;color:#2E75B6;font-weight:700;" title="Upload seller photo"><input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadSellerPhoto(event,\'' + safeAddrLedger + '\')">📷</label>';
         tableHtml += `
           <tr>
             <td style="font-weight: 500;">${idx + 1}</td>
@@ -1753,6 +1759,8 @@
             <td style="font-weight: 500;">${deal.market}</td>
             <td>${deal.acq}</td>
             <td>${deal.dispo}</td>
+            <td>${renderContactCell('buyer', deal.buyerName)}</td>
+            <td>${renderContactCell('agent', deal.agentName)}</td>
             <td><span class="${statusClass}">${deal.status}</span></td>
             <td>${deal.strategy}</td>
             <td>${deal.exit}</td>
@@ -4238,14 +4246,15 @@
     document.addEventListener('DOMContentLoaded', async () => {
       // Show loading state
       const ledgerBody = document.getElementById('ledgerTableBody');
-      if (ledgerBody) ledgerBody.innerHTML = '<tr><td colspan="18" style="text-align:center;padding:40px;color:#666;font-size:16px;">Loading deals from Google Sheets...</td></tr>';
+      if (ledgerBody) ledgerBody.innerHTML = '<tr><td colspan="20" style="text-align:center;padding:40px;color:#666;font-size:16px;">Loading deals from Google Sheets...</td></tr>';
 
-      // Fetch live data from Google Sheet + Categories + Contacts in parallel
+      // Fetch live data from Google Sheet + Categories + Contacts + Photos in parallel
       const [sheetDeals, categoriesData, buyersData, agentsData] = await Promise.all([
         fetchDealsFromSheet(),
         fetchCategoriesFromSheet(),
         fetchBuyersFromSheet(),
-        fetchAgentsFromSheet()
+        fetchAgentsFromSheet(),
+        loadAllSellerPhotos()
       ]);
 
       if (sheetDeals && sheetDeals.length > 0) {
@@ -6637,15 +6646,37 @@
       return html;
     }
 
-    // ==================== SELLER PHOTO UPLOAD ====================
-    // Store seller photos in memory (keyed by safeAddr)
+    // ==================== SELLER PHOTO UPLOAD (Shared via Cloudflare KV) ====================
     var sellerPhotos = {};
+    var sellerPhotosLoaded = false;
+    var photoWorkerUrl = 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
 
-    // Try to load from localStorage on init
-    try {
-      var saved = localStorage.getItem('summitSellerPhotos');
-      if (saved) sellerPhotos = JSON.parse(saved);
-    } catch(e) {}
+    // Load all team photos from worker KV on startup
+    async function loadAllSellerPhotos() {
+      try {
+        // First get the list of dealIds that have photos
+        var listResp = await fetch(photoWorkerUrl + '/api/photos/list');
+        var listData = await listResp.json();
+        if (listData.dealIds && listData.dealIds.length > 0) {
+          // Batch fetch all photos
+          var batchResp = await fetch(photoWorkerUrl + '/api/photos/batch?dealIds=' + listData.dealIds.join(','));
+          var batchData = await batchResp.json();
+          if (batchData.photos) {
+            sellerPhotos = batchData.photos;
+            console.log('Loaded ' + Object.keys(sellerPhotos).length + ' seller photos from KV');
+          }
+        }
+        sellerPhotosLoaded = true;
+      } catch(e) {
+        console.warn('Could not load seller photos from worker (KV may not be set up yet):', e.message);
+        // Fall back to localStorage
+        try {
+          var saved = localStorage.getItem('summitSellerPhotos');
+          if (saved) sellerPhotos = JSON.parse(saved);
+        } catch(ex) {}
+        sellerPhotosLoaded = true;
+      }
+    }
 
     function getSellerPhoto(safeAddr) {
       return sellerPhotos[safeAddr] || null;
@@ -6657,9 +6688,22 @@
       if (file.size > 5 * 1024 * 1024) { alert('Photo must be under 5MB'); return; }
       var reader = new FileReader();
       reader.onload = function(e) {
-        sellerPhotos[safeAddr] = e.target.result;
+        var photoData = e.target.result;
+        sellerPhotos[safeAddr] = photoData;
+        // Save to localStorage as backup
         try { localStorage.setItem('summitSellerPhotos', JSON.stringify(sellerPhotos)); } catch(ex) {}
         renderLedgerTable();
+        // Upload to worker KV for team sharing
+        fetch(photoWorkerUrl + '/api/photos/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dealId: safeAddr, photoData: photoData })
+        }).then(function(resp) { return resp.json(); }).then(function(data) {
+          if (data.success) console.log('Photo synced to team KV:', safeAddr);
+          else console.warn('Photo sync failed:', data.error);
+        }).catch(function(err) {
+          console.warn('Photo sync failed (KV may not be set up):', err.message);
+        });
       };
       reader.readAsDataURL(file);
     }
@@ -6667,17 +6711,17 @@
     function viewSellerPhoto(safeAddr) {
       var photo = sellerPhotos[safeAddr];
       if (!photo) return;
-      // Find the deal for this address
       var deal = DEALS.find(function(d) { return d.address.replace(/[^a-zA-Z0-9]/g, '_') === safeAddr; });
       var title = deal ? deal.address : 'Seller Photo';
       var overlay = document.createElement('div');
-      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;cursor:pointer;';
-      overlay.onclick = function() { document.body.removeChild(overlay); };
-      overlay.innerHTML = '<div style="color:white;font-size:16px;font-weight:600;margin-bottom:12px;">' + title + '</div>' +
-        '<img src="' + photo + '" style="max-width:90%;max-height:80vh;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);">' +
-        '<div style="margin-top:12px;display:flex;gap:12px;">' +
-        '<button onclick="event.stopPropagation();removeSellerPhoto(\'' + safeAddr + '\')" style="padding:8px 16px;background:#C62828;color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;">Remove Photo</button>' +
-        '<button onclick="event.stopPropagation();replaceSellerPhoto(\'' + safeAddr + '\')" style="padding:8px 16px;background:#2E75B6;color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;">Replace Photo</button>' +
+      overlay.id = 'sellerPhotoOverlay';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.9);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:20px;';
+      overlay.innerHTML = '<div onclick="document.getElementById(\'sellerPhotoOverlay\').remove()" style="position:absolute;top:16px;right:20px;color:white;font-size:32px;cursor:pointer;font-weight:300;line-height:1;">×</div>' +
+        '<div style="color:white;font-size:16px;font-weight:600;margin-bottom:12px;text-align:center;max-width:90%;">' + title + '</div>' +
+        '<img src="' + photo + '" style="max-width:95%;max-height:70vh;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);">' +
+        '<div style="margin-top:16px;display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">' +
+        '<button onclick="event.stopPropagation();replaceSellerPhoto(\'' + safeAddr + '\')" style="padding:12px 24px;background:#2E75B6;color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;min-width:140px;">📷 Replace Photo</button>' +
+        '<button onclick="event.stopPropagation();removeSellerPhoto(\'' + safeAddr + '\')" style="padding:12px 24px;background:#C62828;color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;min-width:140px;">🗑 Remove</button>' +
         '</div>';
       document.body.appendChild(overlay);
     }
@@ -6685,22 +6729,42 @@
     function removeSellerPhoto(safeAddr) {
       delete sellerPhotos[safeAddr];
       try { localStorage.setItem('summitSellerPhotos', JSON.stringify(sellerPhotos)); } catch(e) {}
-      // Close overlay
-      var overlay = document.querySelector('div[style*="z-index:9999"]');
-      if (overlay) document.body.removeChild(overlay);
+      var overlay = document.getElementById('sellerPhotoOverlay');
+      if (overlay) overlay.remove();
       renderLedgerTable();
+      // Delete from worker KV
+      fetch(photoWorkerUrl + '/api/photos/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dealId: safeAddr })
+      }).catch(function(err) { console.warn('KV delete failed:', err.message); });
     }
 
     function replaceSellerPhoto(safeAddr) {
-      // Close overlay
-      var overlay = document.querySelector('div[style*="z-index:9999"]');
-      if (overlay) document.body.removeChild(overlay);
-      // Trigger file input
+      var overlay = document.getElementById('sellerPhotoOverlay');
+      if (overlay) overlay.remove();
       var input = document.createElement('input');
       input.type = 'file';
       input.accept = 'image/*';
+      input.setAttribute('capture', 'environment');
       input.onchange = function(e) { uploadSellerPhoto(e, safeAddr); };
       input.click();
+    }
+
+    // ==================== CONTACT DISPLAY (from Google Sheet) ====================
+
+    // Render a buyer or agent name in the ledger with enriched contact info tooltip
+    function renderContactCell(type, name) {
+      if (!name) return '<span style="color:#ccc;font-size:11px;">—</span>';
+      var contact = type === 'buyer' ? findBuyer(name) : findAgent(name);
+      if (contact) {
+        var tip = contact.phone ? contact.phone : '';
+        if (type === 'buyer' && contact.company) tip = contact.company + (tip ? ' · ' + tip : '');
+        if (type === 'agent' && contact.brokerage) tip = contact.brokerage + (tip ? ' · ' + tip : '');
+        var phoneLink = contact.phone ? ' <a href="tel:' + contact.phone + '" style="color:#2E75B6;font-size:11px;" title="Call">📞</a>' : '';
+        return '<span style="font-size:12px;font-weight:500;color:#1B2A4A;" title="' + tip.replace(/"/g, '&quot;') + '">' + name + '</span>' + phoneLink;
+      }
+      return '<span style="font-size:12px;color:#666;">' + name + '</span>';
     }
 
     // ==================== BUYERS & LISTING AGENTS ====================
@@ -7171,9 +7235,17 @@
       var statusBadgeBg = statusColor;
       var popup = '<div style="min-width:320px;max-width:400px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">';
 
-      // Photo header
+      // Photo header or upload prompt
       if (sellerPhoto) {
-        popup += '<div style="margin:-12px -20px 12px;"><img src="' + sellerPhoto + '" style="width:100%;height:160px;object-fit:cover;border-radius:4px 4px 0 0;"></div>';
+        popup += '<div style="margin:-12px -20px 12px;position:relative;">';
+        popup += '<img src="' + sellerPhoto + '" style="width:100%;height:160px;object-fit:cover;border-radius:4px 4px 0 0;">';
+        popup += '<label style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.6);color:white;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;font-weight:600;"><input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadSellerPhoto(event,\'' + safeAddr + '\');setTimeout(function(){renderDealMap()},500);">Change Photo</label>';
+        popup += '</div>';
+      } else {
+        popup += '<label style="display:flex;align-items:center;justify-content:center;margin:-12px -20px 12px;height:80px;background:#E8F0FE;border-bottom:2px dashed #2E75B6;cursor:pointer;border-radius:4px 4px 0 0;">';
+        popup += '<input type="file" accept="image/*" capture="environment" style="display:none;" onchange="uploadSellerPhoto(event,\'' + safeAddr + '\');setTimeout(function(){renderDealMap()},500);">';
+        popup += '<div style="text-align:center;"><div style="font-size:24px;">📷</div><div style="font-size:12px;color:#2E75B6;font-weight:600;margin-top:2px;">Tap to add seller photo</div></div>';
+        popup += '</label>';
       }
 
       // Header
@@ -7222,26 +7294,32 @@
         popup += '</div></div>';
       }
 
-      // Buyer/Agent contacts if available
-      if (BUYERS.length > 0 || LISTING_AGENTS.length > 0) {
-        // Match buyer by checking deal buyer name or finding a buyer whose market includes this deal's market
-        var dealBuyer = deal.buyer_name ? findBuyer(deal.buyer_name) : null;
-        // Find agents in this deal's market
-        var marketAgents = LISTING_AGENTS.filter(function(a) {
-          return a.markets && deal.market && a.markets.includes(deal.market);
-        }).slice(0, 2);
+      // Buyer/Agent contacts from deal ledger sheet + enriched from Contacts sheet
+      var dealBuyer = deal.buyerName ? findBuyer(deal.buyerName) : null;
+      var dealAgent = deal.agentName ? findAgent(deal.agentName) : null;
 
-        if (dealBuyer || marketAgents.length > 0) {
-          popup += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">';
-          popup += '<div style="font-size:10px;font-weight:600;color:#10b981;text-transform:uppercase;margin-bottom:4px;">Contacts</div>';
+      if (deal.buyerName || deal.agentName) {
+        popup += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">';
+        popup += '<div style="font-size:10px;font-weight:600;color:#10b981;text-transform:uppercase;margin-bottom:4px;">Contacts</div>';
+        if (deal.buyerName) {
+          popup += '<div style="font-size:12px;margin-bottom:4px;"><strong>Buyer:</strong> ' + deal.buyerName;
           if (dealBuyer) {
-            popup += '<div style="font-size:12px;margin-bottom:4px;"><strong>Buyer:</strong> ' + dealBuyer.name + (dealBuyer.phone ? ' · <a href="tel:' + dealBuyer.phone + '">' + dealBuyer.phone + '</a>' : '') + '</div>';
+            if (dealBuyer.company) popup += ' <span style="color:#999;">(' + dealBuyer.company + ')</span>';
+            if (dealBuyer.phone) popup += ' · <a href="tel:' + dealBuyer.phone + '" style="color:#2E75B6;">' + dealBuyer.phone + '</a>';
+            if (dealBuyer.email) popup += ' · <a href="mailto:' + dealBuyer.email + '" style="color:#2E75B6;">' + dealBuyer.email + '</a>';
           }
-          marketAgents.forEach(function(ag) {
-            popup += '<div style="font-size:12px;margin-bottom:2px;"><strong>Agent:</strong> ' + ag.name + ' (' + ag.brokerage + ')' + (ag.phone ? ' · <a href="tel:' + ag.phone + '">' + ag.phone + '</a>' : '') + '</div>';
-          });
           popup += '</div>';
         }
+        if (deal.agentName) {
+          popup += '<div style="font-size:12px;margin-bottom:4px;"><strong>Listing Agent:</strong> ' + deal.agentName;
+          if (dealAgent) {
+            if (dealAgent.brokerage) popup += ' <span style="color:#999;">(' + dealAgent.brokerage + ')</span>';
+            if (dealAgent.phone) popup += ' · <a href="tel:' + dealAgent.phone + '" style="color:#2E75B6;">' + dealAgent.phone + '</a>';
+            if (dealAgent.email) popup += ' · <a href="mailto:' + dealAgent.email + '" style="color:#2E75B6;">' + dealAgent.email + '</a>';
+          }
+          popup += '</div>';
+        }
+        popup += '</div>';
       }
 
       // Zillow link button
