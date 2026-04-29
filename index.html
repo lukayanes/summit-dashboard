@@ -5778,7 +5778,7 @@
       contractPrice: 0,
       repairs: 10000,
       calculatedARV: 0,
-      daysBack: 90,
+      daysBack: 180,
       lastAddress: ''
     };
 
@@ -5822,7 +5822,7 @@
       for (var di = 0; di < dayOptions.length; di++) {
         var dVal = dayOptions[di].val;
         var dLabel = dayOptions[di].label;
-        var dActive = (arvCalcState.daysBack || 90) === dVal;
+        var dActive = (arvCalcState.daysBack || 180) === dVal;
         html += '<button onclick="setARVCalcDays(' + dVal + ')" style="padding:6px 14px;border-radius:20px;border:' + (dActive ? '2px solid #1B2A4A' : '1px solid #ddd') + ';background:' + (dActive ? '#1B2A4A' : '#fff') + ';color:' + (dActive ? '#fff' : '#333') + ';font-size:12px;font-weight:600;cursor:pointer;">' + dLabel + '</button>';
       }
       html += '</div>';
@@ -5853,11 +5853,11 @@
       if (!address) { alert('Please enter a property address.'); return; }
       arvCalcState.lastAddress = address;
 
-      var days = arvCalcState.daysBack || 90;
+      var days = arvCalcState.daysBack || 180;
       var btn = document.getElementById('arvCalcFetchBtn');
       var resultsDiv = document.getElementById('arvCalcResults');
       if (btn) { btn.disabled = true; btn.textContent = 'Finding comps...'; }
-      resultsDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#666;"><div style="font-size:32px;margin-bottom:8px;">⏳</div>Searching for similar recently sold properties near:<br><strong>' + address + '</strong><br><span style="font-size:12px;">Last ' + days + ' days</span></div>';
+      resultsDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#666;"><div style="font-size:32px;margin-bottom:8px;">⏳</div>Searching for recently sold properties near:<br><strong>' + address + '</strong><br><span style="font-size:12px;">Last ' + days + ' days · Fetching individual property details for accurate pricing</span></div>';
 
       var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
       fetch(workerUrl + '/api/zillow/find-comps?address=' + encodeURIComponent(address) + '&days=' + days)
@@ -5957,7 +5957,10 @@
 
       // Search summary
       html += '<div style="background:#F0F4FF;border-radius:8px;padding:12px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">';
-      html += '<div style="font-size:13px;color:#1B2A4A;"><strong>' + (data.compCount || 0) + ' matching comps found</strong> from ' + (data.totalSearchResults || 0) + ' recently sold (last ' + (data.daysBack || 90) + ' days)</div>';
+      var verifiedCount = data.verifiedPriceComps || 0;
+      html += '<div style="font-size:13px;color:#1B2A4A;"><strong>' + (data.compCount || 0) + ' comps found</strong>';
+      if (verifiedCount > 0) html += ' · <span style="color:#2E7D32;font-weight:700;">' + verifiedCount + ' with verified sale prices</span>';
+      html += ' · last ' + (data.daysBack || 180) + ' days · ' + (data.zpidsFetched || 0) + ' properties analyzed</div>';
       if (data.suggestedARV) {
         html += '<div style="font-size:13px;"><strong>Suggested ARV:</strong> <span style="color:#2E7D32;font-weight:700;">' + fmt(data.suggestedARV) + '</span> (avg of top ' + (data.arvCompsUsed || 0) + ' comps)</div>';
       }
@@ -6013,7 +6016,12 @@
           var grade = comp.grade || 'F';
           var matchPct = comp.matchPct || 0;
           var penalties = (comp.scoreBreakdown && comp.scoreBreakdown.penalties) || [];
-          var soldDate = comp.soldDate ? new Date(comp.soldDate).toLocaleDateString('en-US', {month:'short', day:'numeric'}) : '—';
+          var soldDate = comp.soldDate ? new Date(comp.soldDate).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'2-digit'}) : '—';
+          // Price source badge
+          var priceSrc = comp._priceSource || '';
+          var priceVerified = priceSrc.includes('sold') || priceSrc.includes('pending') || priceSrc === 'soldPrice' || priceSrc === 'lastSoldPrice' || priceSrc === 'lastSalePrice';
+          var priceBadge = priceVerified ? '<span title="Verified sale price from ' + priceSrc + '" style="font-size:9px;color:#2E7D32;display:block;">✓ Sold</span>' :
+            (priceSrc.startsWith('price:') ? '<span title="Price source: ' + priceSrc + '" style="font-size:9px;color:#E65100;display:block;">⚠ Est.</span>' : '');
 
           // Zillow link from zpid
           var zillowLink = comp.zpid ? 'https://www.zillow.com/homedetails/' + comp.zpid + '_zpid/' : '';
@@ -6034,7 +6042,7 @@
           html += '<td style="padding:6px 8px;text-align:center;"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:' + (gradeBgs[grade] || '#F5F5F5') + ';color:' + (gradeColors[grade] || '#666') + ';">' + grade + ' ' + matchPct + '%</span></td>';
           html += '<td style="padding:6px 8px;text-align:center;">' + thumbHtml + '</td>';
           html += '<td style="padding:6px 8px;font-size:12px;">' + addrDisplay + '</td>';
-          html += '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(cPrice) + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(cPrice) + priceBadge + '</td>';
           html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bedrooms || '—') + '</td>';
           html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bathrooms || '—') + '</td>';
           html += '<td style="padding:6px 8px;text-align:right;">' + (cSqft ? cSqft.toLocaleString() : '—') + '</td>';
@@ -6052,16 +6060,16 @@
         html += '</div>';
       } else {
         html += '<div style="text-align:center;padding:30px;background:#FFF8E1;border-radius:8px;margin-bottom:20px;">';
-        html += '<div style="font-size:14px;color:#F57F17;font-weight:600;">No matching comps found in the last ' + (data.daysBack || 90) + ' days</div>';
-        html += '<div style="font-size:12px;color:#999;margin-top:4px;">Try expanding to 6 months or 1 year</div>';
+        html += '<div style="font-size:14px;color:#F57F17;font-weight:600;">No matching comps found in the last ' + (data.daysBack || 180) + ' days</div>';
+        html += '<div style="font-size:12px;color:#999;margin-top:4px;">Try expanding to 1 year, or check the debug info below</div>';
         if (data._debug) {
           var dbg = data._debug;
           html += '<div style="margin-top:12px;text-align:left;background:#fff;border:1px solid #eee;border-radius:6px;padding:12px;font-size:11px;color:#666;">';
           html += '<div style="font-weight:700;color:#333;margin-bottom:6px;">Debug Info:</div>';
-          html += 'Properties extracted from API: <strong>' + (dbg.extractedRaw || 0) + '</strong><br>';
-          html += 'With zpid: <strong>' + (dbg.extractedWithZpid || 0) + '</strong> · With sold price: <strong>' + (dbg.extractedWithSoldPrice || 0) + '</strong> · With priceHistory: <strong>' + (dbg.extractedWithPriceHistory || 0) + '</strong> · With generic price only: <strong>' + (dbg.extractedWithGenericPrice || 0) + '</strong><br>';
-          html += 'Zpids fetched for detail: <strong>' + (dbg.zpidsFetchedCount || 0) + '</strong> · Full data after fetch: <strong>' + (dbg.fullDataAfterFetch || 0) + '</strong> · With priceHistory after fetch: <strong>' + (dbg.fullDataWithPriceHistory || 0) + '</strong><br>';
-          html += 'Filtered out (date/rent/no price): <strong>' + (dbg.filteredOut || 0) + '</strong>';
+          html += 'Extracted from subject response: <strong>' + (dbg.extractedFromSubject || dbg.extractedRaw || 0) + '</strong> · From search: <strong>' + (dbg.extractedFromSearch || 0) + '</strong> · Total: <strong>' + (dbg.totalExtracted || 0) + '</strong><br>';
+          html += 'With zpid: <strong>' + (dbg.extractedWithZpid || 0) + '</strong> · With sold price: <strong>' + (dbg.extractedWithSoldPrice || 0) + '</strong> · With priceHistory: <strong>' + (dbg.extractedWithPriceHistory || 0) + '</strong> · Generic price only: <strong>' + (dbg.extractedWithGenericPrice || 0) + '</strong><br>';
+          html += 'Zpids fetched individually: <strong>' + (dbg.zpidsFetchedCount || 0) + '</strong> · Full data total: <strong>' + (dbg.fullDataAfterFetch || 0) + '</strong> · With priceHistory: <strong>' + (dbg.fullDataWithPriceHistory || 0) + '</strong> · Verified price comps: <strong>' + (dbg.verifiedPriceComps || 0) + '</strong><br>';
+          html += 'Filtered out (date/rent/Zestimate/no price): <strong>' + (dbg.filteredOut || 0) + '</strong>';
           if (dbg.extractedSample && dbg.extractedSample.length > 0) {
             html += '<div style="margin-top:6px;font-weight:700;color:#333;">Sample extracted properties:</div>';
             dbg.extractedSample.forEach(function(s, si) {
