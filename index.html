@@ -539,6 +539,7 @@
   <!-- Tab Navigation -->
   <div class="px-6 pt-6 flex gap-1 flex-wrap">
     <button class="tab-button active" onclick="switchTab('ledger')">Deal Ledger</button>
+    <button class="tab-button" onclick="switchTab('dealmap')">Deal Map</button>
     <button class="tab-button" onclick="switchTab('executive')">Executive Dashboard</button>
     <button class="tab-button" onclick="switchTab('pipeline')">Pipeline Analytics</button>
     <button class="tab-button" onclick="switchTab('team')">Team Scorecard</button>
@@ -550,6 +551,8 @@
     <button class="tab-button" onclick="switchTab('callledger')">Call Ledger</button>
     <button class="tab-button" onclick="switchTab('arvcalc')">ARV Calculator</button>
     <button class="tab-button" onclick="switchTab('dispo')">Dispo</button>
+    <button class="tab-button" onclick="switchTab('buyers')">Buyers</button>
+    <button class="tab-button" onclick="switchTab('agents')">Listing Agents</button>
   </div>
 
   <!-- Main Content Area -->
@@ -621,6 +624,7 @@
             <thead>
               <tr>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('#')"># <span class="sort-arrow"></span></th>
+                <th style="width:60px;">Photo</th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('id')">Name <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('address')">Address <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('market')">Market <span class="sort-arrow"></span></th>
@@ -643,6 +647,43 @@
           </table>
         </div>
       </div>
+    </div>
+
+    <!-- DEAL MAP TAB -->
+    <div id="dealmap" class="tab-content">
+      <div class="mb-4 bg-white rounded-lg shadow-md p-4">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+          <div>
+            <label style="font-size:12px;font-weight:600;color:#666;">Status</label>
+            <select id="dealMapStatusFilter" onchange="renderDealMap()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
+              <option value="">All Statuses</option>
+              <option value="Under Contract">Under Contract</option>
+              <option value="Listed/Posted">Listed/Posted</option>
+              <option value="Closed - Won">Closed - Won</option>
+              <option value="Closed - Lost">Closed - Lost</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;color:#666;">Strategy</label>
+            <select id="dealMapStrategyFilter" onchange="renderDealMap()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
+              <option value="">All Strategies</option>
+              <option value="Novation">Novation</option>
+              <option value="Cash">Cash</option>
+              <option value="Subject-to">Subject-to</option>
+              <option value="Seller Finance">Seller Finance</option>
+              <option value="Listing Agent">Listing Agent</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;color:#666;">Market</label>
+            <select id="dealMapMarketFilter" onchange="renderDealMap()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
+              <option value="">All Markets</option>
+            </select>
+          </div>
+          <div id="dealMapStats" style="margin-left:auto;font-size:13px;color:#666;"></div>
+        </div>
+      </div>
+      <div id="dealMapContainer" style="height:calc(100vh - 220px);border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);"></div>
     </div>
 
     <!-- EXECUTIVE DASHBOARD TAB -->
@@ -838,17 +879,66 @@
       <div id="dispoContent"></div>
     </div>
 
+    <!-- BUYERS TAB -->
+    <div id="buyers" class="tab-content">
+      <div class="mb-4 bg-white rounded-lg shadow-md p-4">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+          <input type="text" id="buyerSearch" placeholder="Search buyers..." oninput="renderBuyersTab()" style="padding:8px 12px;border:1px solid #ddd;border-radius:4px;font-size:14px;width:280px;">
+          <select id="buyerMarketFilter" onchange="renderBuyersTab()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
+            <option value="">All Markets</option>
+          </select>
+          <select id="buyerStrategyFilter" onchange="renderBuyersTab()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
+            <option value="">All Strategies</option>
+          </select>
+          <select id="buyerStatusFilter" onchange="renderBuyersTab()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
+            <option value="">All Statuses</option>
+          </select>
+          <div id="buyerStats" style="margin-left:auto;font-size:13px;color:#666;"></div>
+        </div>
+      </div>
+      <div id="buyersContent"></div>
+    </div>
+
+    <!-- LISTING AGENTS TAB -->
+    <div id="agents" class="tab-content">
+      <div class="mb-4 bg-white rounded-lg shadow-md p-4">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+          <input type="text" id="agentSearch" placeholder="Search agents..." oninput="renderAgentsTab()" style="padding:8px 12px;border:1px solid #ddd;border-radius:4px;font-size:14px;width:280px;">
+          <select id="agentMarketFilter" onchange="renderAgentsTab()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
+            <option value="">All Markets</option>
+          </select>
+          <select id="agentInvestorFilter" onchange="renderAgentsTab()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
+            <option value="">All</option>
+            <option value="Yes">Investor Friendly</option>
+            <option value="No">Not Investor Friendly</option>
+            <option value="Maybe">Maybe</option>
+          </select>
+          <select id="agentStatusFilter" onchange="renderAgentsTab()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
+            <option value="">All Statuses</option>
+          </select>
+          <div id="agentStats" style="margin-left:auto;font-size:13px;color:#666;"></div>
+        </div>
+      </div>
+      <div id="agentsContent"></div>
+    </div>
+
   </div>
 
   <script>
     // ==================== GOOGLE SHEETS INTEGRATION ====================
     const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSwypHrZcGSLGA0Ddb-a7GJwAOApyQGwqKW9xf7TNhaxfTnypAlM8W7KWyu9S3iN4JL2oYheTxvK_Kw/pub?gid=0&single=true&output=csv';
     const CALL_LEDGER_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQNgebGg8-sFOUJ-124bGrkIZkLOZsu7Zpibn-u_a1KKzC0K0eCbP6CvQRTc4i5oEnAUwk-DVi-mLKy/pub?gid=2087946942&single=true&output=csv';
+
+    // Contacts sheet URLs — UPDATE THESE after publishing your Contacts Google Sheet as CSV
+    const BUYERS_CSV_URL = ''; // Paste your Buyers tab published CSV URL here
+    const AGENTS_CSV_URL = ''; // Paste your Listing Agents tab published CSV URL here
     const CATEGORIES_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOpsTuv9CuraF1lW8ZnDtN-EnMSEcnFOSYSa_5Ws3oaZ3z8_OoTmfNcoN1yWbqq8ag4tWLZw5SxhNY/pub?gid=1007913777&single=true&output=csv';
 
     let EXPENSE_DATA = null; // Will hold parsed categories data
 
     let DEALS = []; // Will be populated from Google Sheet
+    let BUYERS = []; // Will be populated from Contacts Google Sheet
+    let LISTING_AGENTS = []; // Will be populated from Contacts Google Sheet
 
     function parseCSV(csv) {
       const lines = [];
@@ -1649,9 +1739,15 @@
         else if (deal.status.includes('Won')) statusClass += 'badge-won';
         else if (deal.status.includes('Lost')) statusClass += 'badge-lost';
 
+        var safeAddrLedger = deal.address.replace(/[^a-zA-Z0-9]/g, '_');
+        var sellerPhoto = getSellerPhoto(safeAddrLedger);
+        var photoCell = sellerPhoto
+          ? '<img src="' + sellerPhoto + '" style="width:50px;height:38px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="viewSellerPhoto(\'' + safeAddrLedger + '\')">'
+          : '<label style="display:flex;align-items:center;justify-content:center;width:50px;height:38px;background:#f0f4ff;border:1px dashed #aac;border-radius:4px;cursor:pointer;font-size:10px;color:#2E75B6;" title="Upload photo"><input type="file" accept="image/*" style="display:none;" onchange="uploadSellerPhoto(event,\'' + safeAddrLedger + '\')">+Photo</label>';
         tableHtml += `
           <tr>
             <td style="font-weight: 500;">${idx + 1}</td>
+            <td style="padding:4px;">${photoCell}</td>
             <td style="font-weight: 500;">${deal.id}</td>
             <td style="font-size: 12px; color: #666;">${deal.address}</td>
             <td style="font-weight: 500;">${deal.market}</td>
@@ -3917,8 +4013,14 @@
         renderCallLedgerTab();
       } else if (tab === 'arvcalc') {
         renderARVCalcTab();
+      } else if (tab === 'dealmap') {
+        renderDealMapTab();
       } else if (tab === 'dispo') {
         renderDispoTab();
+      } else if (tab === 'buyers') {
+        renderBuyersTab();
+      } else if (tab === 'agents') {
+        renderAgentsTab();
       }
 
       // Give charts time to render
@@ -4136,12 +4238,14 @@
     document.addEventListener('DOMContentLoaded', async () => {
       // Show loading state
       const ledgerBody = document.getElementById('ledgerTableBody');
-      if (ledgerBody) ledgerBody.innerHTML = '<tr><td colspan="17" style="text-align:center;padding:40px;color:#666;font-size:16px;">Loading deals from Google Sheets...</td></tr>';
+      if (ledgerBody) ledgerBody.innerHTML = '<tr><td colspan="18" style="text-align:center;padding:40px;color:#666;font-size:16px;">Loading deals from Google Sheets...</td></tr>';
 
-      // Fetch live data from Google Sheet + Categories in parallel
-      const [sheetDeals, categoriesData] = await Promise.all([
+      // Fetch live data from Google Sheet + Categories + Contacts in parallel
+      const [sheetDeals, categoriesData, buyersData, agentsData] = await Promise.all([
         fetchDealsFromSheet(),
-        fetchCategoriesFromSheet()
+        fetchCategoriesFromSheet(),
+        fetchBuyersFromSheet(),
+        fetchAgentsFromSheet()
       ]);
 
       if (sheetDeals && sheetDeals.length > 0) {
@@ -4157,10 +4261,20 @@
         console.log('Loaded expense categories from Tiller');
       }
 
+      if (buyersData && buyersData.length > 0) {
+        BUYERS = buyersData;
+        console.log('Loaded ' + BUYERS.length + ' buyers from Contacts sheet');
+      }
+      if (agentsData && agentsData.length > 0) {
+        LISTING_AGENTS = agentsData;
+        console.log('Loaded ' + LISTING_AGENTS.length + ' listing agents from Contacts sheet');
+      }
+
       const now = new Date();
       const expenseStatus = EXPENSE_DATA ? ' | Tiller connected' : '';
+      const contactsStatus = (BUYERS.length > 0 || LISTING_AGENTS.length > 0) ? ' | ' + BUYERS.length + ' buyers, ' + LISTING_AGENTS.length + ' agents' : '';
       document.getElementById('dataSource').textContent =
-        (sheetDeals ? 'Live' : 'Offline') + ' | ' + DEALS.length + ' deals' + expenseStatus + ' | ' + now.toLocaleTimeString();
+        (sheetDeals ? 'Live' : 'Offline') + ' | ' + DEALS.length + ' deals' + expenseStatus + contactsStatus + ' | ' + now.toLocaleTimeString();
 
       ledgerFilteredDeals = [...DEALS];
       renderLedgerTab();
@@ -6521,6 +6635,659 @@
 
       html += '</div>';
       return html;
+    }
+
+    // ==================== SELLER PHOTO UPLOAD ====================
+    // Store seller photos in memory (keyed by safeAddr)
+    var sellerPhotos = {};
+
+    // Try to load from localStorage on init
+    try {
+      var saved = localStorage.getItem('summitSellerPhotos');
+      if (saved) sellerPhotos = JSON.parse(saved);
+    } catch(e) {}
+
+    function getSellerPhoto(safeAddr) {
+      return sellerPhotos[safeAddr] || null;
+    }
+
+    function uploadSellerPhoto(event, safeAddr) {
+      var file = event.target.files[0];
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024) { alert('Photo must be under 5MB'); return; }
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        sellerPhotos[safeAddr] = e.target.result;
+        try { localStorage.setItem('summitSellerPhotos', JSON.stringify(sellerPhotos)); } catch(ex) {}
+        renderLedgerTable();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function viewSellerPhoto(safeAddr) {
+      var photo = sellerPhotos[safeAddr];
+      if (!photo) return;
+      // Find the deal for this address
+      var deal = DEALS.find(function(d) { return d.address.replace(/[^a-zA-Z0-9]/g, '_') === safeAddr; });
+      var title = deal ? deal.address : 'Seller Photo';
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column;cursor:pointer;';
+      overlay.onclick = function() { document.body.removeChild(overlay); };
+      overlay.innerHTML = '<div style="color:white;font-size:16px;font-weight:600;margin-bottom:12px;">' + title + '</div>' +
+        '<img src="' + photo + '" style="max-width:90%;max-height:80vh;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.5);">' +
+        '<div style="margin-top:12px;display:flex;gap:12px;">' +
+        '<button onclick="event.stopPropagation();removeSellerPhoto(\'' + safeAddr + '\')" style="padding:8px 16px;background:#C62828;color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;">Remove Photo</button>' +
+        '<button onclick="event.stopPropagation();replaceSellerPhoto(\'' + safeAddr + '\')" style="padding:8px 16px;background:#2E75B6;color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;">Replace Photo</button>' +
+        '</div>';
+      document.body.appendChild(overlay);
+    }
+
+    function removeSellerPhoto(safeAddr) {
+      delete sellerPhotos[safeAddr];
+      try { localStorage.setItem('summitSellerPhotos', JSON.stringify(sellerPhotos)); } catch(e) {}
+      // Close overlay
+      var overlay = document.querySelector('div[style*="z-index:9999"]');
+      if (overlay) document.body.removeChild(overlay);
+      renderLedgerTable();
+    }
+
+    function replaceSellerPhoto(safeAddr) {
+      // Close overlay
+      var overlay = document.querySelector('div[style*="z-index:9999"]');
+      if (overlay) document.body.removeChild(overlay);
+      // Trigger file input
+      var input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.onchange = function(e) { uploadSellerPhoto(e, safeAddr); };
+      input.click();
+    }
+
+    // ==================== BUYERS & LISTING AGENTS ====================
+
+    async function fetchBuyersFromSheet() {
+      if (!BUYERS_CSV_URL) return null;
+      try {
+        var resp = await fetch(BUYERS_CSV_URL);
+        if (!resp.ok) return null;
+        var csv = await resp.text();
+        var rows = parseCSV(csv);
+        if (rows.length < 2) return null;
+
+        var headers = rows[0].map(function(h) { return h.toLowerCase().trim(); });
+        var ci = function(name) { return headers.findIndex(function(h) { return h.includes(name); }); };
+
+        var iName = ci('buyer name'); if (iName < 0) iName = ci('name');
+        var iCompany = ci('company') >= 0 ? ci('company') : ci('llc');
+        var iPhone = ci('phone');
+        var iEmail = ci('email');
+        var iMarkets = ci('markets');
+        var iStrategy = ci('strategy');
+        var iBudgetMin = ci('budget min') >= 0 ? ci('budget min') : ci('min');
+        var iBudgetMax = ci('budget max') >= 0 ? ci('budget max') : ci('max');
+        var iPropTypes = ci('property type');
+        var iSource = ci('source') >= 0 ? ci('source') : ci('deal source');
+        var iNotes = ci('notes');
+        var iDeals = ci('total deals') >= 0 ? ci('total deals') : ci('deals closed');
+        var iLastDeal = ci('last deal');
+        var iStatus = ci('status');
+
+        var buyers = [];
+        for (var i = 1; i < rows.length; i++) {
+          var r = rows[i];
+          if (!r || r.length < 2) continue;
+          var name = (iName >= 0 ? r[iName] : '') || '';
+          if (!name.trim()) continue;
+          buyers.push({
+            name: name.trim(),
+            company: (iCompany >= 0 ? r[iCompany] : '') || '',
+            phone: (iPhone >= 0 ? r[iPhone] : '') || '',
+            email: (iEmail >= 0 ? r[iEmail] : '') || '',
+            markets: (iMarkets >= 0 ? r[iMarkets] : '') || '',
+            strategy: (iStrategy >= 0 ? r[iStrategy] : '') || '',
+            budgetMin: parseNum(iBudgetMin >= 0 ? r[iBudgetMin] : ''),
+            budgetMax: parseNum(iBudgetMax >= 0 ? r[iBudgetMax] : ''),
+            propertyTypes: (iPropTypes >= 0 ? r[iPropTypes] : '') || '',
+            source: (iSource >= 0 ? r[iSource] : '') || '',
+            notes: (iNotes >= 0 ? r[iNotes] : '') || '',
+            totalDeals: parseInt(iDeals >= 0 ? r[iDeals] : '0') || 0,
+            lastDealDate: (iLastDeal >= 0 ? r[iLastDeal] : '') || '',
+            status: (iStatus >= 0 ? r[iStatus] : '') || 'Active',
+          });
+        }
+        return buyers;
+      } catch(e) { console.warn('Failed to fetch buyers:', e); return null; }
+    }
+
+    async function fetchAgentsFromSheet() {
+      if (!AGENTS_CSV_URL) return null;
+      try {
+        var resp = await fetch(AGENTS_CSV_URL);
+        if (!resp.ok) return null;
+        var csv = await resp.text();
+        var rows = parseCSV(csv);
+        if (rows.length < 2) return null;
+
+        var headers = rows[0].map(function(h) { return h.toLowerCase().trim(); });
+        var ci = function(name) { return headers.findIndex(function(h) { return h.includes(name); }); };
+
+        var iName = ci('agent name'); if (iName < 0) iName = ci('name');
+        var iPhone = ci('phone');
+        var iEmail = ci('email');
+        var iBrokerage = ci('brokerage');
+        var iMarkets = ci('markets');
+        var iAvgPrice = ci('avg list') >= 0 ? ci('avg list') : ci('avg price');
+        var iInvestor = ci('investor');
+        var iDeals = ci('deals done');
+        var iLastContact = ci('last contact');
+        var iRating = ci('rating');
+        var iNotes = ci('notes');
+        var iStatus = ci('status');
+
+        var agents = [];
+        for (var i = 1; i < rows.length; i++) {
+          var r = rows[i];
+          if (!r || r.length < 2) continue;
+          var name = (iName >= 0 ? r[iName] : '') || '';
+          if (!name.trim()) continue;
+          agents.push({
+            name: name.trim(),
+            phone: (iPhone >= 0 ? r[iPhone] : '') || '',
+            email: (iEmail >= 0 ? r[iEmail] : '') || '',
+            brokerage: (iBrokerage >= 0 ? r[iBrokerage] : '') || '',
+            markets: (iMarkets >= 0 ? r[iMarkets] : '') || '',
+            avgListPrice: parseNum(iAvgPrice >= 0 ? r[iAvgPrice] : ''),
+            investorFriendly: (iInvestor >= 0 ? r[iInvestor] : '') || '',
+            dealsDone: parseInt(iDeals >= 0 ? r[iDeals] : '0') || 0,
+            lastContact: (iLastContact >= 0 ? r[iLastContact] : '') || '',
+            rating: parseInt(iRating >= 0 ? r[iRating] : '0') || 0,
+            notes: (iNotes >= 0 ? r[iNotes] : '') || '',
+            status: (iStatus >= 0 ? r[iStatus] : '') || 'Active',
+          });
+        }
+        return agents;
+      } catch(e) { console.warn('Failed to fetch agents:', e); return null; }
+    }
+
+    // Helper: find buyer by name
+    function findBuyer(name) {
+      if (!name) return null;
+      var n = name.trim().toLowerCase();
+      return BUYERS.find(function(b) { return b.name.toLowerCase() === n; }) || null;
+    }
+
+    // Helper: find agent by name
+    function findAgent(name) {
+      if (!name) return null;
+      var n = name.trim().toLowerCase();
+      return LISTING_AGENTS.find(function(a) { return a.name.toLowerCase() === n; }) || null;
+    }
+
+    // Count deals for a buyer
+    function countBuyerDeals(buyerName) {
+      var n = buyerName.trim().toLowerCase();
+      return DEALS.filter(function(d) {
+        return (d.buyer_name || '').toLowerCase() === n || (d.id || '').toLowerCase().includes(n);
+      }).length;
+    }
+
+    function renderBuyersTab() {
+      var search = (document.getElementById('buyerSearch').value || '').toLowerCase();
+      var marketFilter = document.getElementById('buyerMarketFilter').value;
+      var strategyFilter = document.getElementById('buyerStrategyFilter').value;
+      var statusFilter = document.getElementById('buyerStatusFilter').value;
+
+      // Populate filters on first render
+      var marketSelect = document.getElementById('buyerMarketFilter');
+      if (marketSelect.options.length <= 1) {
+        var allMarkets = new Set();
+        BUYERS.forEach(function(b) {
+          (b.markets || '').split(',').forEach(function(m) { m = m.trim(); if (m) allMarkets.add(m); });
+        });
+        [...allMarkets].sort().forEach(function(m) {
+          var o = document.createElement('option'); o.value = m; o.textContent = m; marketSelect.appendChild(o);
+        });
+        var stratSelect = document.getElementById('buyerStrategyFilter');
+        ['Cash', 'Creative', 'Both', 'Cash, Creative'].forEach(function(s) {
+          var o = document.createElement('option'); o.value = s; o.textContent = s; stratSelect.appendChild(o);
+        });
+        var statSelect = document.getElementById('buyerStatusFilter');
+        var statuses = [...new Set(BUYERS.map(function(b) { return b.status; }).filter(Boolean))];
+        statuses.forEach(function(s) {
+          var o = document.createElement('option'); o.value = s; o.textContent = s; statSelect.appendChild(o);
+        });
+      }
+
+      var filtered = BUYERS.filter(function(b) {
+        if (search && !(b.name + ' ' + b.company + ' ' + b.email + ' ' + b.markets + ' ' + b.notes).toLowerCase().includes(search)) return false;
+        if (marketFilter && !(b.markets || '').includes(marketFilter)) return false;
+        if (strategyFilter && !(b.strategy || '').toLowerCase().includes(strategyFilter.toLowerCase())) return false;
+        if (statusFilter && b.status !== statusFilter) return false;
+        return true;
+      });
+
+      document.getElementById('buyerStats').textContent = filtered.length + ' of ' + BUYERS.length + ' buyers';
+
+      if (BUYERS.length === 0) {
+        document.getElementById('buyersContent').innerHTML = '<div style="background:white;border-radius:8px;padding:40px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.08);">' +
+          '<div style="font-size:48px;margin-bottom:16px;">👥</div>' +
+          '<div style="font-size:18px;font-weight:700;color:#1B2A4A;margin-bottom:8px;">No Buyers Connected</div>' +
+          '<div style="font-size:14px;color:#666;max-width:500px;margin:0 auto;line-height:1.6;">To connect your buyer list:<br>' +
+          '1. Download the <strong>Summit Contacts Template</strong> (.xlsx)<br>' +
+          '2. Copy it into a Google Sheet and fill in your buyers<br>' +
+          '3. File → Share → Publish to web → Select "Buyers" tab → CSV<br>' +
+          '4. Paste the published URL into <code>BUYERS_CSV_URL</code> in index.html</div>' +
+          '</div>';
+        return;
+      }
+
+      var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;">';
+      filtered.forEach(function(buyer) {
+        var statusColor = buyer.status === 'Active' ? '#10b981' : (buyer.status === 'VIP' ? '#ED7D31' : (buyer.status === 'New' ? '#2E75B6' : '#999'));
+        var liveDeals = countBuyerDeals(buyer.name);
+        html += '<div style="background:white;border-radius:8px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);border-left:4px solid ' + statusColor + ';">';
+        // Header
+        html += '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px;">';
+        html += '<div>';
+        html += '<div style="font-size:16px;font-weight:700;color:#1B2A4A;">' + buyer.name + '</div>';
+        if (buyer.company) html += '<div style="font-size:12px;color:#666;">' + buyer.company + '</div>';
+        html += '</div>';
+        html += '<span style="background:' + statusColor + ';color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">' + buyer.status + '</span>';
+        html += '</div>';
+        // Contact
+        html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
+        if (buyer.phone) html += '<a href="tel:' + buyer.phone + '" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#f0f4ff;border-radius:4px;font-size:12px;color:#1B2A4A;text-decoration:none;font-weight:600;">📞 ' + buyer.phone + '</a>';
+        if (buyer.email) html += '<a href="mailto:' + buyer.email + '" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#f0f4ff;border-radius:4px;font-size:12px;color:#1B2A4A;text-decoration:none;">✉ ' + buyer.email + '</a>';
+        html += '</div>';
+        // Details grid
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:12px;">';
+        html += '<div><span style="color:#999;">Markets:</span> <strong>' + (buyer.markets || '-') + '</strong></div>';
+        html += '<div><span style="color:#999;">Strategy:</span> <strong>' + (buyer.strategy || '-') + '</strong></div>';
+        html += '<div><span style="color:#999;">Budget:</span> <strong>' + (buyer.budgetMin ? fmt(buyer.budgetMin) + ' - ' + fmt(buyer.budgetMax) : '-') + '</strong></div>';
+        html += '<div><span style="color:#999;">Property:</span> <strong>' + (buyer.propertyTypes || '-') + '</strong></div>';
+        html += '<div><span style="color:#999;">Deals Closed:</span> <strong>' + buyer.totalDeals + '</strong></div>';
+        html += '<div><span style="color:#999;">Source:</span> <strong>' + (buyer.source || '-') + '</strong></div>';
+        html += '</div>';
+        if (buyer.notes) {
+          html += '<div style="margin-top:8px;padding:8px;background:#f9f9f9;border-radius:4px;font-size:11px;color:#666;line-height:1.4;">' + buyer.notes + '</div>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+      document.getElementById('buyersContent').innerHTML = html;
+    }
+
+    function renderAgentsTab() {
+      var search = (document.getElementById('agentSearch').value || '').toLowerCase();
+      var marketFilter = document.getElementById('agentMarketFilter').value;
+      var investorFilter = document.getElementById('agentInvestorFilter').value;
+      var statusFilter = document.getElementById('agentStatusFilter').value;
+
+      // Populate filters on first render
+      var marketSelect = document.getElementById('agentMarketFilter');
+      if (marketSelect.options.length <= 1) {
+        var allMarkets = new Set();
+        LISTING_AGENTS.forEach(function(a) {
+          (a.markets || '').split(',').forEach(function(m) { m = m.trim(); if (m) allMarkets.add(m); });
+        });
+        [...allMarkets].sort().forEach(function(m) {
+          var o = document.createElement('option'); o.value = m; o.textContent = m; marketSelect.appendChild(o);
+        });
+        var statSelect = document.getElementById('agentStatusFilter');
+        var statuses = [...new Set(LISTING_AGENTS.map(function(a) { return a.status; }).filter(Boolean))];
+        statuses.forEach(function(s) {
+          var o = document.createElement('option'); o.value = s; o.textContent = s; statSelect.appendChild(o);
+        });
+      }
+
+      var filtered = LISTING_AGENTS.filter(function(a) {
+        if (search && !(a.name + ' ' + a.brokerage + ' ' + a.email + ' ' + a.markets + ' ' + a.notes).toLowerCase().includes(search)) return false;
+        if (marketFilter && !(a.markets || '').includes(marketFilter)) return false;
+        if (investorFilter && a.investorFriendly !== investorFilter) return false;
+        if (statusFilter && a.status !== statusFilter) return false;
+        return true;
+      });
+
+      document.getElementById('agentStats').textContent = filtered.length + ' of ' + LISTING_AGENTS.length + ' agents';
+
+      if (LISTING_AGENTS.length === 0) {
+        document.getElementById('agentsContent').innerHTML = '<div style="background:white;border-radius:8px;padding:40px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.08);">' +
+          '<div style="font-size:48px;margin-bottom:16px;">🏠</div>' +
+          '<div style="font-size:18px;font-weight:700;color:#1B2A4A;margin-bottom:8px;">No Listing Agents Connected</div>' +
+          '<div style="font-size:14px;color:#666;max-width:500px;margin:0 auto;line-height:1.6;">To connect your agent list:<br>' +
+          '1. Download the <strong>Summit Contacts Template</strong> (.xlsx)<br>' +
+          '2. Copy it into a Google Sheet and fill in your agents<br>' +
+          '3. File → Share → Publish to web → Select "Listing Agents" tab → CSV<br>' +
+          '4. Paste the published URL into <code>AGENTS_CSV_URL</code> in index.html</div>' +
+          '</div>';
+        return;
+      }
+
+      var html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;">';
+      filtered.forEach(function(agent) {
+        var statusColor = agent.status === 'Active' ? '#10b981' : (agent.status === 'New' ? '#2E75B6' : '#999');
+        var investorBg = agent.investorFriendly === 'Yes' ? '#E8F5E9' : (agent.investorFriendly === 'Maybe' ? '#FFF8E1' : '#FFEBEE');
+        var investorColor = agent.investorFriendly === 'Yes' ? '#2E7D32' : (agent.investorFriendly === 'Maybe' ? '#F57F17' : '#C62828');
+        var stars = '';
+        for (var s = 0; s < 5; s++) stars += s < agent.rating ? '★' : '☆';
+
+        html += '<div style="background:white;border-radius:8px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);border-left:4px solid ' + statusColor + ';">';
+        // Header
+        html += '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:10px;">';
+        html += '<div>';
+        html += '<div style="font-size:16px;font-weight:700;color:#1B2A4A;">' + agent.name + '</div>';
+        if (agent.brokerage) html += '<div style="font-size:12px;color:#666;">' + agent.brokerage + '</div>';
+        html += '</div>';
+        html += '<div style="display:flex;gap:6px;align-items:center;">';
+        html += '<span style="background:' + investorBg + ';color:' + investorColor + ';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">' + (agent.investorFriendly || '?') + '</span>';
+        html += '<span style="color:#ED7D31;font-size:14px;">' + stars + '</span>';
+        html += '</div>';
+        html += '</div>';
+        // Contact
+        html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
+        if (agent.phone) html += '<a href="tel:' + agent.phone + '" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#f0f4ff;border-radius:4px;font-size:12px;color:#1B2A4A;text-decoration:none;font-weight:600;">📞 ' + agent.phone + '</a>';
+        if (agent.email) html += '<a href="mailto:' + agent.email + '" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#f0f4ff;border-radius:4px;font-size:12px;color:#1B2A4A;text-decoration:none;">✉ ' + agent.email + '</a>';
+        html += '</div>';
+        // Details grid
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:12px;">';
+        html += '<div><span style="color:#999;">Markets:</span> <strong>' + (agent.markets || '-') + '</strong></div>';
+        html += '<div><span style="color:#999;">Avg List:</span> <strong>' + (agent.avgListPrice ? fmt(agent.avgListPrice) : '-') + '</strong></div>';
+        html += '<div><span style="color:#999;">Deals Together:</span> <strong>' + agent.dealsDone + '</strong></div>';
+        html += '<div><span style="color:#999;">Last Contact:</span> <strong>' + (agent.lastContact || '-') + '</strong></div>';
+        html += '</div>';
+        if (agent.notes) {
+          html += '<div style="margin-top:8px;padding:8px;background:#f9f9f9;border-radius:4px;font-size:11px;color:#666;line-height:1.4;">' + agent.notes + '</div>';
+        }
+        // Quick action — Google search for more info
+        html += '<div style="margin-top:8px;text-align:right;">';
+        html += '<a href="https://www.google.com/search?q=' + encodeURIComponent(agent.name + ' ' + agent.brokerage + ' real estate agent') + '" target="_blank" style="font-size:11px;color:#2E75B6;">Google Agent →</a>';
+        html += '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+      document.getElementById('agentsContent').innerHTML = html;
+    }
+
+    // ==================== DEAL MAP ====================
+    var dealMap = null;
+    var dealMapMarkers = [];
+    var dealMapGeoCache = {};
+
+    // Try to load geocache from localStorage
+    try {
+      var gc = localStorage.getItem('summitDealGeoCache');
+      if (gc) dealMapGeoCache = JSON.parse(gc);
+    } catch(e) {}
+
+    async function geocodeAddress(address) {
+      // Check cache first
+      var cacheKey = address.trim().toLowerCase();
+      if (dealMapGeoCache[cacheKey]) return dealMapGeoCache[cacheKey];
+
+      try {
+        var enc = encodeURIComponent(address);
+        var resp = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + enc, {
+          headers: { 'User-Agent': 'SummitGroupDashboard/1.0' }
+        });
+        if (!resp.ok) return null;
+        var data = await resp.json();
+        if (data && data.length > 0) {
+          var result = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+          dealMapGeoCache[cacheKey] = result;
+          // Save cache
+          try { localStorage.setItem('summitDealGeoCache', JSON.stringify(dealMapGeoCache)); } catch(ex) {}
+          return result;
+        }
+      } catch(e) {
+        console.warn('Geocode failed for:', address, e);
+      }
+      return null;
+    }
+
+    function getDealMapFilteredDeals() {
+      var statusFilter = document.getElementById('dealMapStatusFilter').value;
+      var strategyFilter = document.getElementById('dealMapStrategyFilter').value;
+      var marketFilter = document.getElementById('dealMapMarketFilter').value;
+      return DEALS.filter(function(d) {
+        if (statusFilter && d.status !== statusFilter) return false;
+        if (strategyFilter && d.strategy !== strategyFilter) return false;
+        if (marketFilter && d.market !== marketFilter) return false;
+        return true;
+      });
+    }
+
+    function getStatusColor(status) {
+      if (status.includes('Won')) return '#10b981';
+      if (status.includes('Lost')) return '#ef4444';
+      if (status.includes('Under Contract')) return '#ED7D31';
+      if (status.includes('Listed')) return '#2E75B6';
+      return '#666';
+    }
+
+    function getStrategyIcon(strategy) {
+      var s = (strategy || '').toLowerCase();
+      if (s === 'novation') return 'N';
+      if (s === 'cash') return '$';
+      if (s === 'subject-to') return 'ST';
+      if (s === 'seller finance') return 'SF';
+      if (s === 'listing agent') return 'LA';
+      return '?';
+    }
+
+    async function renderDealMapTab() {
+      // Populate market filter
+      var marketSelect = document.getElementById('dealMapMarketFilter');
+      if (marketSelect.options.length <= 1) {
+        var markets = [...new Set(DEALS.map(function(d) { return d.market; }).filter(Boolean))].sort();
+        markets.forEach(function(m) {
+          var o = document.createElement('option');
+          o.value = m; o.textContent = m;
+          marketSelect.appendChild(o);
+        });
+      }
+      renderDealMap();
+    }
+
+    async function renderDealMap() {
+      var container = document.getElementById('dealMapContainer');
+      var deals = getDealMapFilteredDeals();
+
+      // Stats
+      var statsEl = document.getElementById('dealMapStats');
+      statsEl.textContent = deals.length + ' deals shown';
+
+      // Init map if needed
+      if (!dealMap) {
+        dealMap = L.map('dealMapContainer').setView([39.0, -98.0], 4);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap',
+          maxZoom: 18
+        }).addTo(dealMap);
+      }
+
+      // Clear existing markers
+      dealMapMarkers.forEach(function(m) { dealMap.removeLayer(m); });
+      dealMapMarkers = [];
+
+      // Geocode and place markers with rate limiting
+      var bounds = [];
+      var batchSize = 5;
+      var delay = 1100; // Nominatim rate limit: 1 req/sec
+
+      for (var i = 0; i < deals.length; i += batchSize) {
+        var batch = deals.slice(i, i + batchSize);
+        var promises = batch.map(function(deal) {
+          return geocodeAddress(deal.address).then(function(coords) {
+            return { deal: deal, coords: coords };
+          });
+        });
+        var results = await Promise.all(promises);
+        results.forEach(function(r) {
+          if (r.coords) {
+            addDealMarker(r.deal, r.coords);
+            bounds.push([r.coords.lat, r.coords.lng]);
+          }
+        });
+        // Rate limit — but skip delay if all were cached
+        var uncachedCount = batch.filter(function(d) {
+          return !dealMapGeoCache[d.address.trim().toLowerCase()];
+        }).length;
+        if (uncachedCount > 0 && i + batchSize < deals.length) {
+          await new Promise(function(resolve) { setTimeout(resolve, delay); });
+        }
+      }
+
+      // Fit bounds
+      if (bounds.length > 0) {
+        dealMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 12 });
+      }
+
+      // Update stats
+      statsEl.textContent = deals.length + ' deals · ' + bounds.length + ' mapped';
+    }
+
+    function addDealMarker(deal, coords) {
+      var statusColor = getStatusColor(deal.status);
+      var stratIcon = getStrategyIcon(deal.strategy);
+      var safeAddr = deal.address.replace(/[^a-zA-Z0-9]/g, '_');
+      var sellerPhoto = getSellerPhoto(safeAddr);
+
+      var icon = L.divIcon({
+        html: '<div style="background:' + statusColor + ';color:white;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);">' + stratIcon + '</div>',
+        className: '',
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
+        popupAnchor: [0, -18]
+      });
+
+      var marker = L.marker([coords.lat, coords.lng], { icon: icon });
+
+      // Build popup
+      var profit = deal.final || deal.potential || null;
+      var days = ['Closed - Won', 'Closed - Lost'].includes(deal.status)
+        ? daysBetween(deal.ucDate, deal.closeDate)
+        : daysAgo(deal.ucDate);
+
+      var statusBadgeBg = statusColor;
+      var popup = '<div style="min-width:320px;max-width:400px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">';
+
+      // Photo header
+      if (sellerPhoto) {
+        popup += '<div style="margin:-12px -20px 12px;"><img src="' + sellerPhoto + '" style="width:100%;height:160px;object-fit:cover;border-radius:4px 4px 0 0;"></div>';
+      }
+
+      // Header
+      popup += '<div style="font-size:16px;font-weight:800;color:#1B2A4A;margin-bottom:4px;">' + deal.address + '</div>';
+      popup += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:12px;">';
+      popup += '<span style="background:' + statusBadgeBg + ';color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">' + deal.status + '</span>';
+      popup += '<span style="background:#1B2A4A;color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">' + deal.strategy + '</span>';
+      popup += '<span style="font-size:12px;color:#666;">' + deal.market + '</span>';
+      popup += '</div>';
+
+      // Deal info grid
+      popup += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12px;">';
+      popup += '<div><span style="color:#999;">Seller:</span> <strong>' + deal.id + '</strong></div>';
+      popup += '<div><span style="color:#999;">Acq:</span> <strong>' + deal.acq + '</strong></div>';
+      popup += '<div><span style="color:#999;">Dispo:</span> <strong>' + deal.dispo + '</strong></div>';
+      popup += '<div><span style="color:#999;">Exit:</span> <strong>' + deal.exit + '</strong></div>';
+      popup += '<div><span style="color:#999;">UC Date:</span> <strong>' + formatDate(deal.ucDate) + '</strong></div>';
+      popup += '<div><span style="color:#999;">Close Date:</span> <strong>' + formatDate(deal.closeDate) + '</strong></div>';
+      popup += '<div><span style="color:#999;">Days:</span> <strong>' + days + 'd</strong></div>';
+      popup += '<div><span style="color:#999;">Month:</span> <strong>' + (deal.month || '-') + '</strong></div>';
+      popup += '</div>';
+
+      // Financial info
+      popup += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12px;">';
+      popup += '<div><span style="color:#999;">Contract:</span> <strong>' + fmt(deal.contract) + '</strong></div>';
+      popup += '<div><span style="color:#999;">Listed:</span> <strong>' + (deal.listed ? fmt(deal.listed) : '-') + '</strong></div>';
+      popup += '<div><span style="color:#999;">Buyer Price:</span> <strong>' + (deal.buyer ? fmt(deal.buyer) : '-') + '</strong></div>';
+      popup += '<div><span style="color:#999;">Repairs:</span> <strong>' + (deal.repairs ? fmt(deal.repairs) : '-') + '</strong></div>';
+      if (profit) {
+        var profitColor = profit >= 10000 ? '#10b981' : (profit > 0 ? '#F57F17' : '#C62828');
+        popup += '<div style="grid-column:span 2;"><span style="color:#999;">Profit:</span> <strong style="color:' + profitColor + ';font-size:14px;">' + fmt(profit) + (deal.final ? ' (final)' : ' (potential)') + '</strong></div>';
+      }
+      popup += '</div>';
+
+      // GHL meta data if present
+      if (deal.meta && Object.keys(deal.meta).length > 0) {
+        popup += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">';
+        popup += '<div style="font-size:10px;font-weight:600;color:#2E75B6;text-transform:uppercase;margin-bottom:4px;">GHL Data</div>';
+        popup += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:11px;">';
+        if (deal.loanBalance) popup += '<div><span style="color:#999;">Loan Bal:</span> ' + fmt(deal.loanBalance) + '</div>';
+        if (deal.piti) popup += '<div><span style="color:#999;">PITI:</span> ' + fmt(deal.piti) + '</div>';
+        if (deal.interestRate) popup += '<div><span style="color:#999;">Rate:</span> ' + deal.interestRate + '%</div>';
+        if (deal.arv) popup += '<div><span style="color:#999;">ARV:</span> ' + fmt(deal.arv) + '</div>';
+        if (deal.rent) popup += '<div><span style="color:#999;">Rent:</span> ' + fmt(deal.rent) + '</div>';
+        if (deal.emd) popup += '<div><span style="color:#999;">EMD:</span> ' + fmt(deal.emd) + '</div>';
+        popup += '</div></div>';
+      }
+
+      // Buyer/Agent contacts if available
+      if (BUYERS.length > 0 || LISTING_AGENTS.length > 0) {
+        // Match buyer by checking deal buyer name or finding a buyer whose market includes this deal's market
+        var dealBuyer = deal.buyer_name ? findBuyer(deal.buyer_name) : null;
+        // Find agents in this deal's market
+        var marketAgents = LISTING_AGENTS.filter(function(a) {
+          return a.markets && deal.market && a.markets.includes(deal.market);
+        }).slice(0, 2);
+
+        if (dealBuyer || marketAgents.length > 0) {
+          popup += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">';
+          popup += '<div style="font-size:10px;font-weight:600;color:#10b981;text-transform:uppercase;margin-bottom:4px;">Contacts</div>';
+          if (dealBuyer) {
+            popup += '<div style="font-size:12px;margin-bottom:4px;"><strong>Buyer:</strong> ' + dealBuyer.name + (dealBuyer.phone ? ' · <a href="tel:' + dealBuyer.phone + '">' + dealBuyer.phone + '</a>' : '') + '</div>';
+          }
+          marketAgents.forEach(function(ag) {
+            popup += '<div style="font-size:12px;margin-bottom:2px;"><strong>Agent:</strong> ' + ag.name + ' (' + ag.brokerage + ')' + (ag.phone ? ' · <a href="tel:' + ag.phone + '">' + ag.phone + '</a>' : '') + '</div>';
+          });
+          popup += '</div>';
+        }
+      }
+
+      // Zillow link button
+      popup += '<div style="margin-top:10px;text-align:center;">';
+      popup += '<a href="https://www.zillow.com/homes/' + encodeURIComponent(deal.address) + '_rb/" target="_blank" style="display:inline-block;padding:6px 16px;background:#1B2A4A;color:white;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;">View on Zillow</a>';
+      popup += ' <button onclick="loadDealMapZillowPhotos(\'' + safeAddr + '\',\'' + deal.address.replace(/'/g, "\\'") + '\',this)" style="padding:6px 16px;background:#2E75B6;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Load Zillow Photos</button>';
+      popup += '</div>';
+
+      // Photo container for Zillow photos
+      popup += '<div id="dealMapPhotos_' + safeAddr + '" style="margin-top:8px;"></div>';
+
+      popup += '</div>';
+
+      marker.bindPopup(popup, { maxWidth: 420, maxHeight: 500 });
+      marker.addTo(dealMap);
+      dealMapMarkers.push(marker);
+    }
+
+    async function loadDealMapZillowPhotos(safeAddr, address, btn) {
+      btn.textContent = 'Loading...';
+      btn.disabled = true;
+      try {
+        var resp = await fetch('https://summit-ghl-dashboard-api.aubrey.workers.dev/api/zillow/find-comps?address=' + encodeURIComponent(address));
+        var data = await resp.json();
+        var photos = [];
+        if (data && data.subject && data.subject.photos) {
+          photos = data.subject.photos;
+        } else if (data && data.subject && data.subject.imgSrc) {
+          photos = [data.subject.imgSrc];
+        }
+        var container = document.getElementById('dealMapPhotos_' + safeAddr);
+        if (container && photos.length > 0) {
+          var html = '<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;">';
+          photos.slice(0, 6).forEach(function(url) {
+            html += '<img src="' + url + '" style="width:60px;height:45px;object-fit:cover;border-radius:4px;cursor:pointer;" onclick="window.open(\'' + url + '\',\'_blank\')">';
+          });
+          html += '</div>';
+          container.innerHTML = html;
+        } else if (container) {
+          container.innerHTML = '<div style="font-size:11px;color:#999;margin-top:4px;">No photos available</div>';
+        }
+        btn.textContent = 'Photos Loaded';
+      } catch(e) {
+        btn.textContent = 'Failed';
+        console.error('Zillow photo load failed:', e);
+      }
     }
 
   </script>
