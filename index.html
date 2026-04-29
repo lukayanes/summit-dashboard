@@ -1659,11 +1659,11 @@
           (d.listed && d.listed.toString().includes(searchTerm)) ||
           (d.buyer && d.buyer.toString().includes(searchTerm));
 
-        const matchStatus = !statusFilter || d.status === statusFilter;
-        const matchStrategy = !strategyFilter || d.strategy === strategyFilter;
-        const matchMarket = !marketFilter || d.market === marketFilter;
-        const matchDispo = !dispoFilter || d.dispo === dispoFilter;
-        const matchAcq = !acqFilter || d.acq === acqFilter;
+        const matchStatus = !statusFilter || (d.status || '').trim().toLowerCase() === statusFilter.trim().toLowerCase();
+        const matchStrategy = !strategyFilter || (d.strategy || '').trim().toLowerCase() === strategyFilter.trim().toLowerCase();
+        const matchMarket = !marketFilter || (d.market || '').trim().toLowerCase() === marketFilter.trim().toLowerCase();
+        const matchDispo = !dispoFilter || (d.dispo || '').trim().toLowerCase() === dispoFilter.trim().toLowerCase();
+        const matchAcq = !acqFilter || (d.acq || '').trim().toLowerCase() === acqFilter.trim().toLowerCase();
 
         return matchSearch && matchStatus && matchStrategy && matchMarket && matchDispo && matchAcq;
       });
@@ -7130,6 +7130,14 @@
       var noZip = cleanAddr.replace(/\b\d{5}(-\d{4})?\b/g, '').replace(/,\s*,/g, ',').replace(/,\s*$/, '').trim();
       if (noZip !== cleanAddr) attempts.push(noZip);
 
+      // Also try city + state fallback (grab last 2-3 parts of the address)
+      var parts = cleanAddr.split(',').map(function(p) { return p.trim(); }).filter(Boolean);
+      if (parts.length >= 2) {
+        // Try "City, ST" or "City, ST ZIP"
+        attempts.push(parts.slice(-2).join(', '));
+        if (parts.length >= 3) attempts.push(parts.slice(-3).join(', '));
+      }
+
       for (var a = 0; a < attempts.length; a++) {
         try {
           var enc = encodeURIComponent(attempts[a]);
@@ -7144,6 +7152,10 @@
             try { localStorage.setItem('summitDealGeoCache', JSON.stringify(dealMapGeoCache)); } catch(ex) {}
             return result;
           }
+          // Wait between retries to respect rate limit
+          if (a < attempts.length - 1) {
+            await new Promise(function(resolve) { setTimeout(resolve, 1100); });
+          }
         } catch(e) {
           console.warn('Geocode attempt failed for:', attempts[a], e);
         }
@@ -7153,13 +7165,13 @@
     }
 
     function getDealMapFilteredDeals() {
-      var statusFilter = document.getElementById('dealMapStatusFilter').value;
-      var strategyFilter = document.getElementById('dealMapStrategyFilter').value;
-      var marketFilter = document.getElementById('dealMapMarketFilter').value;
+      var statusFilter = document.getElementById('dealMapStatusFilter').value.trim().toLowerCase();
+      var strategyFilter = document.getElementById('dealMapStrategyFilter').value.trim().toLowerCase();
+      var marketFilter = document.getElementById('dealMapMarketFilter').value.trim().toLowerCase();
       return DEALS.filter(function(d) {
-        if (statusFilter && d.status !== statusFilter) return false;
-        if (strategyFilter && d.strategy !== strategyFilter) return false;
-        if (marketFilter && d.market !== marketFilter) return false;
+        if (statusFilter && (d.status || '').trim().toLowerCase() !== statusFilter) return false;
+        if (strategyFilter && (d.strategy || '').trim().toLowerCase() !== strategyFilter) return false;
+        if (marketFilter && (d.market || '').trim().toLowerCase() !== marketFilter) return false;
         return true;
       });
     }
@@ -7245,6 +7257,8 @@
 
       if (failedAddresses.length > 0) {
         console.warn('Failed to geocode ' + failedAddresses.length + ' addresses:', failedAddresses);
+        statsEl.innerHTML = deals.length + ' deals &middot; ' + bounds.length + ' mapped &middot; <span style="color:#C62828;cursor:pointer;" title="' + failedAddresses.join('\n').replace(/"/g, '&quot;') + '">' + failedAddresses.length + ' unmapped ⚠</span>';
+        return;
       }
 
       // Fit bounds
