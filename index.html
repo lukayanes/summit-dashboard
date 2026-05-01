@@ -6476,18 +6476,24 @@
       }
 
       // Step 2: If Zillow has 0-1 photos, try Redfin
+      var redfinDebug = '';
       if (zillowPhotos.length <= 1 && redfinUrl) {
         photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Zillow has ' + zillowPhotos.length + ' photo(s) — trying Redfin...</div>';
         try {
           var resp2 = await fetch(workerUrl + '/api/redfin/photos?url=' + encodeURIComponent(redfinUrl));
           var data2 = await resp2.json();
           redfinPhotos = data2.photos || [];
-          if (data2.error) console.warn('Redfin photo error:', data2.error);
-        } catch (e) { console.warn('Redfin photo fetch failed:', e); }
+          if (data2.methodLog) redfinDebug = ' [' + data2.methodLog.join(', ') + ']';
+          if (data2.error) console.warn('Redfin photo error:', data2.error, data2.methodLog);
+        } catch (e) { console.warn('Redfin photo fetch failed:', e); redfinDebug = ' [fetch error: ' + e.message + ']'; }
       }
 
       if (zillowPhotos.length === 0 && redfinPhotos.length === 0) {
-        photoDiv.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;">No photos found.' + (redfinUrl ? ' Redfin URL: <a href="' + redfinUrl + '" target="_blank" style="color:#1565C0;">view listing ↗</a>' : '') + '</div>';
+        var noPhotoMsg = '<div style="color:#999;font-size:12px;padding:8px;">No photos found.';
+        if (redfinUrl) noPhotoMsg += ' <a href="' + redfinUrl + '" target="_blank" style="color:#1565C0;">View on Redfin ↗</a>';
+        if (redfinDebug) noPhotoMsg += '<br><span style="font-size:10px;color:#bbb;">Debug: ' + redfinDebug + '</span>';
+        noPhotoMsg += '</div>';
+        photoDiv.innerHTML = noPhotoMsg;
         return;
       }
 
@@ -7617,4 +7623,3 @@
   </script>
 </body>
 </html>
-            
