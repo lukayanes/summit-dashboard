@@ -6004,6 +6004,32 @@
         var gradeColors = { A: '#2E7D32', B: '#1565C0', C: '#F57F17', D: '#E65100', F: '#C62828' };
         var gradeBgs = { A: '#E8F5E9', B: '#E3F2FD', C: '#FFF8E1', D: '#FFF3E0', F: '#FFEBEE' };
 
+        // Subject stats for comparison indicators
+        var _subj = data.subject || {};
+        var _subjBeds = _subj.bedrooms || null;
+        var _subjBaths = _subj.bathrooms || null;
+        var _subjSqft = _subj.livingArea || 0;
+        var _subjYear = _subj.yearBuilt || null;
+        var _subjPpsf = (_subjSqft > 0 && _subj.zestimate) ? Math.round(_subj.zestimate / _subjSqft) : 0;
+
+        function _compDelta(compVal, subjVal, unit, invert, isDollar) {
+          if (!compVal || !subjVal) return '';
+          var diff = compVal - subjVal;
+          if (Math.abs(diff) < 0.01) return '<span style="font-size:9px;color:#999;display:block;">= same</span>';
+          var isGood = diff > 0;
+          if (invert) isGood = !isGood;
+          var arrow = diff > 0 ? '▲' : '▼';
+          var color = isGood ? '#2E7D32' : '#C62828';
+          var absVal = Math.abs(diff);
+          var label;
+          if (isDollar) {
+            label = (diff > 0 ? '+' : '-') + '$' + absVal.toLocaleString();
+          } else {
+            label = (diff > 0 ? '+' : '') + diff + (unit || '');
+          }
+          return '<span style="font-size:9px;color:' + color + ';display:block;" title="vs subject">' + arrow + ' ' + label + '</span>';
+        }
+
         for (var c = 0; c < comps.length; c++) {
           var comp = comps[c];
           var cPrice = comp.price || 0;
@@ -6038,12 +6064,13 @@
           var linkLabel = zillowLink ? 'Zillow' : (redfinLink ? 'Redfin' : '');
           var addrDisplay = listingLink ? '<a href="' + listingLink + '" target="_blank" style="color:#1565C0;text-decoration:none;font-weight:600;" title="View on ' + linkLabel + '">' + cAddr + ' ↗</a>' : cAddr;
 
-          // Thumbnail + photo expand
+          // Thumbnail + photo expand (supports Zillow zpid and/or Redfin URL)
           var thumbHtml = '';
+          var hasPhotoSource = comp.zpid || comp.redfinUrl;
           if (comp.imgSrc) {
             thumbHtml = '<img src="' + comp.imgSrc + '" style="width:36px;height:28px;object-fit:cover;border-radius:3px;cursor:pointer;" onclick="loadCompPhotos(' + c + ', \'' + (comp.zpid || '') + '\')" title="Click to view photos">';
-          } else if (comp.zpid) {
-            thumbHtml = '<button onclick="loadCompPhotos(' + c + ', \'' + comp.zpid + '\')" style="background:#E3F2FD;border:1px solid #90CAF9;border-radius:4px;padding:2px 6px;font-size:10px;cursor:pointer;color:#1565C0;font-weight:700;" title="Load photos">+</button>';
+          } else if (hasPhotoSource) {
+            thumbHtml = '<button onclick="loadCompPhotos(' + c + ', \'' + (comp.zpid || '') + '\')" style="background:#E3F2FD;border:1px solid #90CAF9;border-radius:4px;padding:2px 6px;font-size:10px;cursor:pointer;color:#1565C0;font-weight:700;" title="Load photos">+</button>';
           } else {
             thumbHtml = '<span style="color:#ccc;font-size:10px;">—</span>';
           }
@@ -6053,13 +6080,15 @@
           html += '<td style="padding:6px 8px;text-align:center;"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:' + (gradeBgs[grade] || '#F5F5F5') + ';color:' + (gradeColors[grade] || '#666') + ';">' + grade + ' ' + matchPct + '%</span></td>';
           html += '<td style="padding:6px 8px;text-align:center;">' + thumbHtml + '</td>';
           html += '<td style="padding:6px 8px;font-size:12px;">' + addrDisplay + '</td>';
-          html += '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(cPrice) + priceBadge + '</td>';
-          html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bedrooms || '—') + '</td>';
-          html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bathrooms || '—') + '</td>';
-          html += '<td style="padding:6px 8px;text-align:right;">' + (cSqft ? cSqft.toLocaleString() : '—') + '</td>';
-          html += '<td style="padding:6px 8px;text-align:right;">' + (cPpsf ? '$' + cPpsf : '—') + '</td>';
+          var _priceDelta = (_subj.zestimate && cPrice) ? _compDelta(cPrice, _subj.zestimate, '', false, true) : '';
+          html += '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(cPrice) + priceBadge + _priceDelta + '</td>';
+          // Comparison indicators vs subject
+          html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bedrooms || '—') + _compDelta(comp.bedrooms, _subjBeds, ' bd') + '</td>';
+          html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bathrooms || '—') + _compDelta(comp.bathrooms, _subjBaths, ' ba') + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;">' + (cSqft ? cSqft.toLocaleString() : '—') + _compDelta(cSqft, _subjSqft, ' sf') + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;">' + (cPpsf ? '$' + cPpsf : '—') + _compDelta(cPpsf, _subjPpsf, '/sf', false, true) + '</td>';
           html += '<td style="padding:6px 8px;text-align:right;">' + cDist + '</td>';
-          html += '<td style="padding:6px 8px;text-align:right;">' + (comp.yearBuilt || '—') + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;">' + (comp.yearBuilt || '—') + _compDelta(comp.yearBuilt, _subjYear, ' yr') + '</td>';
           html += '<td style="padding:6px 8px;text-align:center;font-size:11px;">' + soldDate + '</td>';
           html += '<td style="padding:6px 8px;font-size:10px;color:#999;">' + (penalties.length > 0 ? penalties.join(', ') : '—') + '</td>';
           html += '</tr>';
@@ -6382,43 +6411,118 @@
 
       photoRow.style.display = '';
 
+      var cacheKey = zpid || ('comp_' + compIdx);
+
       // Check cache
-      if (compPhotoCache[zpid]) {
-        renderCompPhotos(photoDiv, compPhotoCache[zpid]);
+      if (compPhotoCache[cacheKey]) {
+        renderCompPhotosWithSource(photoDiv, compPhotoCache[cacheKey]);
         return;
       }
 
-      if (!zpid) {
-        photoDiv.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;">No zpid available for this comp — cannot fetch photos.</div>';
+      // Get Redfin URL from comp data
+      var comp = (arvCalcState.data && arvCalcState.data.comps) ? arvCalcState.data.comps[compIdx] : null;
+      var redfinUrl = comp ? (comp.redfinUrl || '') : '';
+
+      photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Loading photos from Zillow...</div>';
+
+      var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+      var zillowPhotos = [];
+      var redfinPhotos = [];
+
+      // Step 1: Try Zillow photos
+      if (zpid) {
+        try {
+          var resp = await fetch(workerUrl + '/api/zillow/photos?zpid=' + zpid);
+          var data = await resp.json();
+          if (!data.error) zillowPhotos = data.photos || [];
+        } catch (e) { /* Zillow failed, continue */ }
+      }
+
+      // Step 2: If Zillow has 0-1 photos, try Redfin
+      if (zillowPhotos.length <= 1 && redfinUrl) {
+        photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Zillow has ' + zillowPhotos.length + ' photos — trying Redfin...</div>';
+        try {
+          var resp2 = await fetch(workerUrl + '/api/redfin/photos?url=' + encodeURIComponent(redfinUrl));
+          var data2 = await resp2.json();
+          if (!data2.error) redfinPhotos = data2.photos || [];
+        } catch (e) { /* Redfin failed too */ }
+      }
+
+      if (zillowPhotos.length === 0 && redfinPhotos.length === 0 && !zpid && !redfinUrl) {
+        photoDiv.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;">No photo sources available for this comp.</div>';
         return;
       }
 
-      photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Loading photos...</div>';
-
-      try {
-        var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
-        var resp = await fetch(workerUrl + '/api/zillow/photos?zpid=' + zpid);
-        var data = await resp.json();
-        if (data.error) throw new Error(data.error);
-        compPhotoCache[zpid] = data.photos || [];
-        renderCompPhotos(photoDiv, data.photos || []);
-      } catch (e) {
-        photoDiv.innerHTML = '<div style="color:#C62828;font-size:12px;padding:8px;">Failed to load photos: ' + e.message + '</div>';
-      }
+      var result = { zillow: zillowPhotos, redfin: redfinPhotos };
+      compPhotoCache[cacheKey] = result;
+      renderCompPhotosWithSource(photoDiv, result);
     }
 
-    function renderCompPhotos(container, photos) {
-      if (!photos || photos.length === 0) {
+    function renderCompPhotosWithSource(container, photoData) {
+      var zPhotos = photoData.zillow || [];
+      var rPhotos = photoData.redfin || [];
+      var totalZ = zPhotos.length;
+      var totalR = rPhotos.length;
+
+      if (totalZ === 0 && totalR === 0) {
         container.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;">No photos found for this property.</div>';
         return;
       }
+
+      var tabId = 'photoTab_' + Math.random().toString(36).substr(2, 6);
+      var html = '';
+
+      // Show tabs only if both sources have photos
+      if (totalZ > 0 && totalR > 0) {
+        html += '<div style="display:flex;gap:4px;margin-bottom:8px;">';
+        html += '<button id="' + tabId + '_zBtn" onclick="switchPhotoTab(\'' + tabId + '\',\'zillow\')" style="padding:4px 12px;border:1px solid #1565C0;background:#E3F2FD;border-radius:4px 4px 0 0;font-size:11px;font-weight:700;color:#1565C0;cursor:pointer;">Zillow (' + totalZ + ')</button>';
+        html += '<button id="' + tabId + '_rBtn" onclick="switchPhotoTab(\'' + tabId + '\',\'redfin\')" style="padding:4px 12px;border:1px solid #ddd;background:white;border-radius:4px 4px 0 0;font-size:11px;font-weight:600;color:#666;cursor:pointer;">Redfin (' + totalR + ')</button>';
+        html += '</div>';
+      } else if (totalR > 0 && totalZ === 0) {
+        html += '<div style="font-size:10px;color:#E65100;font-weight:600;margin-bottom:6px;">📷 Photos from Redfin (Zillow had none)</div>';
+      }
+
+      // Zillow panel
+      if (totalZ > 0) {
+        html += '<div id="' + tabId + '_zillow" style="display:block;">';
+        html += buildPhotoGallery(zPhotos, 'Zillow');
+        html += '</div>';
+      }
+
+      // Redfin panel
+      if (totalR > 0) {
+        html += '<div id="' + tabId + '_redfin" style="display:' + (totalZ > 0 ? 'none' : 'block') + ';">';
+        html += buildPhotoGallery(rPhotos, 'Redfin');
+        html += '</div>';
+      }
+
+      container.innerHTML = html;
+    }
+
+    function switchPhotoTab(tabId, source) {
+      var zPanel = document.getElementById(tabId + '_zillow');
+      var rPanel = document.getElementById(tabId + '_redfin');
+      var zBtn = document.getElementById(tabId + '_zBtn');
+      var rBtn = document.getElementById(tabId + '_rBtn');
+      if (source === 'zillow') {
+        if (zPanel) zPanel.style.display = 'block';
+        if (rPanel) rPanel.style.display = 'none';
+        if (zBtn) { zBtn.style.background = '#E3F2FD'; zBtn.style.borderColor = '#1565C0'; zBtn.style.color = '#1565C0'; }
+        if (rBtn) { rBtn.style.background = 'white'; rBtn.style.borderColor = '#ddd'; rBtn.style.color = '#666'; }
+      } else {
+        if (zPanel) zPanel.style.display = 'none';
+        if (rPanel) rPanel.style.display = 'block';
+        if (rBtn) { rBtn.style.background = '#FFF3E0'; rBtn.style.borderColor = '#E65100'; rBtn.style.color = '#E65100'; }
+        if (zBtn) { zBtn.style.background = 'white'; zBtn.style.borderColor = '#ddd'; zBtn.style.color = '#666'; }
+      }
+    }
+
+    function buildPhotoGallery(photos, sourceName) {
       var heroId = 'compHero_' + Math.random().toString(36).substr(2, 6);
       var html = '<div style="display:flex;gap:12px;padding:8px 0;flex-wrap:wrap;">';
-      // Hero image
       html += '<div style="flex:0 0 auto;">';
       html += '<img id="' + heroId + '" src="' + photos[0] + '" style="width:280px;height:190px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid #1B2A4A;" onclick="openCompPhotoModal(this.src)">';
       html += '</div>';
-      // Thumbnail grid
       html += '<div style="flex:1;min-width:180px;overflow-x:auto;">';
       html += '<div style="display:flex;gap:5px;flex-wrap:wrap;max-height:190px;overflow-y:auto;">';
       for (var i = 0; i < photos.length; i++) {
@@ -6426,10 +6530,19 @@
         html += '<img src="' + photos[i] + '" style="width:70px;height:52px;object-fit:cover;border-radius:4px;cursor:pointer;border:' + activeBorder + ';flex-shrink:0;" onclick="document.getElementById(\'' + heroId + '\').src=this.src;this.parentNode.querySelectorAll(\'img\').forEach(function(i){i.style.border=\'2px solid transparent\';});this.style.border=\'2px solid #ED7D31\';" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">';
       }
       html += '</div>';
-      html += '<div style="font-size:10px;color:#999;margin-top:4px;">' + photos.length + ' photos · Click main photo to enlarge</div>';
+      html += '<div style="font-size:10px;color:#999;margin-top:4px;">' + photos.length + ' ' + sourceName + ' photos · Click main photo to enlarge</div>';
       html += '</div>';
       html += '</div>';
-      container.innerHTML = html;
+      return html;
+    }
+
+    // renderCompPhotos kept for backward compat (subject photo loading uses it)
+    function renderCompPhotos(container, photos) {
+      if (!photos || photos.length === 0) {
+        container.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;">No photos found for this property.</div>';
+        return;
+      }
+      renderCompPhotosWithSource(container, { zillow: photos, redfin: [] });
     }
 
     function openCompPhotoModal(src) {
