@@ -5870,6 +5870,7 @@
           }
           arvCalcState.data = data;
           arvCalcState.selectedComps = {};
+          arvCalcState._subjPhotosAttempted = false; // reset for new search
           // Auto-select A and B grade comps
           var comps = data.comps || [];
           for (var i = 0; i < comps.length; i++) {
@@ -5918,10 +5919,17 @@
         html += '</div>';
         html += '</div>';
       }
-      // If no photos from API, try loading them via zpid
-      if (subjPhotos.length === 0 && subj.zpid) {
+      // If no photos from API, auto-load them via zpid (once per search)
+      if (subjPhotos.length === 0 && subj.zpid && !arvCalcState._subjPhotosAttempted) {
+        arvCalcState._subjPhotosAttempted = true;
         html += '<div id="subjPhotoLoader" style="margin-bottom:20px;text-align:center;">';
-        html += '<button onclick="loadSubjectPhotos(\'' + subj.zpid + '\')" style="padding:8px 20px;background:#E3F2FD;color:#1565C0;border:1px solid #90CAF9;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">📷 Load Subject Property Photos</button>';
+        html += '<div style="color:#1565C0;font-size:12px;padding:12px;">⏳ Loading subject property photos...</div>';
+        html += '</div>';
+        // Auto-trigger photo load after render
+        setTimeout(function() { loadSubjectPhotos(subj.zpid); }, 200);
+      } else if (subjPhotos.length === 0 && subj.zpid && arvCalcState._subjPhotosAttempted) {
+        html += '<div id="subjPhotoLoader" style="margin-bottom:20px;text-align:center;">';
+        html += '<span style="color:#999;font-size:12px;">No photos available · <a href="javascript:void(0)" onclick="arvCalcState._subjPhotosAttempted=false;loadSubjectPhotos(\'' + subj.zpid + '\')" style="color:#1565C0;cursor:pointer;">retry</a></span>';
         html += '</div>';
       }
 
@@ -6121,8 +6129,14 @@
             var sources = dbg.compPriceSources;
             for (var sk in sources) { html += '<em>' + sk + '</em>:' + sources[sk] + ' '; }
           }
+          if (dbg.redfinSample && dbg.redfinSample.length > 0) {
+            html += '<div style="margin-top:6px;font-weight:700;color:#333;">Redfin results sample (first 10):</div>';
+            dbg.redfinSample.forEach(function(r, ri) {
+              html += '<div style="padding:2px 0;border-bottom:1px solid #f0f0f0;">#' + (ri+1) + ': ' + (r.address || '—') + ' · $' + ((r.price || 0).toLocaleString()) + ' · sold:' + (r.soldDate || 'none') + ' · status:' + (r.status || '—') + ' · src:' + (r.src || '—') + '</div>';
+            });
+          }
           if (dbg.extractedSample && dbg.extractedSample.length > 0) {
-            html += '<div style="margin-top:6px;font-weight:700;color:#333;">Sample extracted properties:</div>';
+            html += '<div style="margin-top:6px;font-weight:700;color:#333;">Zillow extracted sample:</div>';
             dbg.extractedSample.forEach(function(s, si) {
               html += '<div style="padding:2px 0;border-bottom:1px solid #f0f0f0;">#' + (si+1) + ': ' + (s.address || '—') + ' · zpid:' + (s.zpid || 'none') + ' · sold:' + (s.soldPrice || '—') + ' · lastSold:' + (s.lastSoldPrice || '—') + ' · price:' + (s.price || '—') + ' · status:' + (s.homeStatus || '—') + ' · history:' + (s.hasPriceHistory ? 'yes' : 'no') + '</div>';
             });
@@ -6130,6 +6144,29 @@
           html += '</div>';
         }
         html += '</div>';
+      }
+
+      // Debug info (collapsible, always shown)
+      if (data._debug) {
+        var dbg2 = data._debug;
+        html += '<details style="margin-bottom:16px;background:#f8f9fa;border:1px solid #eee;border-radius:8px;padding:0;">';
+        html += '<summary style="padding:10px 16px;font-size:11px;font-weight:600;color:#666;cursor:pointer;">🔍 Debug: ' + (dbg2.redfinResults || 0) + ' Redfin · ' + (dbg2.zillowEmbedded || 0) + ' Zillow · ' + (dbg2.filteredOut || 0) + ' filtered out</summary>';
+        html += '<div style="padding:8px 16px 12px;font-size:11px;color:#666;">';
+        html += '<strong>Redfin geo-search</strong>: ' + (dbg2.redfinResults || 0) + ' properties in ' + (dbg2.redfinRadius || 1.0) + ' mi radius';
+        if (dbg2.redfinError) html += ' <span style="color:#C62828;">(error: ' + dbg2.redfinError + ')</span>';
+        html += '<br><strong>Zillow</strong>: ' + (dbg2.zillowEmbedded || 0) + ' embedded, ' + (dbg2.zillowEnriched || 0) + ' enriched<br>';
+        html += 'Total candidates: <strong>' + (dbg2.totalCandidates || 0) + '</strong> · Filtered out: <strong>' + (dbg2.filteredOut || 0) + '</strong>';
+        if (dbg2.compPriceSources) {
+          html += ' · Sources: ';
+          for (var sk2 in dbg2.compPriceSources) { html += '<em>' + sk2 + '</em>:' + dbg2.compPriceSources[sk2] + ' '; }
+        }
+        if (dbg2.redfinSample && dbg2.redfinSample.length > 0) {
+          html += '<div style="margin-top:6px;font-weight:700;color:#333;">Redfin results (first 10):</div>';
+          dbg2.redfinSample.forEach(function(r, ri) {
+            html += '<div style="padding:2px 0;border-bottom:1px solid #f0f0f0;">#' + (ri+1) + ': ' + (r.address || '—') + ' · $' + ((r.price || 0).toLocaleString()) + ' · sold:' + (r.soldDate || 'none') + ' · status:' + (r.status || '—') + ' · src:' + (r.src || '—') + '</div>';
+          });
+        }
+        html += '</div></details>';
       }
 
       // ARV summary + deal analysis
@@ -6440,16 +6477,17 @@
 
       // Step 2: If Zillow has 0-1 photos, try Redfin
       if (zillowPhotos.length <= 1 && redfinUrl) {
-        photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Zillow has ' + zillowPhotos.length + ' photos — trying Redfin...</div>';
+        photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Zillow has ' + zillowPhotos.length + ' photo(s) — trying Redfin...</div>';
         try {
           var resp2 = await fetch(workerUrl + '/api/redfin/photos?url=' + encodeURIComponent(redfinUrl));
           var data2 = await resp2.json();
-          if (!data2.error) redfinPhotos = data2.photos || [];
-        } catch (e) { /* Redfin failed too */ }
+          redfinPhotos = data2.photos || [];
+          if (data2.error) console.warn('Redfin photo error:', data2.error);
+        } catch (e) { console.warn('Redfin photo fetch failed:', e); }
       }
 
-      if (zillowPhotos.length === 0 && redfinPhotos.length === 0 && !zpid && !redfinUrl) {
-        photoDiv.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;">No photo sources available for this comp.</div>';
+      if (zillowPhotos.length === 0 && redfinPhotos.length === 0) {
+        photoDiv.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;">No photos found.' + (redfinUrl ? ' Redfin URL: <a href="' + redfinUrl + '" target="_blank" style="color:#1565C0;">view listing ↗</a>' : '') + '</div>';
         return;
       }
 
@@ -7579,3 +7617,4 @@
   </script>
 </body>
 </html>
+            
