@@ -5778,7 +5778,7 @@
       contractPrice: 0,
       repairs: 10000,
       calculatedARV: 0,
-      daysBack: 180,
+      daysBack: 365,
       lastAddress: ''
     };
 
@@ -5994,6 +5994,7 @@
         html += '<div style="overflow-x:auto;border:1px solid #eee;border-radius:8px;">';
         html += '<table style="width:100%;font-size:12px;border-collapse:collapse;">';
         html += '<thead><tr style="background:#1B2A4A;color:white;">';
+        html += '<th style="padding:8px;text-align:center;width:30px;">#</th>';
         html += '<th style="padding:8px;text-align:center;width:40px;">Use</th>';
         html += '<th style="padding:8px;text-align:center;width:50px;">Match</th>';
         html += '<th style="padding:8px;text-align:center;width:40px;">📷</th>';
@@ -6065,12 +6066,41 @@
             priceBadge = '<span title="Price source: ' + priceSrc + '" style="font-size:9px;color:#E65100;display:block;">⚠ Est.</span>';
           }
 
-          // Zillow or Redfin link
+          // Build source-specific links
           var zillowLink = comp.zpid ? 'https://www.zillow.com/homedetails/' + comp.zpid + '_zpid/' : '';
           var redfinLink = comp.redfinUrl || '';
-          var listingLink = zillowLink || redfinLink;
-          var linkLabel = zillowLink ? 'Zillow' : (redfinLink ? 'Redfin' : '');
-          var addrDisplay = listingLink ? '<a href="' + listingLink + '" target="_blank" style="color:#1565C0;text-decoration:none;font-weight:600;" title="View on ' + linkLabel + '">' + cAddr + ' ↗</a>' : cAddr;
+          // Build a Realtor.com search link from the address
+          var realtorLink = cAddr ? 'https://www.realtor.com/realestateandhomes-detail/' + encodeURIComponent(cAddr.replace(/[,#]/g, '').replace(/\s+/g, '-')) : '';
+
+          // Address display (plain bold text, no link)
+          var addrDisplay = '<span style="font-weight:600;">' + cAddr + '</span>';
+
+          // Data source logos with links below address
+          var dataSrc = comp._dataSource || '';
+          var sourceLinks = '<div style="margin-top:3px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
+
+          // Primary source logo (where the comp data came from)
+          if (dataSrc === 'redfin') {
+            sourceLinks += '<a href="' + (redfinLink || 'https://www.redfin.com/') + '" target="_blank" title="Data from Redfin — View listing" style="display:inline-flex;align-items:center;gap:3px;padding:1px 6px;background:#FFEBEE;border:1px solid #EF9A9A;border-radius:3px;text-decoration:none;font-size:9px;font-weight:700;color:#A4262C;letter-spacing:0.3px;">R<span style="font-weight:600;">Redfin</span>↗</a>';
+          } else if (dataSrc === 'zillow') {
+            sourceLinks += '<a href="' + (zillowLink || 'https://www.zillow.com/') + '" target="_blank" title="Data from Zillow — View listing" style="display:inline-flex;align-items:center;gap:3px;padding:1px 6px;background:#E3F2FD;border:1px solid #90CAF9;border-radius:3px;text-decoration:none;font-size:9px;font-weight:700;color:#006AFF;letter-spacing:0.3px;">Z<span style="font-weight:600;">Zillow</span>↗</a>';
+          } else if (dataSrc === 'realtor') {
+            sourceLinks += '<a href="' + realtorLink + '" target="_blank" title="Data from Realtor.com — View listing" style="display:inline-flex;align-items:center;gap:3px;padding:1px 6px;background:#FFF3E0;border:1px solid #FFCC80;border-radius:3px;text-decoration:none;font-size:9px;font-weight:700;color:#D92228;letter-spacing:0.3px;">RC<span style="font-weight:600;">Realtor</span>↗</a>';
+          }
+
+          // Also show links to other sources (so user can cross-reference)
+          if (dataSrc !== 'zillow' && zillowLink) {
+            sourceLinks += '<a href="' + zillowLink + '" target="_blank" title="View on Zillow" style="display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#006AFF;">Z↗</a>';
+          }
+          if (dataSrc !== 'redfin' && redfinLink) {
+            sourceLinks += '<a href="' + redfinLink + '" target="_blank" title="View on Redfin" style="display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#A4262C;">R↗</a>';
+          }
+          if (dataSrc !== 'realtor' && realtorLink) {
+            sourceLinks += '<a href="' + realtorLink + '" target="_blank" title="View on Realtor.com" style="display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#D92228;">RC↗</a>';
+          }
+
+          sourceLinks += '</div>';
+          addrDisplay += sourceLinks;
 
           // Thumbnail + photo expand (supports Zillow zpid and/or Redfin URL)
           var thumbHtml = '';
@@ -6084,12 +6114,14 @@
           }
 
           html += '<tr style="border-bottom:1px solid #f0f0f0;' + (c % 2 === 0 ? '' : 'background:#fafafa;') + '">';
+          var compNum = c + 1;
+          var numBg = grade === 'A' ? '#2E7D32' : grade === 'B' ? '#1565C0' : grade === 'C' ? '#F57F17' : grade === 'D' ? '#E65100' : '#C62828';
+          html += '<td style="padding:6px 8px;text-align:center;"><span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:' + numBg + ';color:white;font-size:12px;font-weight:700;">' + compNum + '</span></td>';
           html += '<td style="padding:6px 8px;text-align:center;"><input type="checkbox" ' + checked + ' onchange="toggleARVCalcComp(' + c + ')" style="cursor:pointer;width:16px;height:16px;"></td>';
           html += '<td style="padding:6px 8px;text-align:center;"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:' + (gradeBgs[grade] || '#F5F5F5') + ';color:' + (gradeColors[grade] || '#666') + ';">' + grade + ' ' + matchPct + '%</span></td>';
           html += '<td style="padding:6px 8px;text-align:center;">' + thumbHtml + '</td>';
           html += '<td style="padding:6px 8px;font-size:12px;">' + addrDisplay + '</td>';
-          var _priceDelta = (_subj.zestimate && cPrice) ? _compDelta(cPrice, _subj.zestimate, '', false, true) : '';
-          html += '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(cPrice) + priceBadge + _priceDelta + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(cPrice) + priceBadge + '</td>';
           // Comparison indicators vs subject
           html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bedrooms || '—') + _compDelta(comp.bedrooms, _subjBeds, ' bd') + '</td>';
           html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bathrooms || '—') + _compDelta(comp.bathrooms, _subjBaths, ' ba') + '</td>';
@@ -6101,7 +6133,7 @@
           html += '<td style="padding:6px 8px;font-size:10px;color:#999;">' + (penalties.length > 0 ? penalties.join(', ') : '—') + '</td>';
           html += '</tr>';
           // Photo gallery row (hidden by default, shown when + is clicked)
-          html += '<tr id="compPhotoRow_' + c + '" style="display:none;"><td colspan="13" style="padding:0;"><div id="compPhotos_' + c + '" style="padding:10px 16px;background:#f8f9fa;"></div></td></tr>';
+          html += '<tr id="compPhotoRow_' + c + '" style="display:none;"><td colspan="14" style="padding:0;"><div id="compPhotos_' + c + '" style="padding:10px 16px;background:#f8f9fa;"></div></td></tr>';
         }
         html += '</tbody></table>';
         html += '</div>';
@@ -6116,6 +6148,8 @@
           html += '<div style="font-weight:700;color:#333;margin-bottom:6px;">Debug Info:</div>';
           html += '<strong>Redfin</strong>: ' + (dbg.redfinResults || 0) + ' sold homes found';
           if (dbg.redfinError) html += ' <span style="color:#C62828;">(error: ' + dbg.redfinError + ')</span>';
+          html += ' · <strong>Realtor.com</strong>: ' + (dbg.realtorResults || 0) + ' comps added';
+          if (dbg.realtorError) html += ' <span style="color:#C62828;">(error: ' + dbg.realtorError + ')</span>';
           html += ' · <strong>Zillow embedded</strong>: ' + (dbg.zillowEmbeddedProps || dbg.totalExtracted || 0) + '<br>';
           html += 'With zpid: <strong>' + (dbg.extractedWithZpid || 0) + '</strong> · With sold price: <strong>' + (dbg.extractedWithSoldPrice || 0) + '</strong> · With priceHistory: <strong>' + (dbg.extractedWithPriceHistory || 0) + '</strong> · Generic price only: <strong>' + (dbg.extractedWithGenericPrice || 0) + '</strong><br>';
           html += '<strong>Redfin geo-search</strong>: ' + (dbg.redfinResults || 0) + ' sold homes found in ' + (dbg.redfinRadius || 0.75) + ' mi radius';
@@ -6150,10 +6184,12 @@
       if (data._debug) {
         var dbg2 = data._debug;
         html += '<details style="margin-bottom:16px;background:#f8f9fa;border:1px solid #eee;border-radius:8px;padding:0;">';
-        html += '<summary style="padding:10px 16px;font-size:11px;font-weight:600;color:#666;cursor:pointer;">🔍 Debug: ' + (dbg2.redfinResults || 0) + ' Redfin · ' + (dbg2.zillowEmbedded || 0) + ' Zillow · ' + (dbg2.filteredOut || 0) + ' filtered out</summary>';
+        html += '<summary style="padding:10px 16px;font-size:11px;font-weight:600;color:#666;cursor:pointer;">🔍 Debug: ' + (dbg2.redfinResults || 0) + ' Redfin · ' + (dbg2.realtorResults || 0) + ' Realtor · ' + (dbg2.zillowEmbedded || 0) + ' Zillow · ' + (dbg2.filteredOut || 0) + ' filtered out</summary>';
         html += '<div style="padding:8px 16px 12px;font-size:11px;color:#666;">';
         html += '<strong>Redfin geo-search</strong>: ' + (dbg2.redfinResults || 0) + ' properties in ' + (dbg2.redfinRadius || 1.0) + ' mi radius';
         if (dbg2.redfinError) html += ' <span style="color:#C62828;">(error: ' + dbg2.redfinError + ')</span>';
+        html += '<br><strong>Realtor.com</strong>: ' + (dbg2.realtorResults || 0) + ' comps added (from ' + (dbg2.realtorTotal || 0) + ' total results)';
+        if (dbg2.realtorError) html += ' <span style="color:#C62828;">(error: ' + dbg2.realtorError + ')</span>';
         html += '<br><strong>Zillow</strong>: ' + (dbg2.zillowEmbedded || 0) + ' embedded, ' + (dbg2.zillowEnriched || 0) + ' enriched<br>';
         html += 'Total candidates: <strong>' + (dbg2.totalCandidates || 0) + '</strong> · Filtered out: <strong>' + (dbg2.filteredOut || 0) + '</strong>';
         if (dbg2.compPriceSources) {
@@ -6164,6 +6200,12 @@
           html += '<div style="margin-top:6px;font-weight:700;color:#333;">Redfin results (first 10):</div>';
           dbg2.redfinSample.forEach(function(r, ri) {
             html += '<div style="padding:2px 0;border-bottom:1px solid #f0f0f0;">#' + (ri+1) + ': ' + (r.address || '—') + ' · $' + ((r.price || 0).toLocaleString()) + ' · sold:' + (r.soldDate || 'none') + ' · status:' + (r.status || '—') + ' · src:' + (r.src || '—') + '</div>';
+          });
+        }
+        if (dbg2.realtorSample && dbg2.realtorSample.length > 0) {
+          html += '<div style="margin-top:6px;font-weight:700;color:#333;">Realtor.com results (first 5):</div>';
+          dbg2.realtorSample.forEach(function(r, ri) {
+            html += '<div style="padding:2px 0;border-bottom:1px solid #f0f0f0;">#' + (ri+1) + ': ' + (r.address || '—') + ' · $' + ((r.price || 0).toLocaleString()) + ' · sold:' + (r.soldDate || 'none') + ' · src:' + (r.src || '—') + '</div>';
           });
         }
         html += '</div></details>';
@@ -6499,6 +6541,30 @@
         } catch (e) { /* zpid photo fetch failed */ }
       }
 
+      // Step 4: Try Realtor.com photos as fallback
+      var realtorPhotos = [];
+      if (photos.length <= 1 && compAddr) {
+        photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#D92228;font-size:12px;">⏳ Checking Realtor.com for photos...</div>';
+        try {
+          var realtorPropertyId = comp ? (comp._realtorPropertyId || '') : '';
+          var realtorUrl = realtorPropertyId
+            ? workerUrl + '/api/realtor/photos?property_id=' + encodeURIComponent(realtorPropertyId)
+            : workerUrl + '/api/realtor/photos?address=' + encodeURIComponent(compAddr);
+          var resp4 = await fetch(realtorUrl);
+          var data4 = await resp4.json();
+          if (!data4.error && data4.photos && data4.photos.length > 0) {
+            realtorPhotos = data4.photos;
+            if (photos.length <= 1) photos = realtorPhotos;
+          }
+        } catch (e) { /* Realtor.com photo fetch failed */ }
+      }
+
+      // Also use inline _photos from Realtor.com comp data if available
+      if (photos.length <= 1 && comp && comp._photos && comp._photos.length > 0) {
+        photos = comp._photos;
+        realtorPhotos = comp._photos;
+      }
+
       if (photos.length === 0) {
         var noPhotoMsg = '<div style="color:#999;font-size:12px;padding:8px;">No photos found for this property.';
         if (redfinUrl) noPhotoMsg += ' <a href="' + redfinUrl + '" target="_blank" style="color:#1565C0;">View on Redfin ↗</a>';
@@ -6507,7 +6573,8 @@
         return;
       }
 
-      var result = { zillow: photos, redfin: [] };
+      var photoSource = realtorPhotos.length > 0 && photos === realtorPhotos ? 'realtor' : 'zillow';
+      var result = { zillow: photoSource === 'zillow' ? photos : [], redfin: [], realtor: photoSource === 'realtor' ? photos : [] };
       compPhotoCache[cacheKey] = result;
       renderCompPhotosWithSource(photoDiv, result);
     }
@@ -6515,23 +6582,29 @@
     function renderCompPhotosWithSource(container, photoData) {
       var zPhotos = photoData.zillow || [];
       var rPhotos = photoData.redfin || [];
+      var rcPhotos = photoData.realtor || [];
       var totalZ = zPhotos.length;
       var totalR = rPhotos.length;
+      var totalRC = rcPhotos.length;
 
-      if (totalZ === 0 && totalR === 0) {
+      if (totalZ === 0 && totalR === 0 && totalRC === 0) {
         container.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;">No photos found for this property.</div>';
         return;
       }
 
       var tabId = 'photoTab_' + Math.random().toString(36).substr(2, 6);
       var html = '';
+      var sourceCount = (totalZ > 0 ? 1 : 0) + (totalR > 0 ? 1 : 0) + (totalRC > 0 ? 1 : 0);
 
-      // Show tabs only if both sources have photos
-      if (totalZ > 0 && totalR > 0) {
+      // Show tabs if multiple sources have photos
+      if (sourceCount > 1) {
         html += '<div style="display:flex;gap:4px;margin-bottom:8px;">';
-        html += '<button id="' + tabId + '_zBtn" onclick="switchPhotoTab(\'' + tabId + '\',\'zillow\')" style="padding:4px 12px;border:1px solid #1565C0;background:#E3F2FD;border-radius:4px 4px 0 0;font-size:11px;font-weight:700;color:#1565C0;cursor:pointer;">Zillow (' + totalZ + ')</button>';
-        html += '<button id="' + tabId + '_rBtn" onclick="switchPhotoTab(\'' + tabId + '\',\'redfin\')" style="padding:4px 12px;border:1px solid #ddd;background:white;border-radius:4px 4px 0 0;font-size:11px;font-weight:600;color:#666;cursor:pointer;">Redfin (' + totalR + ')</button>';
+        if (totalZ > 0) html += '<button id="' + tabId + '_zBtn" onclick="switchPhotoTab(\'' + tabId + '\',\'zillow\')" style="padding:4px 12px;border:1px solid #1565C0;background:#E3F2FD;border-radius:4px 4px 0 0;font-size:11px;font-weight:700;color:#1565C0;cursor:pointer;">Zillow (' + totalZ + ')</button>';
+        if (totalR > 0) html += '<button id="' + tabId + '_rBtn" onclick="switchPhotoTab(\'' + tabId + '\',\'redfin\')" style="padding:4px 12px;border:1px solid #ddd;background:white;border-radius:4px 4px 0 0;font-size:11px;font-weight:600;color:#666;cursor:pointer;">Redfin (' + totalR + ')</button>';
+        if (totalRC > 0) html += '<button id="' + tabId + '_rcBtn" onclick="switchPhotoTab(\'' + tabId + '\',\'realtor\')" style="padding:4px 12px;border:1px solid #ddd;background:white;border-radius:4px 4px 0 0;font-size:11px;font-weight:600;color:#666;cursor:pointer;">Realtor (' + totalRC + ')</button>';
         html += '</div>';
+      } else if (totalRC > 0 && totalZ === 0 && totalR === 0) {
+        html += '<div style="font-size:10px;color:#D92228;font-weight:600;margin-bottom:6px;">📷 Photos from Realtor.com</div>';
       } else if (totalR > 0 && totalZ === 0) {
         html += '<div style="font-size:10px;color:#E65100;font-weight:600;margin-bottom:6px;">📷 Photos from Redfin (Zillow had none)</div>';
       }
@@ -6550,24 +6623,39 @@
         html += '</div>';
       }
 
+      // Realtor.com panel
+      if (totalRC > 0) {
+        html += '<div id="' + tabId + '_realtor" style="display:' + (totalZ > 0 || totalR > 0 ? 'none' : 'block') + ';">';
+        html += buildPhotoGallery(rcPhotos, 'Realtor.com');
+        html += '</div>';
+      }
+
       container.innerHTML = html;
     }
 
     function switchPhotoTab(tabId, source) {
       var zPanel = document.getElementById(tabId + '_zillow');
       var rPanel = document.getElementById(tabId + '_redfin');
+      var rcPanel = document.getElementById(tabId + '_realtor');
       var zBtn = document.getElementById(tabId + '_zBtn');
       var rBtn = document.getElementById(tabId + '_rBtn');
+      var rcBtn = document.getElementById(tabId + '_rcBtn');
+      // Hide all panels, reset all buttons
+      if (zPanel) zPanel.style.display = 'none';
+      if (rPanel) rPanel.style.display = 'none';
+      if (rcPanel) rcPanel.style.display = 'none';
+      var inactiveStyle = function(btn) { if (btn) { btn.style.background = 'white'; btn.style.borderColor = '#ddd'; btn.style.color = '#666'; } };
+      inactiveStyle(zBtn); inactiveStyle(rBtn); inactiveStyle(rcBtn);
+      // Activate selected
       if (source === 'zillow') {
         if (zPanel) zPanel.style.display = 'block';
-        if (rPanel) rPanel.style.display = 'none';
         if (zBtn) { zBtn.style.background = '#E3F2FD'; zBtn.style.borderColor = '#1565C0'; zBtn.style.color = '#1565C0'; }
-        if (rBtn) { rBtn.style.background = 'white'; rBtn.style.borderColor = '#ddd'; rBtn.style.color = '#666'; }
-      } else {
-        if (zPanel) zPanel.style.display = 'none';
+      } else if (source === 'redfin') {
         if (rPanel) rPanel.style.display = 'block';
         if (rBtn) { rBtn.style.background = '#FFF3E0'; rBtn.style.borderColor = '#E65100'; rBtn.style.color = '#E65100'; }
-        if (zBtn) { zBtn.style.background = 'white'; zBtn.style.borderColor = '#ddd'; zBtn.style.color = '#666'; }
+      } else if (source === 'realtor') {
+        if (rcPanel) rcPanel.style.display = 'block';
+        if (rcBtn) { rcBtn.style.background = '#FFEBEE'; rcBtn.style.borderColor = '#D92228'; rcBtn.style.color = '#D92228'; }
       }
     }
 
