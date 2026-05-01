@@ -6456,48 +6456,58 @@
         return;
       }
 
-      // Get Redfin URL from comp data
       var comp = (arvCalcState.data && arvCalcState.data.comps) ? arvCalcState.data.comps[compIdx] : null;
       var redfinUrl = comp ? (comp.redfinUrl || '') : '';
+      var compAddr = comp ? (comp.address || '') : '';
 
-      photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Loading photos from Zillow...</div>';
+      photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Loading photos...</div>';
 
       var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
-      var zillowPhotos = [];
-      var redfinPhotos = [];
+      var photos = [];
 
-      // Step 1: Try Zillow photos
+      // Step 1: Try Zillow photos by zpid
       if (zpid) {
         try {
           var resp = await fetch(workerUrl + '/api/zillow/photos?zpid=' + zpid);
           var data = await resp.json();
-          if (!data.error) zillowPhotos = data.photos || [];
-        } catch (e) { /* Zillow failed, continue */ }
+          if (!data.error) photos = data.photos || [];
+        } catch (e) { /* Zillow by zpid failed */ }
       }
 
-      // Step 2: If Zillow has 0-1 photos, try Redfin
-      var redfinDebug = '';
-      if (zillowPhotos.length <= 1 && redfinUrl) {
-        photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Zillow has ' + zillowPhotos.length + ' photo(s) — trying Redfin...</div>';
+      // Step 2: If no zpid or no photos, look up address on Zillow to find zpid + photos
+      if (photos.length <= 1 && compAddr && !zpid) {
+        photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Looking up ' + compAddr + ' on Zillow...</div>';
         try {
-          var resp2 = await fetch(workerUrl + '/api/redfin/photos?url=' + encodeURIComponent(redfinUrl));
+          var resp2 = await fetch(workerUrl + '/api/zillow/photos-by-address?address=' + encodeURIComponent(compAddr));
           var data2 = await resp2.json();
-          redfinPhotos = data2.photos || [];
-          if (data2.methodLog) redfinDebug = ' [' + data2.methodLog.join(', ') + ']';
-          if (data2.error) console.warn('Redfin photo error:', data2.error, data2.methodLog);
-        } catch (e) { console.warn('Redfin photo fetch failed:', e); redfinDebug = ' [fetch error: ' + e.message + ']'; }
+          if (!data2.error && data2.photos && data2.photos.length > 0) {
+            photos = data2.photos;
+            // Store the discovered zpid on the comp for future use
+            if (data2.zpid && comp) comp.zpid = data2.zpid;
+          }
+        } catch (e) { /* address lookup failed */ }
       }
 
-      if (zillowPhotos.length === 0 && redfinPhotos.length === 0) {
-        var noPhotoMsg = '<div style="color:#999;font-size:12px;padding:8px;">No photos found.';
+      // Step 3: If still no photos and we have a zpid from step 2, try zpid fetch
+      if (photos.length <= 1 && comp && comp.zpid && !zpid) {
+        try {
+          var resp3 = await fetch(workerUrl + '/api/zillow/photos?zpid=' + comp.zpid);
+          var data3 = await resp3.json();
+          if (!data3.error && data3.photos && data3.photos.length > photos.length) {
+            photos = data3.photos;
+          }
+        } catch (e) { /* zpid photo fetch failed */ }
+      }
+
+      if (photos.length === 0) {
+        var noPhotoMsg = '<div style="color:#999;font-size:12px;padding:8px;">No photos found for this property.';
         if (redfinUrl) noPhotoMsg += ' <a href="' + redfinUrl + '" target="_blank" style="color:#1565C0;">View on Redfin ↗</a>';
-        if (redfinDebug) noPhotoMsg += '<br><span style="font-size:10px;color:#bbb;">Debug: ' + redfinDebug + '</span>';
         noPhotoMsg += '</div>';
         photoDiv.innerHTML = noPhotoMsg;
         return;
       }
 
-      var result = { zillow: zillowPhotos, redfin: redfinPhotos };
+      var result = { zillow: photos, redfin: [] };
       compPhotoCache[cacheKey] = result;
       renderCompPhotosWithSource(photoDiv, result);
     }
