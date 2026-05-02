@@ -6187,6 +6187,7 @@
         html += '<th style="padding:8px;text-align:center;width:50px;">Match</th>';
         html += '<th style="padding:8px;text-align:center;width:40px;">📷</th>';
         html += '<th style="padding:8px;text-align:left;">Address</th>';
+        html += '<th style="padding:8px;text-align:center;">Source</th>';
         html += '<th style="padding:8px;text-align:right;">Price</th>';
         html += '<th style="padding:8px;text-align:center;">Beds</th>';
         html += '<th style="padding:8px;text-align:center;">Baths</th>';
@@ -6245,38 +6246,55 @@
           // Build source-specific links
           var zillowLink = comp.zpid ? 'https://www.zillow.com/homedetails/' + comp.zpid + '_zpid/' : '';
           var redfinLink = comp.redfinUrl || '';
-          // Build a Realtor.com link — Google site-scoped search is the most reliable way to find the listing
-          var realtorLink = cAddr ? 'https://www.google.com/search?q=site:realtor.com+' + encodeURIComponent(cAddr) : '';
+          // Build a Realtor.com direct link: /realestateandhomes-detail/123-Main-St_City_ST_Zip
+          var realtorLink = '';
+          if (cAddr) {
+            // Parse "123 Main St, Dallas, TX 75217" into slug parts
+            var addrParts = cAddr.split(',').map(function(s) { return s.trim(); });
+            if (addrParts.length >= 2) {
+              var streetSlug = addrParts[0].replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
+              var citySlug = addrParts.length >= 2 ? addrParts[1].replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '') : '';
+              // State and zip might be combined like "TX 75217" or separate
+              var stateZip = addrParts.length >= 3 ? addrParts.slice(2).join(' ').trim() : '';
+              var stateMatch = stateZip.match(/([A-Z]{2})\s*(\d{5})?/);
+              var stateSlug = stateMatch ? stateMatch[1] : '';
+              var zipSlug = stateMatch && stateMatch[2] ? stateMatch[2] : '';
+              var slug = streetSlug + '_' + citySlug + (stateSlug ? '_' + stateSlug : '') + (zipSlug ? '_' + zipSlug : '');
+              realtorLink = 'https://www.realtor.com/realestateandhomes-detail/' + slug;
+            } else {
+              realtorLink = 'https://www.realtor.com/realestateandhomes-search/' + encodeURIComponent(cAddr);
+            }
+          }
 
           // Address display (plain bold text, no link)
           var addrDisplay = '<span style="font-weight:600;">' + cAddr + '</span>';
 
-          // Data source logos with links below address
+          // Data source — where the numerical data was pulled from
           var dataSrc = comp._dataSource || '';
-          var sourceLinks = '<div style="margin-top:3px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;">';
 
-          // Primary source logo (where the comp data came from)
-          if (dataSrc === 'redfin') {
-            sourceLinks += '<a href="' + (redfinLink || 'https://www.redfin.com/') + '" target="_blank" title="Data from Redfin — View listing" style="display:inline-flex;align-items:center;gap:3px;padding:1px 6px;background:#FFEBEE;border:1px solid #EF9A9A;border-radius:3px;text-decoration:none;font-size:9px;font-weight:700;color:#A4262C;letter-spacing:0.3px;">R<span style="font-weight:600;">Redfin</span>↗</a>';
-          } else if (dataSrc === 'zillow') {
-            sourceLinks += '<a href="' + (zillowLink || 'https://www.zillow.com/') + '" target="_blank" title="Data from Zillow — View listing" style="display:inline-flex;align-items:center;gap:3px;padding:1px 6px;background:#E3F2FD;border:1px solid #90CAF9;border-radius:3px;text-decoration:none;font-size:9px;font-weight:700;color:#006AFF;letter-spacing:0.3px;">Z<span style="font-weight:600;">Zillow</span>↗</a>';
-          } else if (dataSrc === 'realtor') {
-            sourceLinks += '<a href="' + realtorLink + '" target="_blank" title="Data from Realtor.com — View listing" style="display:inline-flex;align-items:center;gap:3px;padding:1px 6px;background:#FFF3E0;border:1px solid #FFCC80;border-radius:3px;text-decoration:none;font-size:9px;font-weight:700;color:#D92228;letter-spacing:0.3px;">RC<span style="font-weight:600;">Realtor</span>↗</a>';
-          }
+          // Primary source badge with logo SVG (shown in its own column)
+          var _srcLogos = {
+            redfin: { color: '#A4262C', bg: '#FFEBEE', border: '#EF9A9A', label: 'Redfin', icon: '<svg viewBox="0 0 20 20" width="14" height="14" style="vertical-align:middle;"><circle cx="10" cy="10" r="9" fill="#A4262C"/><text x="10" y="14" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Arial">R</text></svg>' },
+            zillow: { color: '#006AFF', bg: '#E3F2FD', border: '#90CAF9', label: 'Zillow', icon: '<svg viewBox="0 0 20 20" width="14" height="14" style="vertical-align:middle;"><circle cx="10" cy="10" r="9" fill="#006AFF"/><text x="10" y="14" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Arial">Z</text></svg>' },
+            realtor: { color: '#D92228', bg: '#FFF3E0', border: '#FFCC80', label: 'Realtor.com', icon: '<svg viewBox="0 0 20 20" width="14" height="14" style="vertical-align:middle;"><circle cx="10" cy="10" r="9" fill="#D92228"/><text x="10" y="14" text-anchor="middle" fill="white" font-size="11" font-weight="700" font-family="Arial">R</text></svg>' },
+          };
+          var srcInfo = _srcLogos[dataSrc] || { color: '#999', bg: '#F5F5F5', border: '#ddd', label: dataSrc || '?', icon: '<svg viewBox="0 0 20 20" width="14" height="14" style="vertical-align:middle;"><circle cx="10" cy="10" r="9" fill="#999"/><text x="10" y="14" text-anchor="middle" fill="white" font-size="10" font-weight="700" font-family="Arial">?</text></svg>' };
+          var primaryLink = dataSrc === 'redfin' ? (redfinLink || '#') : dataSrc === 'zillow' ? (zillowLink || '#') : (realtorLink || '#');
+          var srcBadgeHtml = '<a href="' + primaryLink + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:' + srcInfo.bg + ';border:1px solid ' + srcInfo.border + ';border-radius:6px;text-decoration:none;font-size:10px;font-weight:700;color:' + srcInfo.color + ';white-space:nowrap;" title="Data from ' + srcInfo.label + ' — Click to view listing">' + srcInfo.icon + ' ' + srcInfo.label + ' ↗</a>';
 
-          // Also show links to other sources (so user can cross-reference)
+          // Cross-reference links (smaller, secondary)
+          var xrefLinks = '<div style="margin-top:3px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
           if (dataSrc !== 'zillow' && zillowLink) {
-            sourceLinks += '<a href="' + zillowLink + '" target="_blank" title="View on Zillow" style="display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#006AFF;">Z↗</a>';
+            xrefLinks += '<a href="' + zillowLink + '" target="_blank" title="View on Zillow" style="display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#006AFF;">Z↗</a>';
           }
           if (dataSrc !== 'redfin' && redfinLink) {
-            sourceLinks += '<a href="' + redfinLink + '" target="_blank" title="View on Redfin" style="display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#A4262C;">R↗</a>';
+            xrefLinks += '<a href="' + redfinLink + '" target="_blank" title="View on Redfin" style="display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#A4262C;">R↗</a>';
           }
           if (dataSrc !== 'realtor' && realtorLink) {
-            sourceLinks += '<a href="' + realtorLink + '" target="_blank" title="View on Realtor.com" style="display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#D92228;">RC↗</a>';
+            xrefLinks += '<a href="' + realtorLink + '" target="_blank" title="View on Realtor.com" style="display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#D92228;">RC↗</a>';
           }
-
-          sourceLinks += '</div>';
-          addrDisplay += sourceLinks;
+          xrefLinks += '</div>';
+          addrDisplay += xrefLinks;
 
           // Thumbnail + photo expand (supports Zillow zpid and/or Redfin URL)
           var thumbHtml = '';
@@ -6320,6 +6338,7 @@
           html += '<td style="padding:6px 8px;text-align:center;"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:' + (gradeBgs[grade] || '#F5F5F5') + ';color:' + (gradeColors[grade] || '#666') + ';">' + grade + ' ' + matchPct + '%</span></td>';
           html += '<td style="padding:6px 8px;text-align:center;">' + thumbHtml + '</td>';
           html += '<td style="padding:6px 8px;font-size:12px;">' + addrDisplay + '</td>';
+          html += '<td style="padding:6px 8px;text-align:center;">' + srcBadgeHtml + '</td>';
           html += '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(cPrice) + '<div style="font-size:9px;color:#999;font-weight:400;">' + priceLabel + '</div>' + '</td>';
           // Comparison indicators vs subject
           html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bedrooms || '—') + _compDelta(comp.bedrooms, _subjBeds, ' bd') + '</td>';
@@ -6332,7 +6351,7 @@
           html += '<td style="padding:6px 8px;font-size:10px;color:#999;">' + (penalties.length > 0 ? penalties.join(', ') : '—') + '</td>';
           html += '</tr>';
           // Photo gallery row (hidden by default, shown when + is clicked) — also hide if fallback
-          html += '<tr id="compPhotoRow_' + c + '" class="' + (isFallbackComp ? 'arv-fallback-row' : '') + '" style="display:none;"><td colspan="15" style="padding:0;"><div id="compPhotos_' + c + '" style="padding:10px 16px;background:#f8f9fa;"></div></td></tr>';
+          html += '<tr id="compPhotoRow_' + c + '" class="' + (isFallbackComp ? 'arv-fallback-row' : '') + '" style="display:none;"><td colspan="16" style="padding:0;"><div id="compPhotos_' + c + '" style="padding:10px 16px;background:#f8f9fa;"></div></td></tr>';
         }
         html += '</tbody></table>';
         html += '</div>';
@@ -6711,7 +6730,9 @@
 
       var comp = (arvCalcState.data && arvCalcState.data.comps) ? arvCalcState.data.comps[compIdx] : null;
       var redfinUrl = comp ? (comp.redfinUrl || '') : '';
-      var compAddr = comp ? (comp.address || '') : '';
+      var rawAddr = comp ? (comp.address || '') : '';
+      var compAddr = (typeof rawAddr === 'object') ? ((rawAddr.streetAddress || rawAddr.line || '') + (rawAddr.city ? ', ' + rawAddr.city : '') + (rawAddr.state ? ', ' + rawAddr.state : '')) : rawAddr;
+      compAddr = compAddr.trim();
 
       photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Loading photos from all sources...</div>';
 
@@ -6724,41 +6745,47 @@
 
       // Zillow: by zpid or address
       fetchPromises.push((async function() {
+        var dbg = {};
         try {
           if (zpid) {
             var resp = await fetch(workerUrl + '/api/zillow/photos?zpid=' + zpid);
             var data = await resp.json();
-            if (!data.error && data.photos && data.photos.length > 0) return { source: 'zillow', photos: data.photos };
+            dbg.zpidResult = { count: (data.photos || []).length, error: data.error || null };
+            if (!data.error && data.photos && data.photos.length > 0) return { source: 'zillow', photos: data.photos, debug: dbg };
           }
           if (compAddr) {
             var resp2 = await fetch(workerUrl + '/api/zillow/photos-by-address?address=' + encodeURIComponent(compAddr));
             var data2 = await resp2.json();
+            dbg.addrResult = { count: (data2.photos || []).length, error: data2.error || null, zpidFound: data2.zpid || null };
             if (!data2.error && data2.photos && data2.photos.length > 0) {
               if (data2.zpid && comp) comp.zpid = data2.zpid;
-              return { source: 'zillow', photos: data2.photos };
+              return { source: 'zillow', photos: data2.photos, debug: dbg };
             }
           }
-        } catch (e) {}
-        return { source: 'zillow', photos: [] };
+        } catch (e) { dbg.exception = e.message; }
+        return { source: 'zillow', photos: [], debug: dbg };
       })());
 
       // Realtor.com: try property_id details first (best photos), then inline, then address search
       fetchPromises.push((async function() {
         var bestPhotos = [];
         var realtorPropertyId = comp ? (comp._realtorPropertyId || '') : '';
+        var dbg = { realtorId: realtorPropertyId || 'none', inlinePhotos: (comp && comp._photos) ? comp._photos.length : 0 };
 
         // Try 1: Fetch by property_id (gets full gallery from details endpoint)
         if (realtorPropertyId) {
           try {
             var resp = await fetch(workerUrl + '/api/realtor/photos?property_id=' + encodeURIComponent(realtorPropertyId));
             var data = await resp.json();
+            dbg.byIdResult = { count: (data.photos || []).length, error: data.error || null, debug: data.debug || null };
             if (!data.error && data.photos && data.photos.length > 0) bestPhotos = data.photos;
-          } catch (e) {}
+          } catch (e) { dbg.byIdError = e.message; }
         }
 
         // Try 2: Use inline _photos from comp data if details didn't give us more
         if (bestPhotos.length <= 1 && comp && comp._photos && comp._photos.length > bestPhotos.length) {
           bestPhotos = comp._photos;
+          dbg.usedInline = true;
         }
 
         // Try 3: Search by address as last resort
@@ -6766,22 +6793,28 @@
           try {
             var resp2 = await fetch(workerUrl + '/api/realtor/photos?address=' + encodeURIComponent(compAddr));
             var data2 = await resp2.json();
+            dbg.byAddrResult = { count: (data2.photos || []).length, error: data2.error || null, debug: data2.debug || null };
             if (!data2.error && data2.photos && data2.photos.length > bestPhotos.length) bestPhotos = data2.photos;
-          } catch (e) {}
+          } catch (e) { dbg.byAddrError = e.message; }
         }
 
-        return { source: 'realtor', photos: bestPhotos };
+        dbg.finalCount = bestPhotos.length;
+        return { source: 'realtor', photos: bestPhotos, debug: dbg };
       })());
 
+      var debugLogs = [];
       var results = await Promise.all(fetchPromises);
       results.forEach(function(r) {
-        if (r.source === 'zillow') zillowPhotos = r.photos;
-        else if (r.source === 'realtor') realtorPhotos = r.photos;
+        if (r.source === 'zillow') { zillowPhotos = r.photos; debugLogs.push('Zillow: ' + r.photos.length + ' photos' + (r.error ? ' (err: ' + r.error + ')' : '') + (r.debug ? ' [' + JSON.stringify(r.debug).substring(0, 100) + ']' : '')); }
+        else if (r.source === 'realtor') { realtorPhotos = r.photos; debugLogs.push('Realtor: ' + r.photos.length + ' photos' + (r.error ? ' (err: ' + r.error + ')' : '') + (r.debug ? ' [' + JSON.stringify(r.debug).substring(0, 100) + ']' : '')); }
       });
+      debugLogs.push('Address used: "' + compAddr + '"');
+      debugLogs.push('zpid: ' + (zpid || 'none') + ', realtorId: ' + (comp ? (comp._realtorPropertyId || 'none') : 'none') + ', source: ' + (comp ? (comp._dataSource || '?') : '?'));
 
       if (zillowPhotos.length === 0 && realtorPhotos.length === 0) {
         var noPhotoMsg = '<div style="color:#999;font-size:12px;padding:8px;">No photos found for this property.';
         if (redfinUrl) noPhotoMsg += ' <a href="' + redfinUrl + '" target="_blank" style="color:#1565C0;">View on Redfin ↗</a>';
+        noPhotoMsg += '<div style="font-size:10px;color:#aaa;margin-top:6px;border-top:1px solid #eee;padding-top:4px;">Debug: ' + debugLogs.join(' | ') + '</div>';
         noPhotoMsg += '</div>';
         photoDiv.innerHTML = noPhotoMsg;
         return;
@@ -6792,6 +6825,12 @@
       // Also cache by comp index for compare feature lookup
       compPhotoCache['comp_' + compIdx] = result;
       renderCompPhotosWithSource(photoDiv, result, compIdx);
+      // Append debug info
+      var dbgDiv = document.createElement('div');
+      dbgDiv.style.cssText = 'font-size:9px;color:#bbb;margin-top:4px;padding:2px 4px;cursor:pointer;';
+      dbgDiv.textContent = '🔍 Debug: ' + debugLogs.join(' | ');
+      dbgDiv.title = 'Photo source debug info';
+      photoDiv.appendChild(dbgDiv);
     }
 
     function renderCompPhotosWithSource(container, photoData, compIdx) {
