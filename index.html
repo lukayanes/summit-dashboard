@@ -5919,8 +5919,9 @@
       html += '<button onclick="fetchARVCalcData()" id="arvCalcFetchBtn" style="padding:12px 24px;background:#1B2A4A;color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;">🔍 Find Comps</button>';
       html += '</div>';
 
-      // Days filter
+      // Days + radius filters
       html += renderDaysFilter();
+      html += renderRadiusFilter();
 
       html += '<div id="arvCalcResults"></div>';
 
@@ -5949,9 +5950,11 @@
         html += '<button onclick="setARVCalcDays(' + dVal + ')" style="padding:6px 14px;border-radius:20px;border:' + (dActive ? '2px solid #1B2A4A' : '1px solid #ddd') + ';background:' + (dActive ? '#1B2A4A' : '#fff') + ';color:' + (dActive ? '#fff' : '#333') + ';font-size:12px;font-weight:600;cursor:pointer;">' + dLabel + '</button>';
       }
       html += '</div>';
+      return html;
+    }
 
-      // Radius filter
-      html += '<div id="arvRadiusFilter" style="display:flex;gap:8px;margin-bottom:20px;align-items:center;flex-wrap:wrap;">';
+    function renderRadiusFilter() {
+      var html = '<div id="arvRadiusFilter" style="display:flex;gap:8px;margin-bottom:20px;align-items:center;flex-wrap:wrap;">';
       html += '<span style="font-size:12px;font-weight:600;color:#666;">Search radius:</span>';
       var radiusOptions = [
         { val: 0.5, label: '0.5 mi' },
@@ -5968,7 +5971,6 @@
         html += '<button onclick="setARVCalcRadius(' + rVal + ')" style="padding:6px 14px;border-radius:20px;border:' + (rActive ? '2px solid #1B2A4A' : '1px solid #ddd') + ';background:' + (rActive ? '#1B2A4A' : '#fff') + ';color:' + (rActive ? '#fff' : '#333') + ';font-size:12px;font-weight:600;cursor:pointer;">' + rLabel + '</button>';
       }
       html += '</div>';
-
       return html;
     }
 
@@ -5978,11 +5980,7 @@
       if (addressInput) arvCalcState.lastAddress = addressInput.value.trim();
       var filterDiv = document.getElementById('arvRadiusFilter');
       if (filterDiv) {
-        // Re-render just the radius buttons
-        var tempDiv = document.createElement('div');
-        tempDiv.innerHTML = renderDaysFilter();
-        var newRadiusDiv = tempDiv.querySelector('#arvRadiusFilter');
-        if (newRadiusDiv) filterDiv.outerHTML = newRadiusDiv.outerHTML;
+        filterDiv.outerHTML = renderRadiusFilter();
       }
     }
 
@@ -6588,11 +6586,23 @@
         .addTo(map)
         .bindPopup('<div style="font-size:13px;"><strong style="color:#1B2A4A;">SUBJECT PROPERTY</strong><br>' + subjAddr + '<br><span style="color:#2E7D32;font-weight:700;">Zestimate: ' + (subj.zestimate ? fmt(subj.zestimate) : 'N/A') + '</span></div>');
 
-      // Comp markers — numbered to match comp table
+      // Comp markers — only show comps visible in the table
       var gradePopupColors = { A: '#2E7D32', B: '#1565C0', C: '#F57F17', D: '#E65100', F: '#C62828' };
       var bounds = [[lat, lng]];
 
+      // Determine if we have enough verified comps to hide fallbacks
+      var verifiedCount = 0;
+      comps.forEach(function(c) {
+        var ct = (c._compType || '').toLowerCase();
+        if (ct === 'sold' || ct === 'pending') verifiedCount++;
+      });
+      var mapHasEnough = verifiedCount >= 3;
+
       comps.forEach(function(comp, idx) {
+        // Skip fallback comps if enough verified exist (match table logic)
+        var ct = (comp._compType || '').toLowerCase();
+        if (mapHasEnough && (ct === 'for_sale' || ct === 'zestimate' || ct === 'unknown')) return;
+
         var cLat = parseFloat(comp.latitude);
         var cLng = parseFloat(comp.longitude);
         if (isNaN(cLat) || isNaN(cLng)) return;
@@ -6695,7 +6705,7 @@
 
       // Check cache
       if (compPhotoCache[cacheKey]) {
-        renderCompPhotosWithSource(photoDiv, compPhotoCache[cacheKey]);
+        renderCompPhotosWithSource(photoDiv, compPhotoCache[cacheKey], compIdx);
         return;
       }
 
@@ -6703,70 +6713,62 @@
       var redfinUrl = comp ? (comp.redfinUrl || '') : '';
       var compAddr = comp ? (comp.address || '') : '';
 
-      photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Loading photos...</div>';
+      photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Loading photos from all sources...</div>';
 
       var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
-      var photos = [];
-
-      // Step 1: Try Zillow photos by zpid
-      if (zpid) {
-        try {
-          var resp = await fetch(workerUrl + '/api/zillow/photos?zpid=' + zpid);
-          var data = await resp.json();
-          if (!data.error) photos = data.photos || [];
-        } catch (e) { /* Zillow by zpid failed */ }
-      }
-
-      // Step 2: If no zpid or no photos, look up address on Zillow to find zpid + photos
-      if (photos.length <= 1 && compAddr && !zpid) {
-        photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Looking up ' + compAddr + ' on Zillow...</div>';
-        try {
-          var resp2 = await fetch(workerUrl + '/api/zillow/photos-by-address?address=' + encodeURIComponent(compAddr));
-          var data2 = await resp2.json();
-          if (!data2.error && data2.photos && data2.photos.length > 0) {
-            photos = data2.photos;
-            // Store the discovered zpid on the comp for future use
-            if (data2.zpid && comp) comp.zpid = data2.zpid;
-          }
-        } catch (e) { /* address lookup failed */ }
-      }
-
-      // Step 3: If still no photos and we have a zpid from step 2, try zpid fetch
-      if (photos.length <= 1 && comp && comp.zpid && !zpid) {
-        try {
-          var resp3 = await fetch(workerUrl + '/api/zillow/photos?zpid=' + comp.zpid);
-          var data3 = await resp3.json();
-          if (!data3.error && data3.photos && data3.photos.length > photos.length) {
-            photos = data3.photos;
-          }
-        } catch (e) { /* zpid photo fetch failed */ }
-      }
-
-      // Step 4: Try Realtor.com photos as fallback
+      var zillowPhotos = [];
       var realtorPhotos = [];
-      if (photos.length <= 1 && compAddr) {
-        photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#D92228;font-size:12px;">⏳ Checking Realtor.com for photos...</div>';
+
+      // Fetch from ALL sources in parallel
+      var fetchPromises = [];
+
+      // Zillow: by zpid or address
+      fetchPromises.push((async function() {
+        try {
+          if (zpid) {
+            var resp = await fetch(workerUrl + '/api/zillow/photos?zpid=' + zpid);
+            var data = await resp.json();
+            if (!data.error && data.photos && data.photos.length > 0) return { source: 'zillow', photos: data.photos };
+          }
+          if (compAddr) {
+            var resp2 = await fetch(workerUrl + '/api/zillow/photos-by-address?address=' + encodeURIComponent(compAddr));
+            var data2 = await resp2.json();
+            if (!data2.error && data2.photos && data2.photos.length > 0) {
+              if (data2.zpid && comp) comp.zpid = data2.zpid;
+              return { source: 'zillow', photos: data2.photos };
+            }
+          }
+        } catch (e) {}
+        return { source: 'zillow', photos: [] };
+      })());
+
+      // Realtor.com: by property_id, inline _photos, or address lookup
+      fetchPromises.push((async function() {
+        // First check inline photos from comp data
+        if (comp && comp._photos && comp._photos.length > 0) {
+          return { source: 'realtor', photos: comp._photos };
+        }
         try {
           var realtorPropertyId = comp ? (comp._realtorPropertyId || '') : '';
-          var realtorUrl = realtorPropertyId
-            ? workerUrl + '/api/realtor/photos?property_id=' + encodeURIComponent(realtorPropertyId)
-            : workerUrl + '/api/realtor/photos?address=' + encodeURIComponent(compAddr);
-          var resp4 = await fetch(realtorUrl);
-          var data4 = await resp4.json();
-          if (!data4.error && data4.photos && data4.photos.length > 0) {
-            realtorPhotos = data4.photos;
-            if (photos.length <= 1) photos = realtorPhotos;
+          if (realtorPropertyId || compAddr) {
+            var rUrl = realtorPropertyId
+              ? workerUrl + '/api/realtor/photos?property_id=' + encodeURIComponent(realtorPropertyId)
+              : workerUrl + '/api/realtor/photos?address=' + encodeURIComponent(compAddr);
+            var resp = await fetch(rUrl);
+            var data = await resp.json();
+            if (!data.error && data.photos && data.photos.length > 0) return { source: 'realtor', photos: data.photos };
           }
-        } catch (e) { /* Realtor.com photo fetch failed */ }
-      }
+        } catch (e) {}
+        return { source: 'realtor', photos: [] };
+      })());
 
-      // Also use inline _photos from Realtor.com comp data if available
-      if (photos.length <= 1 && comp && comp._photos && comp._photos.length > 0) {
-        photos = comp._photos;
-        realtorPhotos = comp._photos;
-      }
+      var results = await Promise.all(fetchPromises);
+      results.forEach(function(r) {
+        if (r.source === 'zillow') zillowPhotos = r.photos;
+        else if (r.source === 'realtor') realtorPhotos = r.photos;
+      });
 
-      if (photos.length === 0) {
+      if (zillowPhotos.length === 0 && realtorPhotos.length === 0) {
         var noPhotoMsg = '<div style="color:#999;font-size:12px;padding:8px;">No photos found for this property.';
         if (redfinUrl) noPhotoMsg += ' <a href="' + redfinUrl + '" target="_blank" style="color:#1565C0;">View on Redfin ↗</a>';
         noPhotoMsg += '</div>';
@@ -6774,13 +6776,12 @@
         return;
       }
 
-      var photoSource = realtorPhotos.length > 0 && photos === realtorPhotos ? 'realtor' : 'zillow';
-      var result = { zillow: photoSource === 'zillow' ? photos : [], redfin: [], realtor: photoSource === 'realtor' ? photos : [] };
+      var result = { zillow: zillowPhotos, redfin: [], realtor: realtorPhotos };
       compPhotoCache[cacheKey] = result;
-      renderCompPhotosWithSource(photoDiv, result);
+      renderCompPhotosWithSource(photoDiv, result, compIdx);
     }
 
-    function renderCompPhotosWithSource(container, photoData) {
+    function renderCompPhotosWithSource(container, photoData, compIdx) {
       var zPhotos = photoData.zillow || [];
       var rPhotos = photoData.redfin || [];
       var rcPhotos = photoData.realtor || [];
@@ -6797,18 +6798,32 @@
       var html = '';
       var sourceCount = (totalZ > 0 ? 1 : 0) + (totalR > 0 ? 1 : 0) + (totalRC > 0 ? 1 : 0);
 
+      // Top bar: source tabs + compare button
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">';
+      html += '<div style="display:flex;gap:4px;align-items:center;">';
       // Show tabs if multiple sources have photos
       if (sourceCount > 1) {
-        html += '<div style="display:flex;gap:4px;margin-bottom:8px;">';
-        if (totalZ > 0) html += '<button id="' + tabId + '_zBtn" onclick="switchPhotoTab(\'' + tabId + '\',\'zillow\')" style="padding:4px 12px;border:1px solid #1565C0;background:#E3F2FD;border-radius:4px 4px 0 0;font-size:11px;font-weight:700;color:#1565C0;cursor:pointer;">Zillow (' + totalZ + ')</button>';
-        if (totalR > 0) html += '<button id="' + tabId + '_rBtn" onclick="switchPhotoTab(\'' + tabId + '\',\'redfin\')" style="padding:4px 12px;border:1px solid #ddd;background:white;border-radius:4px 4px 0 0;font-size:11px;font-weight:600;color:#666;cursor:pointer;">Redfin (' + totalR + ')</button>';
-        if (totalRC > 0) html += '<button id="' + tabId + '_rcBtn" onclick="switchPhotoTab(\'' + tabId + '\',\'realtor\')" style="padding:4px 12px;border:1px solid #ddd;background:white;border-radius:4px 4px 0 0;font-size:11px;font-weight:600;color:#666;cursor:pointer;">Realtor (' + totalRC + ')</button>';
-        html += '</div>';
+        var firstSource = totalZ > 0 ? 'zillow' : (totalR > 0 ? 'redfin' : 'realtor');
+        if (totalZ > 0) html += '<button id="' + tabId + '_zBtn" onclick="switchPhotoTab(\'' + tabId + '\',\'zillow\')" style="padding:4px 12px;border:1px solid ' + (firstSource === 'zillow' ? '#1565C0' : '#ddd') + ';background:' + (firstSource === 'zillow' ? '#E3F2FD' : 'white') + ';border-radius:4px 4px 0 0;font-size:11px;font-weight:700;color:' + (firstSource === 'zillow' ? '#1565C0' : '#666') + ';cursor:pointer;">Zillow (' + totalZ + ')</button>';
+        if (totalR > 0) html += '<button id="' + tabId + '_rBtn" onclick="switchPhotoTab(\'' + tabId + '\',\'redfin\')" style="padding:4px 12px;border:1px solid ' + (firstSource === 'redfin' ? '#E65100' : '#ddd') + ';background:' + (firstSource === 'redfin' ? '#FFF3E0' : 'white') + ';border-radius:4px 4px 0 0;font-size:11px;font-weight:600;color:' + (firstSource === 'redfin' ? '#E65100' : '#666') + ';cursor:pointer;">Redfin (' + totalR + ')</button>';
+        if (totalRC > 0) html += '<button id="' + tabId + '_rcBtn" onclick="switchPhotoTab(\'' + tabId + '\',\'realtor\')" style="padding:4px 12px;border:1px solid ' + (firstSource === 'realtor' ? '#D92228' : '#ddd') + ';background:' + (firstSource === 'realtor' ? '#FFEBEE' : 'white') + ';border-radius:4px 4px 0 0;font-size:11px;font-weight:600;color:' + (firstSource === 'realtor' ? '#D92228' : '#666') + ';cursor:pointer;">Realtor (' + totalRC + ')</button>';
       } else if (totalRC > 0 && totalZ === 0 && totalR === 0) {
-        html += '<div style="font-size:10px;color:#D92228;font-weight:600;margin-bottom:6px;">📷 Photos from Realtor.com</div>';
+        html += '<span style="font-size:10px;color:#D92228;font-weight:600;">📷 Realtor.com photos</span>';
       } else if (totalR > 0 && totalZ === 0) {
-        html += '<div style="font-size:10px;color:#E65100;font-weight:600;margin-bottom:6px;">📷 Photos from Redfin (Zillow had none)</div>';
+        html += '<span style="font-size:10px;color:#E65100;font-weight:600;">📷 Redfin photos</span>';
+      } else {
+        html += '<span style="font-size:10px;color:#1565C0;font-weight:600;">📷 Zillow photos</span>';
       }
+      html += '</div>';
+
+      // Compare with Subject button
+      if (typeof compIdx !== 'undefined' && compIdx !== null) {
+        var hasSubjPhotos = arvCalcState.data && arvCalcState.data.subject && arvCalcState.data.subject.photos && arvCalcState.data.subject.photos.length > 0;
+        if (hasSubjPhotos) {
+          html += '<button onclick="openComparePhotos(' + compIdx + ')" style="padding:4px 14px;background:#1B2A4A;color:white;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">📸 Compare with Subject</button>';
+        }
+      }
+      html += '</div>';
 
       // Zillow panel
       if (totalZ > 0) {
@@ -6860,23 +6875,69 @@
       }
     }
 
+    // Global carousel state tracker
+    var _carouselStates = {};
+
     function buildPhotoGallery(photos, sourceName) {
-      var heroId = 'compHero_' + Math.random().toString(36).substr(2, 6);
-      var html = '<div style="display:flex;gap:12px;padding:8px 0;flex-wrap:wrap;">';
-      html += '<div style="flex:0 0 auto;">';
-      html += '<img id="' + heroId + '" src="' + photos[0] + '" style="width:280px;height:190px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid #1B2A4A;" onclick="openCompPhotoModal(this.src)">';
+      var galleryId = 'gallery_' + Math.random().toString(36).substr(2, 8);
+      _carouselStates[galleryId] = { photos: photos, index: 0 };
+
+      var html = '<div style="display:flex;gap:12px;padding:8px 0;flex-wrap:wrap;align-items:flex-start;">';
+
+      // Hero image with navigation overlay
+      html += '<div style="flex:0 0 auto;position:relative;width:320px;">';
+      html += '<img id="' + galleryId + '_hero" src="' + photos[0] + '" style="width:320px;height:220px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid #1B2A4A;" onclick="openCompPhotoModal(\'' + galleryId + '\')">';
+
+      // Left/Right navigation arrows on hero
+      if (photos.length > 1) {
+        html += '<button onclick="carouselNav(\'' + galleryId + '\',-1)" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);width:32px;height:32px;border-radius:50%;background:rgba(0,0,0,0.55);color:white;border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;">‹</button>';
+        html += '<button onclick="carouselNav(\'' + galleryId + '\',1)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);width:32px;height:32px;border-radius:50%;background:rgba(0,0,0,0.55);color:white;border:none;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;">›</button>';
+      }
+
+      // Counter badge
+      html += '<div id="' + galleryId + '_counter" style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.6);color:white;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;">1 / ' + photos.length + '</div>';
       html += '</div>';
-      html += '<div style="flex:1;min-width:180px;overflow-x:auto;">';
-      html += '<div style="display:flex;gap:5px;flex-wrap:wrap;max-height:190px;overflow-y:auto;">';
+
+      // Thumbnail strip (scrollable)
+      html += '<div style="flex:1;min-width:160px;">';
+      html += '<div id="' + galleryId + '_thumbs" style="display:flex;gap:5px;flex-wrap:nowrap;max-height:220px;overflow-y:auto;overflow-x:hidden;flex-direction:row;flex-wrap:wrap;">';
       for (var i = 0; i < photos.length; i++) {
         var activeBorder = (i === 0) ? '2px solid #ED7D31' : '2px solid transparent';
-        html += '<img src="' + photos[i] + '" style="width:70px;height:52px;object-fit:cover;border-radius:4px;cursor:pointer;border:' + activeBorder + ';flex-shrink:0;" onclick="document.getElementById(\'' + heroId + '\').src=this.src;this.parentNode.querySelectorAll(\'img\').forEach(function(i){i.style.border=\'2px solid transparent\';});this.style.border=\'2px solid #ED7D31\';" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">';
+        html += '<img data-idx="' + i + '" src="' + photos[i] + '" style="width:68px;height:50px;object-fit:cover;border-radius:4px;cursor:pointer;border:' + activeBorder + ';flex-shrink:0;transition:border 0.15s;" onclick="carouselJump(\'' + galleryId + '\',' + i + ')" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">';
       }
       html += '</div>';
-      html += '<div style="font-size:10px;color:#999;margin-top:4px;">' + photos.length + ' ' + sourceName + ' photos · Click main photo to enlarge</div>';
+      html += '<div style="font-size:10px;color:#999;margin-top:4px;">' + photos.length + ' ' + sourceName + ' photos · Use arrows or click to browse · Click photo to enlarge</div>';
       html += '</div>';
       html += '</div>';
       return html;
+    }
+
+    function carouselNav(galleryId, dir) {
+      var state = _carouselStates[galleryId];
+      if (!state) return;
+      var newIdx = state.index + dir;
+      if (newIdx < 0) newIdx = state.photos.length - 1;
+      if (newIdx >= state.photos.length) newIdx = 0;
+      carouselJump(galleryId, newIdx);
+    }
+
+    function carouselJump(galleryId, idx) {
+      var state = _carouselStates[galleryId];
+      if (!state) return;
+      state.index = idx;
+      var hero = document.getElementById(galleryId + '_hero');
+      var counter = document.getElementById(galleryId + '_counter');
+      var thumbsDiv = document.getElementById(galleryId + '_thumbs');
+      if (hero) hero.src = state.photos[idx];
+      if (counter) counter.textContent = (idx + 1) + ' / ' + state.photos.length;
+      if (thumbsDiv) {
+        thumbsDiv.querySelectorAll('img').forEach(function(img) {
+          img.style.border = parseInt(img.getAttribute('data-idx')) === idx ? '2px solid #ED7D31' : '2px solid transparent';
+        });
+        // Scroll active thumb into view
+        var activeThumb = thumbsDiv.querySelector('img[data-idx="' + idx + '"]');
+        if (activeThumb) activeThumb.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
     }
 
     // renderCompPhotos kept for backward compat (subject photo loading uses it)
@@ -6888,19 +6949,275 @@
       renderCompPhotosWithSource(container, { zillow: photos, redfin: [] });
     }
 
-    function openCompPhotoModal(src) {
-      // Create fullscreen overlay for the photo
+    var _lightboxOverlay = null;
+    var _lightboxGalleryId = null;
+
+    function openCompPhotoModal(galleryIdOrSrc) {
+      // Support both gallery ID (carousel) and direct src (legacy)
+      var state = _carouselStates[galleryIdOrSrc];
+      var photos, startIdx;
+      if (state) {
+        photos = state.photos;
+        startIdx = state.index;
+        _lightboxGalleryId = galleryIdOrSrc;
+      } else {
+        photos = [galleryIdOrSrc];
+        startIdx = 0;
+        _lightboxGalleryId = null;
+      }
+
+      if (_lightboxOverlay) { try { document.body.removeChild(_lightboxOverlay); } catch(e){} }
+
       var overlay = document.createElement('div');
-      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.9);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer;';
-      overlay.onclick = function() { document.body.removeChild(overlay); };
+      overlay.id = '_photoLightbox';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.92);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;';
+      overlay.setAttribute('data-idx', startIdx);
+      overlay.setAttribute('data-count', photos.length);
+      _lightboxOverlay = overlay;
+
+      // Main image
       var img = document.createElement('img');
-      img.src = src;
-      img.style.cssText = 'max-width:90vw;max-height:90vh;border-radius:8px;box-shadow:0 4px 30px rgba(0,0,0,0.5);';
+      img.id = '_lightboxImg';
+      img.src = photos[startIdx];
+      img.style.cssText = 'max-width:90vw;max-height:80vh;border-radius:8px;box-shadow:0 4px 30px rgba(0,0,0,0.5);object-fit:contain;';
       overlay.appendChild(img);
+
+      // Counter
+      var counter = document.createElement('div');
+      counter.id = '_lightboxCounter';
+      counter.style.cssText = 'color:white;font-size:14px;margin-top:12px;font-weight:600;';
+      counter.textContent = (startIdx + 1) + ' / ' + photos.length;
+      overlay.appendChild(counter);
+
+      // Close button
       var closeBtn = document.createElement('div');
-      closeBtn.textContent = '✕';
-      closeBtn.style.cssText = 'position:absolute;top:20px;right:30px;color:white;font-size:32px;font-weight:700;cursor:pointer;';
+      closeBtn.innerHTML = '✕';
+      closeBtn.style.cssText = 'position:absolute;top:20px;right:30px;color:white;font-size:32px;font-weight:700;cursor:pointer;z-index:10001;';
+      closeBtn.onclick = function(e) { e.stopPropagation(); closeLightbox(); };
       overlay.appendChild(closeBtn);
+
+      // Arrow buttons
+      if (photos.length > 1) {
+        var arrowStyle = 'position:absolute;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,0.15);color:white;border:2px solid rgba(255,255,255,0.3);font-size:24px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.2s;';
+        var leftArr = document.createElement('button');
+        leftArr.innerHTML = '‹';
+        leftArr.style.cssText = arrowStyle + 'left:20px;';
+        leftArr.onmouseover = function() { this.style.background = 'rgba(255,255,255,0.3)'; };
+        leftArr.onmouseout = function() { this.style.background = 'rgba(255,255,255,0.15)'; };
+        leftArr.onclick = function(e) { e.stopPropagation(); lightboxNav(-1); };
+        overlay.appendChild(leftArr);
+
+        var rightArr = document.createElement('button');
+        rightArr.innerHTML = '›';
+        rightArr.style.cssText = arrowStyle + 'right:20px;';
+        rightArr.onmouseover = function() { this.style.background = 'rgba(255,255,255,0.3)'; };
+        rightArr.onmouseout = function() { this.style.background = 'rgba(255,255,255,0.15)'; };
+        rightArr.onclick = function(e) { e.stopPropagation(); lightboxNav(1); };
+        overlay.appendChild(rightArr);
+
+        // Thumbnail strip at bottom
+        var thumbStrip = document.createElement('div');
+        thumbStrip.id = '_lightboxThumbs';
+        thumbStrip.style.cssText = 'display:flex;gap:6px;margin-top:10px;overflow-x:auto;max-width:90vw;padding:6px 0;';
+        for (var i = 0; i < Math.min(photos.length, 30); i++) {
+          var th = document.createElement('img');
+          th.src = photos[i];
+          th.setAttribute('data-idx', i);
+          th.style.cssText = 'width:60px;height:42px;object-fit:cover;border-radius:4px;cursor:pointer;flex-shrink:0;border:' + (i === startIdx ? '2px solid #ED7D31' : '2px solid transparent') + ';opacity:' + (i === startIdx ? '1' : '0.6') + ';transition:all 0.15s;';
+          th.onclick = (function(idx) { return function(e) { e.stopPropagation(); lightboxJump(idx); }; })(i);
+          thumbStrip.appendChild(th);
+        }
+        overlay.appendChild(thumbStrip);
+      }
+
+      // Click background to close
+      overlay.onclick = function(e) { if (e.target === overlay) closeLightbox(); };
+
+      // Store photos on overlay for nav
+      overlay._photos = photos;
+
+      document.body.appendChild(overlay);
+
+      // Keyboard nav
+      document.addEventListener('keydown', _lightboxKeyHandler);
+    }
+
+    function _lightboxKeyHandler(e) {
+      if (!_lightboxOverlay) return;
+      if (e.key === 'Escape') closeLightbox();
+      else if (e.key === 'ArrowLeft') lightboxNav(-1);
+      else if (e.key === 'ArrowRight') lightboxNav(1);
+    }
+
+    function lightboxNav(dir) {
+      if (!_lightboxOverlay) return;
+      var idx = parseInt(_lightboxOverlay.getAttribute('data-idx')) || 0;
+      var count = parseInt(_lightboxOverlay.getAttribute('data-count')) || 1;
+      var newIdx = idx + dir;
+      if (newIdx < 0) newIdx = count - 1;
+      if (newIdx >= count) newIdx = 0;
+      lightboxJump(newIdx);
+    }
+
+    function lightboxJump(idx) {
+      if (!_lightboxOverlay) return;
+      var photos = _lightboxOverlay._photos;
+      if (!photos || idx < 0 || idx >= photos.length) return;
+      _lightboxOverlay.setAttribute('data-idx', idx);
+      var img = document.getElementById('_lightboxImg');
+      var counter = document.getElementById('_lightboxCounter');
+      if (img) img.src = photos[idx];
+      if (counter) counter.textContent = (idx + 1) + ' / ' + photos.length;
+      // Update thumbnail highlights
+      var thumbs = document.getElementById('_lightboxThumbs');
+      if (thumbs) {
+        thumbs.querySelectorAll('img').forEach(function(th) {
+          var tIdx = parseInt(th.getAttribute('data-idx'));
+          th.style.border = tIdx === idx ? '2px solid #ED7D31' : '2px solid transparent';
+          th.style.opacity = tIdx === idx ? '1' : '0.6';
+        });
+        var active = thumbs.querySelector('img[data-idx="' + idx + '"]');
+        if (active) active.scrollIntoView({ inline: 'center', behavior: 'smooth' });
+      }
+      // Also sync the inline carousel if linked
+      if (_lightboxGalleryId) carouselJump(_lightboxGalleryId, idx);
+    }
+
+    function closeLightbox() {
+      document.removeEventListener('keydown', _lightboxKeyHandler);
+      if (_lightboxOverlay) {
+        try { document.body.removeChild(_lightboxOverlay); } catch(e){}
+        _lightboxOverlay = null;
+        _lightboxGalleryId = null;
+      }
+    }
+
+    // Side-by-side photo comparison: Subject vs Comp
+    function openComparePhotos(compIdx) {
+      var subj = arvCalcState.data ? arvCalcState.data.subject : null;
+      var comp = (arvCalcState.data && arvCalcState.data.comps) ? arvCalcState.data.comps[compIdx] : null;
+      if (!subj || !comp) return;
+
+      var subjPhotos = subj.photos || [];
+      var subjAddr = subj.address || '';
+      if (typeof subjAddr === 'object') subjAddr = (subjAddr.streetAddress || '') + ', ' + (subjAddr.city || '');
+
+      // Gather comp photos from cache or inline
+      var compPhotos = [];
+      var cacheKey = comp.zpid || ('comp_' + compIdx);
+      if (compPhotoCache[cacheKey]) {
+        var cached = compPhotoCache[cacheKey];
+        compPhotos = (cached.zillow && cached.zillow.length > 0) ? cached.zillow : (cached.realtor && cached.realtor.length > 0) ? cached.realtor : cached.redfin || [];
+      }
+      if (compPhotos.length === 0 && comp._photos) compPhotos = comp._photos;
+      if (compPhotos.length === 0 && comp.imgSrc) compPhotos = [comp.imgSrc];
+
+      var compAddr = comp.address || '';
+      if (typeof compAddr === 'object') compAddr = (compAddr.streetAddress || '') + ', ' + (compAddr.city || '');
+
+      if (subjPhotos.length === 0 && compPhotos.length === 0) {
+        alert('No photos available for comparison');
+        return;
+      }
+
+      // Create overlay
+      var overlay = document.createElement('div');
+      overlay.id = '_compareOverlay';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.95);z-index:10001;display:flex;flex-direction:column;overflow:auto;';
+
+      // Header
+      var header = document.createElement('div');
+      header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:16px 24px;flex-shrink:0;';
+      header.innerHTML = '<div style="color:white;font-size:16px;font-weight:700;">📸 Photo Comparison — Subject vs Comp #' + (compIdx + 1) + '</div>' +
+        '<button onclick="document.body.removeChild(document.getElementById(\'_compareOverlay\'))" style="background:none;border:2px solid rgba(255,255,255,0.3);color:white;font-size:18px;cursor:pointer;width:36px;height:36px;border-radius:50;display:flex;align-items:center;justify-content:center;border-radius:50%;">✕</button>';
+      overlay.appendChild(header);
+
+      // Side-by-side container
+      var container = document.createElement('div');
+      container.style.cssText = 'display:flex;flex:1;gap:16px;padding:0 24px 24px;min-height:0;';
+
+      // Left: Subject
+      var leftPanel = document.createElement('div');
+      leftPanel.style.cssText = 'flex:1;display:flex;flex-direction:column;min-width:0;';
+      var leftLabel = '<div style="color:#2E7D32;font-size:13px;font-weight:700;margin-bottom:8px;text-align:center;">SUBJECT PROPERTY</div>';
+      leftLabel += '<div style="color:#ccc;font-size:11px;margin-bottom:8px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + subjAddr + '</div>';
+      var subjGalleryId = 'compare_subj_' + Math.random().toString(36).substr(2, 6);
+      _carouselStates[subjGalleryId] = { photos: subjPhotos, index: 0 };
+
+      var leftHtml = leftLabel;
+      if (subjPhotos.length > 0) {
+        leftHtml += '<div style="position:relative;text-align:center;">';
+        leftHtml += '<img id="' + subjGalleryId + '_hero" src="' + subjPhotos[0] + '" style="max-width:100%;max-height:55vh;object-fit:contain;border-radius:8px;border:2px solid #2E7D32;cursor:pointer;" onclick="openCompPhotoModal(\'' + subjGalleryId + '\')">';
+        if (subjPhotos.length > 1) {
+          leftHtml += '<button onclick="carouselNav(\'' + subjGalleryId + '\',-1)" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,0.55);color:white;border:none;font-size:16px;cursor:pointer;">‹</button>';
+          leftHtml += '<button onclick="carouselNav(\'' + subjGalleryId + '\',1)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,0.55);color:white;border:none;font-size:16px;cursor:pointer;">›</button>';
+        }
+        leftHtml += '<div id="' + subjGalleryId + '_counter" style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.6);color:white;font-size:10px;padding:2px 6px;border-radius:8px;">1 / ' + subjPhotos.length + '</div>';
+        leftHtml += '</div>';
+        // Thumbnail strip
+        leftHtml += '<div id="' + subjGalleryId + '_thumbs" style="display:flex;gap:4px;margin-top:8px;overflow-x:auto;padding:4px 0;">';
+        for (var s = 0; s < subjPhotos.length; s++) {
+          leftHtml += '<img data-idx="' + s + '" src="' + subjPhotos[s] + '" style="width:52px;height:38px;object-fit:cover;border-radius:3px;cursor:pointer;flex-shrink:0;border:' + (s === 0 ? '2px solid #ED7D31' : '2px solid transparent') + ';" onclick="carouselJump(\'' + subjGalleryId + '\',' + s + ')">';
+        }
+        leftHtml += '</div>';
+      } else {
+        leftHtml += '<div style="color:#999;text-align:center;padding:40px;">No subject photos available</div>';
+      }
+      leftPanel.innerHTML = leftHtml;
+      container.appendChild(leftPanel);
+
+      // Divider
+      var divider = document.createElement('div');
+      divider.style.cssText = 'width:2px;background:rgba(255,255,255,0.15);flex-shrink:0;align-self:stretch;';
+      container.appendChild(divider);
+
+      // Right: Comp
+      var rightPanel = document.createElement('div');
+      rightPanel.style.cssText = 'flex:1;display:flex;flex-direction:column;min-width:0;';
+      var rightLabel = '<div style="color:#ED7D31;font-size:13px;font-weight:700;margin-bottom:8px;text-align:center;">COMP #' + (compIdx + 1) + '</div>';
+      rightLabel += '<div style="color:#ccc;font-size:11px;margin-bottom:8px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + compAddr + '</div>';
+      var compGalleryId = 'compare_comp_' + Math.random().toString(36).substr(2, 6);
+      _carouselStates[compGalleryId] = { photos: compPhotos, index: 0 };
+
+      var rightHtml = rightLabel;
+      if (compPhotos.length > 0) {
+        rightHtml += '<div style="position:relative;text-align:center;">';
+        rightHtml += '<img id="' + compGalleryId + '_hero" src="' + compPhotos[0] + '" style="max-width:100%;max-height:55vh;object-fit:contain;border-radius:8px;border:2px solid #ED7D31;cursor:pointer;" onclick="openCompPhotoModal(\'' + compGalleryId + '\')">';
+        if (compPhotos.length > 1) {
+          rightHtml += '<button onclick="carouselNav(\'' + compGalleryId + '\',-1)" style="position:absolute;left:6px;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,0.55);color:white;border:none;font-size:16px;cursor:pointer;">‹</button>';
+          rightHtml += '<button onclick="carouselNav(\'' + compGalleryId + '\',1)" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,0.55);color:white;border:none;font-size:16px;cursor:pointer;">›</button>';
+        }
+        rightHtml += '<div id="' + compGalleryId + '_counter" style="position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,0.6);color:white;font-size:10px;padding:2px 6px;border-radius:8px;">1 / ' + compPhotos.length + '</div>';
+        rightHtml += '</div>';
+        // Thumbnail strip
+        rightHtml += '<div id="' + compGalleryId + '_thumbs" style="display:flex;gap:4px;margin-top:8px;overflow-x:auto;padding:4px 0;">';
+        for (var c = 0; c < compPhotos.length; c++) {
+          rightHtml += '<img data-idx="' + c + '" src="' + compPhotos[c] + '" style="width:52px;height:38px;object-fit:cover;border-radius:3px;cursor:pointer;flex-shrink:0;border:' + (c === 0 ? '2px solid #ED7D31' : '2px solid transparent') + ';" onclick="carouselJump(\'' + compGalleryId + '\',' + c + ')">';
+        }
+        rightHtml += '</div>';
+      } else {
+        rightHtml += '<div style="color:#999;text-align:center;padding:40px;">No comp photos available<br><span style="font-size:11px;">Load photos first by clicking the camera icon in the comp table</span></div>';
+      }
+      rightPanel.innerHTML = rightHtml;
+      container.appendChild(rightPanel);
+
+      overlay.appendChild(container);
+
+      // Key stats comparison bar at bottom
+      var statsBar = document.createElement('div');
+      statsBar.style.cssText = 'display:flex;justify-content:center;gap:24px;padding:12px 24px;background:rgba(255,255,255,0.05);flex-shrink:0;flex-wrap:wrap;';
+      var subjZ = subj.zestimate ? '$' + subj.zestimate.toLocaleString() : '—';
+      var compPrice = comp.price ? '$' + comp.price.toLocaleString() : '—';
+      var subjSqft = subj.livingArea ? subj.livingArea.toLocaleString() + ' sqft' : '—';
+      var compSqft = comp.livingArea ? comp.livingArea.toLocaleString() + ' sqft' : '—';
+      var subjBdBa = (subj.bedrooms || '?') + 'bd/' + (subj.bathrooms || '?') + 'ba';
+      var compBdBa = (comp.bedrooms || '?') + 'bd/' + (comp.bathrooms || '?') + 'ba';
+      var statItem = function(label, sVal, cVal) {
+        return '<div style="text-align:center;"><div style="color:#999;font-size:10px;text-transform:uppercase;margin-bottom:2px;">' + label + '</div><div style="color:#2E7D32;font-size:12px;font-weight:600;">' + sVal + '</div><div style="color:#ED7D31;font-size:12px;font-weight:600;">' + cVal + '</div></div>';
+      };
+      statsBar.innerHTML = statItem('Price', subjZ, compPrice) + statItem('Size', subjSqft, compSqft) + statItem('Bed/Bath', subjBdBa, compBdBa) + statItem('Year', subj.yearBuilt || '—', comp.yearBuilt || '—') + statItem('Grade', '—', (comp.grade || '?') + ' (' + (comp.matchPct || 0) + '%)');
+      overlay.appendChild(statsBar);
+
       document.body.appendChild(overlay);
     }
 
