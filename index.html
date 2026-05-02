@@ -6245,8 +6245,8 @@
           // Build source-specific links
           var zillowLink = comp.zpid ? 'https://www.zillow.com/homedetails/' + comp.zpid + '_zpid/' : '';
           var redfinLink = comp.redfinUrl || '';
-          // Build a Realtor.com search link from the address
-          var realtorLink = cAddr ? 'https://www.realtor.com/realestateandhomes-detail/' + encodeURIComponent(cAddr.replace(/[,#]/g, '').replace(/\s+/g, '-')) : '';
+          // Build a Realtor.com link — Google site-scoped search is the most reliable way to find the listing
+          var realtorLink = cAddr ? 'https://www.google.com/search?q=site:realtor.com+' + encodeURIComponent(cAddr) : '';
 
           // Address display (plain bold text, no link)
           var addrDisplay = '<span style="font-weight:600;">' + cAddr + '</span>';
@@ -6742,24 +6742,35 @@
         return { source: 'zillow', photos: [] };
       })());
 
-      // Realtor.com: by property_id, inline _photos, or address lookup
+      // Realtor.com: try property_id details first (best photos), then inline, then address search
       fetchPromises.push((async function() {
-        // First check inline photos from comp data
-        if (comp && comp._photos && comp._photos.length > 0) {
-          return { source: 'realtor', photos: comp._photos };
-        }
-        try {
-          var realtorPropertyId = comp ? (comp._realtorPropertyId || '') : '';
-          if (realtorPropertyId || compAddr) {
-            var rUrl = realtorPropertyId
-              ? workerUrl + '/api/realtor/photos?property_id=' + encodeURIComponent(realtorPropertyId)
-              : workerUrl + '/api/realtor/photos?address=' + encodeURIComponent(compAddr);
-            var resp = await fetch(rUrl);
+        var bestPhotos = [];
+        var realtorPropertyId = comp ? (comp._realtorPropertyId || '') : '';
+
+        // Try 1: Fetch by property_id (gets full gallery from details endpoint)
+        if (realtorPropertyId) {
+          try {
+            var resp = await fetch(workerUrl + '/api/realtor/photos?property_id=' + encodeURIComponent(realtorPropertyId));
             var data = await resp.json();
-            if (!data.error && data.photos && data.photos.length > 0) return { source: 'realtor', photos: data.photos };
-          }
-        } catch (e) {}
-        return { source: 'realtor', photos: [] };
+            if (!data.error && data.photos && data.photos.length > 0) bestPhotos = data.photos;
+          } catch (e) {}
+        }
+
+        // Try 2: Use inline _photos from comp data if details didn't give us more
+        if (bestPhotos.length <= 1 && comp && comp._photos && comp._photos.length > bestPhotos.length) {
+          bestPhotos = comp._photos;
+        }
+
+        // Try 3: Search by address as last resort
+        if (bestPhotos.length <= 1 && compAddr) {
+          try {
+            var resp2 = await fetch(workerUrl + '/api/realtor/photos?address=' + encodeURIComponent(compAddr));
+            var data2 = await resp2.json();
+            if (!data2.error && data2.photos && data2.photos.length > bestPhotos.length) bestPhotos = data2.photos;
+          } catch (e) {}
+        }
+
+        return { source: 'realtor', photos: bestPhotos };
       })());
 
       var results = await Promise.all(fetchPromises);
@@ -6778,6 +6789,8 @@
 
       var result = { zillow: zillowPhotos, redfin: [], realtor: realtorPhotos };
       compPhotoCache[cacheKey] = result;
+      // Also cache by comp index for compare feature lookup
+      compPhotoCache['comp_' + compIdx] = result;
       renderCompPhotosWithSource(photoDiv, result, compIdx);
     }
 
@@ -7102,14 +7115,19 @@
       var subjAddr = subj.address || '';
       if (typeof subjAddr === 'object') subjAddr = (subjAddr.streetAddress || '') + ', ' + (subjAddr.city || '');
 
-      // Gather comp photos from cache or inline
+      // Gather comp photos from ALL possible cache keys
       var compPhotos = [];
-      var cacheKey = comp.zpid || ('comp_' + compIdx);
-      if (compPhotoCache[cacheKey]) {
-        var cached = compPhotoCache[cacheKey];
-        compPhotos = (cached.zillow && cached.zillow.length > 0) ? cached.zillow : (cached.realtor && cached.realtor.length > 0) ? cached.realtor : cached.redfin || [];
+      var cacheKeys = ['comp_' + compIdx];
+      if (comp.zpid) cacheKeys.push(comp.zpid);
+      for (var k = 0; k < cacheKeys.length; k++) {
+        var cached = compPhotoCache[cacheKeys[k]];
+        if (cached) {
+          var best = (cached.zillow && cached.zillow.length > 0) ? cached.zillow : (cached.realtor && cached.realtor.length > 0) ? cached.realtor : cached.redfin || [];
+          if (best.length > compPhotos.length) compPhotos = best;
+        }
       }
-      if (compPhotos.length === 0 && comp._photos) compPhotos = comp._photos;
+      // Fallback to inline data
+      if (compPhotos.length === 0 && comp._photos && comp._photos.length > 0) compPhotos = comp._photos;
       if (compPhotos.length === 0 && comp.imgSrc) compPhotos = [comp.imgSrc];
 
       var compAddr = comp.address || '';
