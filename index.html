@@ -6234,7 +6234,7 @@
           var cSqft = comp.livingArea || 0;
           var cPpsf = cSqft > 0 ? Math.round(cPrice / cSqft) : 0;
           var cAddr = comp.address || '—';
-          if (typeof cAddr === 'object') cAddr = (cAddr.streetAddress || '') + ', ' + (cAddr.city || '');
+          if (typeof cAddr === 'object') cAddr = (cAddr.streetAddress || cAddr.line || '') + (cAddr.city ? ', ' + cAddr.city : '') + (cAddr.state || cAddr.state_code ? ', ' + (cAddr.state || cAddr.state_code) : '') + (cAddr.zipcode || cAddr.postal_code ? ' ' + (cAddr.zipcode || cAddr.postal_code) : '');
           var cDist = comp.distance !== null ? comp.distance.toFixed(1) + ' mi' : '—';
           var checked = arvCalcState.selectedComps[c] ? 'checked' : '';
           var grade = comp.grade || 'F';
