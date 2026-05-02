@@ -1615,6 +1615,127 @@
       }
     };
 
+    /**
+     * Show revenue breakdown in the exec drilldown panel.
+     * If Tiller data exists, shows each income category with monthly breakdown.
+     * Falls back to showing won deals if no Tiller data.
+     */
+    const showRevenueBreakdown = () => {
+      document.getElementById('execDrillDownTitle').innerText = 'TOTAL REVENUE BREAKDOWN';
+      const container = document.getElementById('execDrillDownTable');
+
+      // If no Tiller data, fall back to showing won deals
+      if (!EXPENSE_DATA || !EXPENSE_DATA.categories) {
+        const won = DEALS.filter(d => d.status === 'Closed - Won');
+        renderDealTable(won, 'execDrillDownTable');
+        document.getElementById('execDrillDown').style.display = 'block';
+        return;
+      }
+
+      // Collect all income categories and their monthly data
+      const incomeCategories = [];
+      let grandTotal = 0;
+      const allMonths = new Set();
+
+      Object.entries(EXPENSE_DATA.categories).forEach(([catName, monthlyVals]) => {
+        if ((monthlyVals._type || '').toLowerCase() !== 'income') return;
+        const monthData = {};
+        let catTotal = 0;
+        Object.entries(monthlyVals).forEach(([month, value]) => {
+          if (month === '_type') return;
+          if (value > 0) {
+            monthData[month] = value;
+            catTotal += value;
+            allMonths.add(month);
+          }
+        });
+        if (catTotal > 0) {
+          incomeCategories.push({ name: catName, months: monthData, total: catTotal });
+          grandTotal += catTotal;
+        }
+      });
+
+      // Sort categories by total descending
+      incomeCategories.sort((a, b) => b.total - a.total);
+
+      // Sort months chronologically
+      const sortedMonths = [...allMonths].sort((a, b) => {
+        const da = new Date(a + ' 1');
+        const db = new Date(b + ' 1');
+        return da - db;
+      });
+
+      // Build the HTML
+      let html = '<div style="padding:12px;">';
+
+      // Summary cards at the top
+      html += '<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">';
+      html += '<div style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:8px;padding:12px 20px;flex:1;min-width:140px;">';
+      html += '<div style="font-size:10px;font-weight:700;color:#2E7D32;text-transform:uppercase;letter-spacing:0.5px;">Grand Total</div>';
+      html += '<div style="font-size:24px;font-weight:800;color:#2E7D32;">' + fmt(grandTotal) + '</div>';
+      html += '</div>';
+      html += '<div style="background:#E3F2FD;border:1px solid #90CAF9;border-radius:8px;padding:12px 20px;flex:1;min-width:140px;">';
+      html += '<div style="font-size:10px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:0.5px;">Income Sources</div>';
+      html += '<div style="font-size:24px;font-weight:800;color:#1565C0;">' + incomeCategories.length + '</div>';
+      html += '</div>';
+      html += '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:12px 20px;flex:1;min-width:140px;">';
+      html += '<div style="font-size:10px;font-weight:700;color:#F57F17;text-transform:uppercase;letter-spacing:0.5px;">Months Tracked</div>';
+      html += '<div style="font-size:24px;font-weight:800;color:#F57F17;">' + sortedMonths.length + '</div>';
+      html += '</div>';
+      html += '</div>';
+
+      // Category breakdown table
+      html += '<table style="width:100%;font-size:12px;border-collapse:collapse;border:1px solid #eee;border-radius:8px;overflow:hidden;">';
+      html += '<thead><tr style="background:#1B2A4A;color:white;">';
+      html += '<th style="padding:10px 12px;text-align:left;">Income Source</th>';
+
+      // Show individual month columns
+      sortedMonths.forEach(m => {
+        // Format month header shorter: "Jan 25" instead of "January 2025"
+        const d = new Date(m + ' 1');
+        const shortMonth = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+        html += '<th style="padding:10px 8px;text-align:right;font-size:11px;">' + shortMonth + '</th>';
+      });
+
+      html += '<th style="padding:10px 12px;text-align:right;">Total</th>';
+      html += '<th style="padding:10px 12px;text-align:right;">% of Rev</th>';
+      html += '</tr></thead><tbody>';
+
+      incomeCategories.forEach((cat, idx) => {
+        const rowBg = idx % 2 === 0 ? '' : 'background:#fafafa;';
+        const pct = grandTotal > 0 ? (cat.total / grandTotal * 100).toFixed(1) : '0.0';
+        html += '<tr style="border-bottom:1px solid #f0f0f0;' + rowBg + '">';
+        html += '<td style="padding:8px 12px;font-weight:600;">' + cat.name + '</td>';
+
+        sortedMonths.forEach(m => {
+          const val = cat.months[m] || 0;
+          html += '<td style="padding:8px;text-align:right;color:' + (val > 0 ? '#333' : '#ccc') + ';">' + (val > 0 ? fmt(val) : '—') + '</td>';
+        });
+
+        html += '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#2E7D32;">' + fmt(cat.total) + '</td>';
+        html += '<td style="padding:8px 12px;text-align:right;font-weight:600;color:#666;">' + pct + '%</td>';
+        html += '</tr>';
+      });
+
+      // Grand total row
+      html += '<tr style="background:#E8F5E9;font-weight:700;border-top:2px solid #2E7D32;">';
+      html += '<td style="padding:10px 12px;color:#2E7D32;">TOTAL</td>';
+      sortedMonths.forEach(m => {
+        let monthTotal = 0;
+        incomeCategories.forEach(cat => { monthTotal += cat.months[m] || 0; });
+        html += '<td style="padding:10px 8px;text-align:right;color:#2E7D32;">' + fmt(monthTotal) + '</td>';
+      });
+      html += '<td style="padding:10px 12px;text-align:right;color:#2E7D32;font-size:14px;">' + fmt(grandTotal) + '</td>';
+      html += '<td style="padding:10px 12px;text-align:right;color:#2E7D32;">100%</td>';
+      html += '</tr>';
+
+      html += '</tbody></table>';
+      html += '</div>';
+
+      container.innerHTML = html;
+      document.getElementById('execDrillDown').style.display = 'block';
+    };
+
     const destroyChart = (id) => {
       if (chartsCache[id]) {
         chartsCache[id].destroy();
@@ -2063,7 +2184,8 @@
           }
         });
       }
-      kpis2.appendChild(createKpiCard('Total Revenue', fmt(tillerRevenue || metrics.wonValue), '#548235'));
+      kpis2.appendChild(createKpiCard('Total Revenue', fmt(tillerRevenue || metrics.wonValue), '#548235',
+        () => showRevenueBreakdown()));
 
       kpis2.appendChild(createKpiCard('Avg Fee', fmt(metrics.avgFee), '#2E75B6'));
 
