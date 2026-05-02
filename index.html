@@ -5901,6 +5901,7 @@
       repairs: 10000,
       calculatedARV: 0,
       daysBack: 365,
+      radiusMiles: 1.0,
       lastAddress: ''
     };
 
@@ -5932,7 +5933,7 @@
     }
 
     function renderDaysFilter() {
-      var html = '<div id="arvDaysFilter" style="display:flex;gap:8px;margin-bottom:20px;align-items:center;flex-wrap:wrap;">';
+      var html = '<div id="arvDaysFilter" style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap;">';
       html += '<span style="font-size:12px;font-weight:600;color:#666;">Sold within:</span>';
       var dayOptions = [
         { val: 30, label: '30 days' },
@@ -5944,11 +5945,45 @@
       for (var di = 0; di < dayOptions.length; di++) {
         var dVal = dayOptions[di].val;
         var dLabel = dayOptions[di].label;
-        var dActive = (arvCalcState.daysBack || 180) === dVal;
+        var dActive = (arvCalcState.daysBack || 365) === dVal;
         html += '<button onclick="setARVCalcDays(' + dVal + ')" style="padding:6px 14px;border-radius:20px;border:' + (dActive ? '2px solid #1B2A4A' : '1px solid #ddd') + ';background:' + (dActive ? '#1B2A4A' : '#fff') + ';color:' + (dActive ? '#fff' : '#333') + ';font-size:12px;font-weight:600;cursor:pointer;">' + dLabel + '</button>';
       }
       html += '</div>';
+
+      // Radius filter
+      html += '<div id="arvRadiusFilter" style="display:flex;gap:8px;margin-bottom:20px;align-items:center;flex-wrap:wrap;">';
+      html += '<span style="font-size:12px;font-weight:600;color:#666;">Search radius:</span>';
+      var radiusOptions = [
+        { val: 0.5, label: '0.5 mi' },
+        { val: 0.75, label: '0.75 mi' },
+        { val: 1.0, label: '1 mi' },
+        { val: 1.5, label: '1.5 mi' },
+        { val: 2.0, label: '2 mi' },
+        { val: 3.0, label: '3 mi' }
+      ];
+      for (var ri = 0; ri < radiusOptions.length; ri++) {
+        var rVal = radiusOptions[ri].val;
+        var rLabel = radiusOptions[ri].label;
+        var rActive = (arvCalcState.radiusMiles || 1.0) === rVal;
+        html += '<button onclick="setARVCalcRadius(' + rVal + ')" style="padding:6px 14px;border-radius:20px;border:' + (rActive ? '2px solid #1B2A4A' : '1px solid #ddd') + ';background:' + (rActive ? '#1B2A4A' : '#fff') + ';color:' + (rActive ? '#fff' : '#333') + ';font-size:12px;font-weight:600;cursor:pointer;">' + rLabel + '</button>';
+      }
+      html += '</div>';
+
       return html;
+    }
+
+    function setARVCalcRadius(radius) {
+      arvCalcState.radiusMiles = radius;
+      var addressInput = document.getElementById('arvCalcAddress');
+      if (addressInput) arvCalcState.lastAddress = addressInput.value.trim();
+      var filterDiv = document.getElementById('arvRadiusFilter');
+      if (filterDiv) {
+        // Re-render just the radius buttons
+        var tempDiv = document.createElement('div');
+        tempDiv.innerHTML = renderDaysFilter();
+        var newRadiusDiv = tempDiv.querySelector('#arvRadiusFilter');
+        if (newRadiusDiv) filterDiv.outerHTML = newRadiusDiv.outerHTML;
+      }
     }
 
     function setARVCalcDays(days) {
@@ -5975,14 +6010,15 @@
       if (!address) { alert('Please enter a property address.'); return; }
       arvCalcState.lastAddress = address;
 
-      var days = arvCalcState.daysBack || 180;
+      var days = arvCalcState.daysBack || 365;
+      var radius = arvCalcState.radiusMiles || 1.0;
       var btn = document.getElementById('arvCalcFetchBtn');
       var resultsDiv = document.getElementById('arvCalcResults');
       if (btn) { btn.disabled = true; btn.textContent = 'Finding comps...'; }
-      resultsDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#666;"><div style="font-size:32px;margin-bottom:8px;">⏳</div>Searching for recently sold properties near:<br><strong>' + address + '</strong><br><span style="font-size:12px;">Last ' + days + ' days · Searching Redfin + Zillow for verified sold comps</span><br><span style="font-size:11px;color:#999;">This may take 10-20 seconds</span></div>';
+      resultsDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#666;"><div style="font-size:32px;margin-bottom:8px;">⏳</div>Searching for recently sold properties near:<br><strong>' + address + '</strong><br><span style="font-size:12px;">Last ' + days + ' days · ' + radius + ' mi radius · Searching Redfin + Zillow + Realtor.com</span><br><span style="font-size:11px;color:#999;">This may take 10-20 seconds</span></div>';
 
       var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
-      fetch(workerUrl + '/api/zillow/find-comps?address=' + encodeURIComponent(address) + '&days=' + days)
+      fetch(workerUrl + '/api/zillow/find-comps?address=' + encodeURIComponent(address) + '&days=' + days + '&radius=' + radius)
         .then(function(r) { return r.json(); })
         .then(function(data) {
           if (btn) { btn.disabled = false; btn.textContent = '🔍 Find Comps'; }
@@ -5993,10 +6029,12 @@
           arvCalcState.data = data;
           arvCalcState.selectedComps = {};
           arvCalcState._subjPhotosAttempted = false; // reset for new search
-          // Auto-select A and B grade comps
+          // Auto-select A and B grade comps — but only sold/pending (true comps)
           var comps = data.comps || [];
           for (var i = 0; i < comps.length; i++) {
-            arvCalcState.selectedComps[i] = (comps[i].grade === 'A' || comps[i].grade === 'B');
+            var ct = comps[i]._compType || '';
+            var isTrueComp = (ct === 'sold' || ct === 'pending');
+            arvCalcState.selectedComps[i] = isTrueComp && (comps[i].grade === 'A' || comps[i].grade === 'B');
           }
           arvCalcState.contractPrice = arvCalcState.contractPrice || 0;
           arvCalcState.repairs = arvCalcState.repairs || 10000;
@@ -6108,27 +6146,57 @@
 
       // Comps table with match scoring
       if (comps.length > 0) {
+        // Count comp types
+        var soldCount = comps.filter(function(c) { return c._compType === 'sold'; }).length;
+        var pendingCount = comps.filter(function(c) { return c._compType === 'pending'; }).length;
+        var forSaleCount = comps.filter(function(c) { return c._compType === 'for_sale'; }).length;
+        var zestimateCount = comps.filter(function(c) { return c._compType === 'zestimate'; }).length;
+        var trueCompCount = soldCount + pendingCount;
+        var hasEnoughTrue = trueCompCount >= 3;
+        var fallbackCount = forSaleCount + zestimateCount;
+
         html += '<div style="margin-bottom:20px;">';
         html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
         html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;">Comparable Sales — Scored by Similarity</div>';
         html += '<div style="font-size:11px;color:#999;">A = 85%+ match · B = 70%+ · C = 55%+ · D = 40%+ · F = below 40%</div>';
         html += '</div>';
+
+        // Comp type summary bar
+        html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">';
+        if (soldCount > 0) html += '<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 12px;background:#E8F5E9;border:1px solid #A5D6A7;border-radius:16px;font-size:11px;font-weight:700;color:#2E7D32;">● SOLD <span style="font-weight:800;">' + soldCount + '</span></span>';
+        if (pendingCount > 0) html += '<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 12px;background:#E3F2FD;border:1px solid #90CAF9;border-radius:16px;font-size:11px;font-weight:700;color:#1565C0;">● PENDING <span style="font-weight:800;">' + pendingCount + '</span></span>';
+        if (forSaleCount > 0) html += '<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 12px;background:#FFF8E1;border:1px solid #FFE082;border-radius:16px;font-size:11px;font-weight:700;color:#F57F17;">● FOR SALE <span style="font-weight:800;">' + forSaleCount + '</span></span>';
+        if (zestimateCount > 0) html += '<span style="display:inline-flex;align-items:center;gap:4px;padding:4px 12px;background:#FFEBEE;border:1px solid #EF9A9A;border-radius:16px;font-size:11px;font-weight:700;color:#C62828;">● ZESTIMATE <span style="font-weight:800;">' + zestimateCount + '</span></span>';
+        html += '</div>';
+
+        // Warning/info banner about comp types
+        if (hasEnoughTrue && fallbackCount > 0) {
+          html += '<div style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:11px;color:#2E7D32;">';
+          html += '<strong>' + trueCompCount + ' verified comps</strong> (sold + pending). ' + fallbackCount + ' for-sale/zestimate properties hidden — not true comps. ';
+          html += '<a href="javascript:void(0)" onclick="document.querySelectorAll(\'.arv-fallback-row\').forEach(function(r){r.style.display=r.style.display===\'none\'?\'\':\'none\'});this.textContent=this.textContent.includes(\'Show\')?\'Hide them\':\'Show them\'" style="color:#1565C0;text-decoration:underline;font-weight:600;">Show them</a>';
+          html += '</div>';
+        } else if (!hasEnoughTrue && fallbackCount > 0) {
+          html += '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:6px;padding:8px 12px;margin-bottom:10px;font-size:11px;color:#E65100;">';
+          html += '<strong>⚠ Only ' + trueCompCount + ' verified comp' + (trueCompCount !== 1 ? 's' : '') + '</strong> (sold + pending). Showing ' + fallbackCount + ' for-sale/zestimate properties as fallback — these are NOT true comps and should not be relied on for ARV.';
+          html += '</div>';
+        }
         html += '<div style="overflow-x:auto;border:1px solid #eee;border-radius:8px;">';
         html += '<table style="width:100%;font-size:12px;border-collapse:collapse;">';
         html += '<thead><tr style="background:#1B2A4A;color:white;">';
         html += '<th style="padding:8px;text-align:center;width:30px;">#</th>';
         html += '<th style="padding:8px;text-align:center;width:40px;">Use</th>';
+        html += '<th style="padding:8px;text-align:center;">Type</th>';
         html += '<th style="padding:8px;text-align:center;width:50px;">Match</th>';
         html += '<th style="padding:8px;text-align:center;width:40px;">📷</th>';
         html += '<th style="padding:8px;text-align:left;">Address</th>';
-        html += '<th style="padding:8px;text-align:right;">Sale Price</th>';
+        html += '<th style="padding:8px;text-align:right;">Price</th>';
         html += '<th style="padding:8px;text-align:center;">Beds</th>';
         html += '<th style="padding:8px;text-align:center;">Baths</th>';
         html += '<th style="padding:8px;text-align:right;">Sqft</th>';
         html += '<th style="padding:8px;text-align:right;">$/Sqft</th>';
         html += '<th style="padding:8px;text-align:right;">Dist</th>';
         html += '<th style="padding:8px;text-align:right;">Year</th>';
-        html += '<th style="padding:8px;text-align:center;">Sold</th>';
+        html += '<th style="padding:8px;text-align:center;">Date</th>';
         html += '<th style="padding:8px;text-align:left;">Notes</th>';
         html += '</tr></thead><tbody>';
 
@@ -6174,19 +6242,7 @@
           var matchPct = comp.matchPct || 0;
           var penalties = (comp.scoreBreakdown && comp.scoreBreakdown.penalties) || [];
           var soldDate = comp.soldDate ? new Date(comp.soldDate).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'2-digit'}) : '—';
-          // Price source badge
-          var priceSrc = comp._priceSource || '';
-          var priceVerified = priceSrc.includes('sold') || priceSrc.includes('pending') || priceSrc === 'soldPrice' || priceSrc === 'lastSoldPrice' || priceSrc === 'lastSalePrice' || priceSrc.includes('redfin');
-          var priceBadge = '';
-          if (priceSrc.includes('redfin')) {
-            priceBadge = '<span title="Verified sold price from Redfin MLS data" style="font-size:9px;color:#2E7D32;display:block;">✓ Redfin</span>';
-          } else if (priceVerified) {
-            priceBadge = '<span title="Verified sale price from ' + priceSrc + '" style="font-size:9px;color:#2E7D32;display:block;">✓ Sold</span>';
-          } else if (priceSrc === 'zestimate') {
-            priceBadge = '<span title="Zestimate (automated estimate, not a verified sale)" style="font-size:9px;color:#C62828;display:block;">⚠ Zestimate</span>';
-          } else if (priceSrc.startsWith('price:')) {
-            priceBadge = '<span title="Price source: ' + priceSrc + '" style="font-size:9px;color:#E65100;display:block;">⚠ Est.</span>';
-          }
+          // (Price source info now shown via Type badge and price label)
 
           // Build source-specific links
           var zillowLink = comp.zpid ? 'https://www.zillow.com/homedetails/' + comp.zpid + '_zpid/' : '';
@@ -6235,15 +6291,38 @@
             thumbHtml = '<span style="color:#ccc;font-size:10px;">—</span>';
           }
 
-          html += '<tr style="border-bottom:1px solid #f0f0f0;' + (c % 2 === 0 ? '' : 'background:#fafafa;') + '">';
+          // Comp type badge
+          var compType = comp._compType || 'unknown';
+          var isFallbackComp = (compType === 'for_sale' || compType === 'zestimate');
+          var hideRow = hasEnoughTrue && isFallbackComp;
+          var typeBadge = '';
+          if (compType === 'sold') {
+            typeBadge = '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:#E8F5E9;color:#2E7D32;border:1px solid #A5D6A7;white-space:nowrap;">SOLD</span>';
+          } else if (compType === 'pending') {
+            typeBadge = '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:#E3F2FD;color:#1565C0;border:1px solid #90CAF9;white-space:nowrap;">PENDING</span>';
+          } else if (compType === 'for_sale') {
+            typeBadge = '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:#FFF8E1;color:#F57F17;border:1px solid #FFE082;white-space:nowrap;">FOR SALE</span>';
+          } else if (compType === 'zestimate') {
+            typeBadge = '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;background:#FFEBEE;color:#C62828;border:1px solid #EF9A9A;white-space:nowrap;">ZESTIMATE</span>';
+          } else {
+            typeBadge = '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:#F5F5F5;color:#999;white-space:nowrap;">UNKNOWN</span>';
+          }
+
+          // Price column header changes based on type
+          var priceLabel = compType === 'for_sale' ? 'List Price' : compType === 'zestimate' ? 'Zestimate' : compType === 'pending' ? 'Pending' : 'Sold Price';
+
+          var rowClass = isFallbackComp ? 'arv-fallback-row' : '';
+          var rowOpacity = isFallbackComp ? 'opacity:0.6;' : '';
+          html += '<tr class="' + rowClass + '" style="border-bottom:1px solid #f0f0f0;' + (c % 2 === 0 ? '' : 'background:#fafafa;') + rowOpacity + (hideRow ? 'display:none;' : '') + '">';
           var compNum = c + 1;
           var numBg = grade === 'A' ? '#2E7D32' : grade === 'B' ? '#1565C0' : grade === 'C' ? '#F57F17' : grade === 'D' ? '#E65100' : '#C62828';
           html += '<td style="padding:6px 8px;text-align:center;"><span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:' + numBg + ';color:white;font-size:12px;font-weight:700;">' + compNum + '</span></td>';
           html += '<td style="padding:6px 8px;text-align:center;"><input type="checkbox" ' + checked + ' onchange="toggleARVCalcComp(' + c + ')" style="cursor:pointer;width:16px;height:16px;"></td>';
+          html += '<td style="padding:6px 8px;text-align:center;">' + typeBadge + '</td>';
           html += '<td style="padding:6px 8px;text-align:center;"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:' + (gradeBgs[grade] || '#F5F5F5') + ';color:' + (gradeColors[grade] || '#666') + ';">' + grade + ' ' + matchPct + '%</span></td>';
           html += '<td style="padding:6px 8px;text-align:center;">' + thumbHtml + '</td>';
           html += '<td style="padding:6px 8px;font-size:12px;">' + addrDisplay + '</td>';
-          html += '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(cPrice) + priceBadge + '</td>';
+          html += '<td style="padding:6px 8px;text-align:right;font-weight:700;">' + fmt(cPrice) + '<div style="font-size:9px;color:#999;font-weight:400;">' + priceLabel + '</div>' + '</td>';
           // Comparison indicators vs subject
           html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bedrooms || '—') + _compDelta(comp.bedrooms, _subjBeds, ' bd') + '</td>';
           html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bathrooms || '—') + _compDelta(comp.bathrooms, _subjBaths, ' ba') + '</td>';
@@ -6254,8 +6333,8 @@
           html += '<td style="padding:6px 8px;text-align:center;font-size:11px;">' + soldDate + '</td>';
           html += '<td style="padding:6px 8px;font-size:10px;color:#999;">' + (penalties.length > 0 ? penalties.join(', ') : '—') + '</td>';
           html += '</tr>';
-          // Photo gallery row (hidden by default, shown when + is clicked)
-          html += '<tr id="compPhotoRow_' + c + '" style="display:none;"><td colspan="14" style="padding:0;"><div id="compPhotos_' + c + '" style="padding:10px 16px;background:#f8f9fa;"></div></td></tr>';
+          // Photo gallery row (hidden by default, shown when + is clicked) — also hide if fallback
+          html += '<tr id="compPhotoRow_' + c + '" class="' + (isFallbackComp ? 'arv-fallback-row' : '') + '" style="display:none;"><td colspan="15" style="padding:0;"><div id="compPhotos_' + c + '" style="padding:10px 16px;background:#f8f9fa;"></div></td></tr>';
         }
         html += '</tbody></table>';
         html += '</div>';
