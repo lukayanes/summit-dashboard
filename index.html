@@ -6795,10 +6795,11 @@
             var data2 = await resp2.json();
             dbg.byAddrResult = { count: (data2.photos || []).length, error: data2.error || null, debug: data2.debug || null };
             if (!data2.error && data2.photos && data2.photos.length > bestPhotos.length) bestPhotos = data2.photos;
-            // Store matched Realtor.com address and property_id on the comp for better links
-            if (data2.property_id && comp) {
-              comp._realtorPropertyId = data2.property_id;
+            // Store matched Realtor.com address, property_id, and permalink on the comp for better links
+            if (comp) {
+              if (data2.property_id) comp._realtorPropertyId = data2.property_id;
               if (data2.debug && data2.debug.matchedAddr) comp._realtorAddress = data2.debug.matchedAddr;
+              if (data2.permalink) comp._realtorPermalink = data2.permalink;
             }
           } catch (e) { dbg.byAddrError = e.message; }
         }
@@ -6831,26 +6832,35 @@
       compPhotoCache['comp_' + compIdx] = result;
       renderCompPhotosWithSource(photoDiv, result, compIdx);
 
-      // Update Realtor.com links dynamically if we got a better address from the API
-      if (comp && comp._realtorAddress) {
-        var fullAddr = comp._realtorAddress;
-        // Build full address: matched street line + city/state/zip from the original address
-        var origParts = compAddr.split(',').map(function(s) { return s.trim(); });
-        if (origParts.length >= 2) {
-          var betterAddr = fullAddr + ', ' + origParts.slice(1).join(', ');
-          var bParts = betterAddr.split(',').map(function(s) { return s.trim(); });
-          var bStreet = bParts[0].replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
-          var bCity = bParts.length >= 2 ? bParts[1].replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '') : '';
-          var bStateZip = bParts.length >= 3 ? bParts.slice(2).join(' ').trim() : '';
-          var bSM = bStateZip.match(/([A-Z]{2})\s*(\d{5})?/);
-          var bState = bSM ? bSM[1] : '';
-          var bZip = bSM && bSM[2] ? bSM[2] : '';
-          var newSlug = bStreet + '_' + bCity + (bState ? '_' + bState : '') + (bZip ? '_' + bZip : '');
-          var newRealtorLink = 'https://www.realtor.com/realestateandhomes-detail/' + newSlug;
-          // Update xref link if it exists
+      // Update Realtor.com links dynamically after photos load
+      if (comp) {
+        var newRealtorLink = null;
+        // Prefer the API permalink (most reliable)
+        if (comp._realtorPermalink) {
+          newRealtorLink = comp._realtorPermalink;
+        } else if (comp._realtorAddress) {
+          // Fallback: build link from matched address + property_id
+          var fullAddr = comp._realtorAddress;
+          var origParts = compAddr.split(',').map(function(s) { return s.trim(); });
+          if (origParts.length >= 2) {
+            var bStreet = fullAddr.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
+            var bCity = origParts[1].replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
+            var bStateZip = origParts.length >= 3 ? origParts.slice(2).join(' ').trim() : '';
+            var bSM = bStateZip.match(/([A-Z]{2})\s*(\d{5})?/);
+            var bState = bSM ? bSM[1] : '';
+            var bZip = bSM && bSM[2] ? bSM[2] : '';
+            var slug = bStreet + '_' + bCity + (bState ? '_' + bState : '') + (bZip ? '_' + bZip : '');
+            // Add property_id in Realtor.com format: M82923-87141 from 8292387141
+            if (comp._realtorPropertyId) {
+              var pid = String(comp._realtorPropertyId);
+              if (pid.length === 10) slug += '_M' + pid.substring(0, 5) + '-' + pid.substring(5);
+            }
+            newRealtorLink = 'https://www.realtor.com/realestateandhomes-detail/' + slug;
+          }
+        }
+        if (newRealtorLink) {
           var xrefEl = document.getElementById('realtor-xref-' + compIdx);
           if (xrefEl) xrefEl.href = newRealtorLink;
-          // Update primary badge if source is realtor
           var badgeEl = document.getElementById('src-badge-' + compIdx);
           if (badgeEl && badgeEl.getAttribute('data-src') === 'realtor') badgeEl.href = newRealtorLink;
         }
