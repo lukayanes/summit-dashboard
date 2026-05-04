@@ -6103,10 +6103,10 @@
           var subjZillowUrl = 'https://www.zillow.com/homedetails/' + subj.zpid + '_zpid/';
           html += '<a href="' + subjZillowUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#E8F0FE;border:1px solid #006AFF;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#006AFF;">Z↗ Zillow</a>';
         }
-        // Realtor.com link — starts as search URL, gets upgraded to permalink after API call
-        var subjRealtorUrl = 'https://www.realtor.com/realestateandhomes-search/' + encodeURIComponent(subjAddrDisplay);
+        // Realtor.com link — use Google to find the exact listing (most reliable)
+        var subjRealtorUrl = 'https://www.google.com/search?q=' + encodeURIComponent(subjAddrDisplay + ' site:realtor.com');
         html += '<a id="subject-realtor-link" href="' + subjRealtorUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#FDE8E8;border:1px solid #D92228;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#D92228;">RC↗ Realtor.com</a>';
-        // Redfin link — use Google search with site:redfin.com to find the exact listing
+        // Redfin link — use Google to find the exact listing (most reliable)
         var subjRedfinUrl = 'https://www.google.com/search?q=' + encodeURIComponent(subjAddrDisplay + ' site:redfin.com');
         html += '<a id="subject-redfin-link" href="' + subjRedfinUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#FDE8E8;border:1px solid #A4262C;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#A4262C;">RF↗ Redfin</a>';
         html += '</div>';
@@ -6258,10 +6258,10 @@
           // Build source-specific links
           var zillowLink = comp.zpid ? 'https://www.zillow.com/homedetails/' + comp.zpid + '_zpid/' : '';
           var redfinLink = comp.redfinUrl || '';
-          // Build a Realtor.com link — starts as search URL, upgraded to permalink after photo load
+          // Build a Realtor.com link — starts as Google search, upgraded to direct permalink after photo load
           var realtorLink = '';
           if (cAddr) {
-            realtorLink = 'https://www.realtor.com/realestateandhomes-search/' + encodeURIComponent(cAddr);
+            realtorLink = 'https://www.google.com/search?q=' + encodeURIComponent(cAddr + ' site:realtor.com');
           }
 
           // Address display (plain bold text, no link)
