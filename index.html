@@ -6781,29 +6781,18 @@
         return { source: 'zillow', photos: [], debug: dbg };
       })());
 
-      // Realtor.com: try property_id details first (best photos), then inline, then address search
+      // Realtor.com: search by address for photos (API only has /property_list/, returns 2-3 photos for sold)
       fetchPromises.push((async function() {
         var bestPhotos = [];
-        var realtorPropertyId = comp ? (comp._realtorPropertyId || '') : '';
-        var dbg = { realtorId: realtorPropertyId || 'none', inlinePhotos: (comp && comp._photos) ? comp._photos.length : 0 };
+        var dbg = { inlinePhotos: (comp && comp._photos) ? comp._photos.length : 0 };
 
-        // Try 1: Fetch by property_id (gets full gallery from details endpoint)
-        if (realtorPropertyId) {
-          try {
-            var resp = await fetch(workerUrl + '/api/realtor/photos?property_id=' + encodeURIComponent(realtorPropertyId));
-            var data = await resp.json();
-            dbg.byIdResult = { count: (data.photos || []).length, error: data.error || null, debug: data.debug || null };
-            if (!data.error && data.photos && data.photos.length > 0) bestPhotos = data.photos;
-          } catch (e) { dbg.byIdError = e.message; }
-        }
-
-        // Try 2: Use inline _photos from comp data if details didn't give us more
-        if (bestPhotos.length <= 1 && comp && comp._photos && comp._photos.length > bestPhotos.length) {
+        // Try 1: Use inline _photos from comp data first (already fetched during comp search)
+        if (comp && comp._photos && comp._photos.length > 0) {
           bestPhotos = comp._photos;
           dbg.usedInline = true;
         }
 
-        // Try 3: Search by address as last resort
+        // Try 2: Search by address via Realtor Data API
         if (bestPhotos.length <= 1 && compAddr) {
           try {
             var resp2 = await fetch(workerUrl + '/api/realtor/photos?address=' + encodeURIComponent(compAddr));
