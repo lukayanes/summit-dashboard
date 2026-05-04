@@ -6103,19 +6103,12 @@
           var subjZillowUrl = 'https://www.zillow.com/homedetails/' + subj.zpid + '_zpid/';
           html += '<a href="' + subjZillowUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#E8F0FE;border:1px solid #006AFF;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#006AFF;">Z↗ Zillow</a>';
         }
-        // Realtor.com link (built from address — will be updated dynamically if API returns permalink)
-        var subjAddrForSlug = subjAddrDisplay.split(',').map(function(s){return s.trim();});
-        var subjStreetSlug = (subjAddrForSlug[0] || '').replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
-        var subjCitySlug = (subjAddrForSlug[1] || '').replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
-        var subjStateZip = subjAddrForSlug.length >= 3 ? subjAddrForSlug.slice(2).join(' ').trim() : '';
-        var subjSM = subjStateZip.match(/([A-Z]{2})\s*(\d{5})?/);
-        var subjState = subjSM ? subjSM[1] : '';
-        var subjZipCode = subjSM && subjSM[2] ? subjSM[2] : '';
-        var subjRealtorUrl = 'https://www.realtor.com/realestateandhomes-detail/' + subjStreetSlug + '_' + subjCitySlug + (subjState ? '_' + subjState : '') + (subjZipCode ? '_' + subjZipCode : '');
+        // Realtor.com link — starts as search URL, gets upgraded to permalink after API call
+        var subjRealtorUrl = 'https://www.realtor.com/realestateandhomes-search/' + encodeURIComponent(subjAddrDisplay);
         html += '<a id="subject-realtor-link" href="' + subjRealtorUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#FDE8E8;border:1px solid #D92228;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#D92228;">RC↗ Realtor.com</a>';
-        // Redfin link (search by address)
-        var subjRedfinUrl = 'https://www.redfin.com/search#query=' + encodeURIComponent(subjAddrDisplay);
-        html += '<a href="' + subjRedfinUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#FDE8E8;border:1px solid #A4262C;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#A4262C;">RF↗ Redfin</a>';
+        // Redfin link — use Google search with site:redfin.com to find the exact listing
+        var subjRedfinUrl = 'https://www.google.com/search?q=' + encodeURIComponent(subjAddrDisplay + ' site:redfin.com');
+        html += '<a id="subject-redfin-link" href="' + subjRedfinUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#FDE8E8;border:1px solid #A4262C;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#A4262C;">RF↗ Redfin</a>';
         html += '</div>';
         html += '</div>';
       }
@@ -6265,24 +6258,10 @@
           // Build source-specific links
           var zillowLink = comp.zpid ? 'https://www.zillow.com/homedetails/' + comp.zpid + '_zpid/' : '';
           var redfinLink = comp.redfinUrl || '';
-          // Build a Realtor.com direct link: /realestateandhomes-detail/123-Main-St_City_ST_Zip
+          // Build a Realtor.com link — starts as search URL, upgraded to permalink after photo load
           var realtorLink = '';
           if (cAddr) {
-            // Parse "123 Main St, Dallas, TX 75217" into slug parts
-            var addrParts = cAddr.split(',').map(function(s) { return s.trim(); });
-            if (addrParts.length >= 2) {
-              var streetSlug = addrParts[0].replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
-              var citySlug = addrParts.length >= 2 ? addrParts[1].replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '') : '';
-              // State and zip might be combined like "TX 75217" or separate
-              var stateZip = addrParts.length >= 3 ? addrParts.slice(2).join(' ').trim() : '';
-              var stateMatch = stateZip.match(/([A-Z]{2})\s*(\d{5})?/);
-              var stateSlug = stateMatch ? stateMatch[1] : '';
-              var zipSlug = stateMatch && stateMatch[2] ? stateMatch[2] : '';
-              var slug = streetSlug + '_' + citySlug + (stateSlug ? '_' + stateSlug : '') + (zipSlug ? '_' + zipSlug : '');
-              realtorLink = 'https://www.realtor.com/realestateandhomes-detail/' + slug;
-            } else {
-              realtorLink = 'https://www.realtor.com/realestateandhomes-search/' + encodeURIComponent(cAddr);
-            }
+            realtorLink = 'https://www.realtor.com/realestateandhomes-search/' + encodeURIComponent(cAddr);
           }
 
           // Address display (plain bold text, no link)
