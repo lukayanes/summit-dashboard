@@ -4773,12 +4773,82 @@
       }
 
       container.innerHTML = html;
+
+      // === Restore persisted dispo card data ===
+      deals.forEach(function(deal) {
+        var sa = deal.address.replace(/[^a-zA-Z0-9]/g, '_');
+        restoreDispoCardFields(sa);
+        hookDispoCardAutoSave(sa);
+        // Auto-render cached Zillow data if available
+        var zData = zillowDataCache[deal.address];
+        if (zData && zData.found) {
+          var dataDiv = document.getElementById('zillowData_' + sa);
+          var btn = document.getElementById('zillowBtn_' + sa);
+          if (dataDiv) {
+            dataDiv.style.display = 'block';
+            renderZillowData(dataDiv, zData, deal.address);
+          }
+          if (btn) { btn.textContent = '✅ Data Loaded — Click to Refresh'; }
+        }
+        // Auto-render cached Rentometer data if available
+        var beds = (document.getElementById('fb_beds_' + sa) || {}).value || (deal.meta && deal.meta['bedrooms']) || 3;
+        var rentoKey = deal.address + '_' + beds;
+        if (rentometerCache[rentoKey]) {
+          var rentoDiv = document.getElementById('rentoData_' + sa);
+          if (rentoDiv) renderRentometerData(rentoDiv, rentometerCache[rentoKey], { safeAddr: sa });
+        }
+      });
+    }
+
+    // === Dispo Card Field Persistence ===
+    var DISPO_CARD_PREFIXES = [
+      'fb_beds_','fb_baths_','fb_sqft_','fb_lot_','fb_year_','fb_arv_',
+      'fb_rent_','fb_entry_','fb_piti_','fb_rate_','fb_payment_','fb_sfamt_',
+      'fb_term_','fb_total_','fb_balance_','fb_points_','fb_features_',
+      'cond_hvac_','cond_wh_','cond_roof_','cond_cc_',
+      'stARV_','stPITI_','stRent_','stLoanBal_',
+      'sfRent_','sfPayment_','sfEntry_','arv_','repairs_'
+    ];
+
+    function saveDispoCardFields(safeAddr) {
+      var data = {};
+      DISPO_CARD_PREFIXES.forEach(function(prefix) {
+        var el = document.getElementById(prefix + safeAddr);
+        if (el && el.value) data[prefix] = el.value;
+      });
+      if (Object.keys(data).length > 0) {
+        try { localStorage.setItem('dispoCard_' + safeAddr, JSON.stringify(data)); } catch(e) {}
+      }
+    }
+
+    function restoreDispoCardFields(safeAddr) {
+      try {
+        var raw = localStorage.getItem('dispoCard_' + safeAddr);
+        if (!raw) return;
+        var data = JSON.parse(raw);
+        Object.keys(data).forEach(function(prefix) {
+          var el = document.getElementById(prefix + safeAddr);
+          if (el && !el.value && data[prefix]) el.value = data[prefix];
+        });
+      } catch(e) {}
+    }
+
+    function hookDispoCardAutoSave(safeAddr) {
+      DISPO_CARD_PREFIXES.forEach(function(prefix) {
+        var el = document.getElementById(prefix + safeAddr);
+        if (el) {
+          el.addEventListener('input', function() { saveDispoCardFields(safeAddr); });
+          el.addEventListener('change', function() { saveDispoCardFields(safeAddr); });
+        }
+      });
     }
 
     /**
      * Toggle expanded state of a dispo card
      */
     function toggleDispoCard(safeAddr) {
+      // Save current expanded card fields before re-render
+      if (dispoExpandedDeal) saveDispoCardFields(dispoExpandedDeal);
       dispoExpandedDeal = (dispoExpandedDeal === safeAddr) ? null : safeAddr;
       renderDispoTab();
     }
@@ -5063,11 +5133,19 @@
       overlay.appendChild(modal);
       document.body.appendChild(overlay);
 
-      // Auto-fill contact info based on default selection
-      fillPDFContact(defaultContact);
+      // Restore saved form data (overrides defaults if previously saved)
+      var hadSaved = loadPDFFormData(safeAddr);
+
+      // If no saved data, auto-fill contact from deal's dispo assignment
+      if (!hadSaved) {
+        fillPDFContact(defaultContact);
+      }
 
       // Calculate entry preview
       calcTotalEntry(safeAddr);
+
+      // Hook up auto-save on every field change
+      hookPDFFormAutoSave(safeAddr);
 
       // Load seller photos into the selector
       loadPhotosForPDFSelector(safeAddr, deal.address);
@@ -5115,6 +5193,63 @@
       if (askingVal > 0) parts += ' (' + pct + '%)';
 
       previewEl.textContent = parts;
+    }
+
+    // === Dispo Form Persistence (localStorage) ===
+    var DISPO_FORM_FIELDS = [
+      'pdf_address','pdf_beds','pdf_baths','pdf_sqft','pdf_lot','pdf_year',
+      'pdf_asking','pdf_piti','pdf_rate','pdf_closedate','pdf_arv','pdf_rehab',
+      'pdf_rent','pdf_exit','pdf_dealtype','pdf_emd',
+      'pdf_entry','pdf_tc','pdf_cc','pdf_disclaimer',
+      'pdf_description','pdf_highlights',
+      'pdf_hvac','pdf_wh','pdf_roof',
+      'pdf_rent_median','pdf_rent_low','pdf_rent_high',
+      'pdf_contact_select','pdf_contact','pdf_email','pdf_phone'
+    ];
+    var DISPO_CHECKBOXES = ['pdf_cc_both'];
+
+    function savePDFFormData(safeAddr) {
+      var data = {};
+      DISPO_FORM_FIELDS.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) data[id] = el.value;
+      });
+      DISPO_CHECKBOXES.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) data[id] = el.checked;
+      });
+      try { localStorage.setItem('dispoForm_' + safeAddr, JSON.stringify(data)); } catch(e) {}
+    }
+
+    function loadPDFFormData(safeAddr) {
+      try {
+        var raw = localStorage.getItem('dispoForm_' + safeAddr);
+        if (!raw) return false;
+        var data = JSON.parse(raw);
+        DISPO_FORM_FIELDS.forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el && data[id] !== undefined && data[id] !== '') el.value = data[id];
+        });
+        DISPO_CHECKBOXES.forEach(function(id) {
+          var el = document.getElementById(id);
+          if (el && data[id] !== undefined) el.checked = data[id];
+        });
+        return true;
+      } catch(e) { return false; }
+    }
+
+    function hookPDFFormAutoSave(safeAddr) {
+      DISPO_FORM_FIELDS.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) {
+          el.addEventListener('input', function() { savePDFFormData(safeAddr); });
+          el.addEventListener('change', function() { savePDFFormData(safeAddr); });
+        }
+      });
+      DISPO_CHECKBOXES.forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('change', function() { savePDFFormData(safeAddr); });
+      });
     }
 
     async function fetchZillowPhotosForPDF(safeAddr) {
@@ -5892,8 +6027,8 @@
 
       html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">';
       html += '<div>';
-      html += '<label style="font-size:11px;font-weight:600;color:#666;">Estimated ARV ($)</label>';
-      html += '<input type="number" id="stARV_' + safeAddr + '" value="' + (deal.arv || deal.listed || '') + '" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '<label style="font-size:11px;font-weight:600;color:#666;">Listed/Posted Price ($)</label>';
+      html += '<input type="number" id="stARV_' + safeAddr + '" value="' + (deal.listed || deal.contract || '') + '" oninput="calcDispoARV(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
       html += '</div>';
       html += '<div>';
       html += '<label style="font-size:11px;font-weight:600;color:#666;">Monthly PITI ($)</label>';
@@ -6025,7 +6160,7 @@
         html += '</div>';
 
         html += '<div style="background:' + (equity >= 0 ? '#E8F5E9' : '#FFEBEE') + ';border-radius:6px;padding:8px 10px;grid-column:span 2;">';
-        html += '<div style="font-size:10px;font-weight:600;color:' + (equity >= 0 ? '#2E7D32' : '#C62828') + ';">EQUITY POSITION (ARV - Loan Balance)</div>';
+        html += '<div style="font-size:10px;font-weight:600;color:' + (equity >= 0 ? '#2E7D32' : '#C62828') + ';">EQUITY POSITION (Listed Price - Loan Balance)</div>';
         html += '<div style="font-size:16px;font-weight:700;color:' + (equity >= 0 ? '#2E7D32' : '#C62828') + ';">' + fmt(equity) + '</div>';
         html += '</div>';
 
@@ -6454,9 +6589,10 @@
     }
 
     /**
-     * Zillow data cache on frontend
+     * Zillow data cache on frontend — persisted to localStorage
      */
     let zillowDataCache = {};
+    try { var _zc = localStorage.getItem('zillowDataCache'); if (_zc) zillowDataCache = JSON.parse(_zc); } catch(e) {}
 
     /**
      * Wrapper: look up deal address from safeAddr and call fetchZillowData
@@ -6499,6 +6635,7 @@
 
         const data = await resp.json();
         zillowDataCache[address] = data;
+        try { localStorage.setItem('zillowDataCache', JSON.stringify(zillowDataCache)); } catch(e) {}
 
         dataDiv.style.display = 'block';
         renderZillowData(dataDiv, data, address);
@@ -6519,6 +6656,7 @@
 
     // ==================== RENTOMETER API ====================
     var rentometerCache = {};
+    try { var _rc = localStorage.getItem('rentometerCache'); if (_rc) rentometerCache = JSON.parse(_rc); } catch(e) {}
 
     /**
      * Fetch Rentometer rent summary for an address
@@ -6552,6 +6690,7 @@
 
         var data = await resp.json();
         rentometerCache[cacheKey] = data;
+        try { localStorage.setItem('rentometerCache', JSON.stringify(rentometerCache)); } catch(e) {}
         renderRentometerData(container, data, opts);
 
       } catch (e) {
