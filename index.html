@@ -4699,6 +4699,21 @@
 
             html += '</div>'; // end grid
 
+            // Seller Property Photos section
+            html += '<div style="margin-top:16px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:8px;padding:16px;">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+            html += '<div>';
+            html += '<div style="font-size:14px;font-weight:700;color:#E65100;">📸 Seller Property Photos</div>';
+            html += '<div style="font-size:11px;color:#666;margin-top:2px;">Photos sent by the seller via GHL. Stored automatically when sellers text photos.</div>';
+            html += '</div>';
+            html += '<div style="display:flex;gap:6px;">';
+            html += '<button onclick="loadSellerPhotos(\'' + safeAddr + '\', \'' + deal.address.replace(/'/g, "\\'") + '\')" id="sellerPhotoBtn_' + safeAddr + '" style="padding:6px 16px;background:#E65100;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Load Photos</button>';
+            html += '<button onclick="manualAddSellerPhoto(\'' + safeAddr + '\', \'' + deal.address.replace(/'/g, "\\'") + '\')" style="padding:6px 12px;background:white;color:#E65100;border:1px solid #E65100;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;" title="Paste a photo URL manually">+ Add URL</button>';
+            html += '</div>';
+            html += '</div>';
+            html += '<div id="sellerPhotos_' + safeAddr + '"></div>';
+            html += '</div>';
+
             // Zillow data placeholder
             html += '<div style="margin-top:16px;background:#F0F4FF;border:1px solid #2E75B6;border-radius:8px;padding:16px;text-align:center;">';
             html += '<div style="font-size:14px;font-weight:600;color:#2E75B6;">🏠 Zillow Property Data</div>';
@@ -4740,6 +4755,63 @@
     function toggleDispoCard(safeAddr) {
       dispoExpandedDeal = (dispoExpandedDeal === safeAddr) ? null : safeAddr;
       renderDispoTab();
+    }
+
+    /**
+     * Load seller photos from KV for a property
+     */
+    async function loadSellerPhotos(safeAddr, address) {
+      var container = document.getElementById('sellerPhotos_' + safeAddr);
+      var btn = document.getElementById('sellerPhotoBtn_' + safeAddr);
+      if (!container) return;
+      container.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;">Loading seller photos...</div>';
+      if (btn) { btn.disabled = true; btn.textContent = 'Loading...'; }
+      try {
+        var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        var resp = await fetch(workerUrl + '/api/photos/by-address?address=' + encodeURIComponent(address));
+        var data = await resp.json();
+        if (btn) { btn.disabled = false; btn.textContent = 'Reload'; }
+        if (!data.found || !data.photos || data.photos.length === 0) {
+          container.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;text-align:center;">No seller photos found for this property. Photos will appear here once a seller texts them via GHL.</div>';
+          return;
+        }
+        var html = '';
+        html += '<div style="font-size:11px;color:#E65100;font-weight:600;margin-bottom:6px;">' + data.photos.length + ' photo' + (data.photos.length !== 1 ? 's' : '') + ' from seller' + (data.contactName ? ' (' + data.contactName + ')' : '') + '</div>';
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;">';
+        data.photos.forEach(function(photo, i) {
+          var photoUrl = photo.url || photo;
+          var timestamp = photo.timestamp ? new Date(photo.timestamp).toLocaleDateString() : '';
+          html += '<div style="position:relative;border-radius:6px;overflow:hidden;aspect-ratio:4/3;background:#f5f5f5;cursor:pointer;" onclick="window.open(\'' + photoUrl.replace(/'/g, "\\'") + '\', \'_blank\')">';
+          html += '<img src="' + photoUrl + '" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML=\'<div style=\\'padding:12px;text-align:center;color:#999;font-size:10px;\\'>Failed to load</div>\'">';
+          if (timestamp) html += '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.6);color:white;font-size:9px;padding:2px 4px;text-align:center;">' + timestamp + '</div>';
+          html += '</div>';
+        });
+        html += '</div>';
+        container.innerHTML = html;
+      } catch(e) {
+        container.innerHTML = '<div style="color:#C62828;font-size:12px;padding:8px;">Failed to load photos: ' + e.message + '</div>';
+        if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
+      }
+    }
+
+    /**
+     * Manually add a seller photo URL
+     */
+    function manualAddSellerPhoto(safeAddr, address) {
+      var photoUrl = prompt('Paste the photo URL (e.g. https://storage.googleapis.com/...):');
+      if (!photoUrl || !photoUrl.startsWith('http')) return;
+      var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+      fetch(workerUrl + '/api/photos/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: address, photoUrl: photoUrl })
+      }).then(function(resp) { return resp.json(); }).then(function(data) {
+        if (data.success) {
+          loadSellerPhotos(safeAddr, address);
+        } else {
+          alert('Failed to add photo: ' + (data.error || 'Unknown error'));
+        }
+      }).catch(function(e) { alert('Error: ' + e.message); });
     }
 
     /**
