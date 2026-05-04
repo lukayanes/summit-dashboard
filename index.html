@@ -6091,13 +6091,32 @@
         html += '</div>';
       }
 
-      // Zillow link for subject property
-      if (subj.zpid) {
-        var subjZillowUrl = 'https://www.zillow.com/homedetails/' + subj.zpid + '_zpid/';
+      // Subject property address + links (Zillow, Realtor.com, Redfin)
+      {
         var subjAddrDisplay = subj.address || '';
         if (typeof subjAddrDisplay === 'object') subjAddrDisplay = (subjAddrDisplay.streetAddress || '') + ', ' + (subjAddrDisplay.city || '') + ', ' + (subjAddrDisplay.state || '') + ' ' + (subjAddrDisplay.zipcode || '');
         html += '<div style="margin-bottom:12px;">';
-        html += '<a href="' + subjZillowUrl + '" target="_blank" style="font-size:15px;font-weight:700;color:#1565C0;text-decoration:none;">' + (subjAddrDisplay || 'Subject Property') + ' — View on Zillow ↗</a>';
+        html += '<div style="font-size:15px;font-weight:700;color:#1B2A4A;margin-bottom:6px;">' + (subjAddrDisplay || 'Subject Property') + '</div>';
+        html += '<div id="subject-links" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">';
+        // Zillow link
+        if (subj.zpid) {
+          var subjZillowUrl = 'https://www.zillow.com/homedetails/' + subj.zpid + '_zpid/';
+          html += '<a href="' + subjZillowUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#E8F0FE;border:1px solid #006AFF;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#006AFF;">Z↗ Zillow</a>';
+        }
+        // Realtor.com link (built from address — will be updated dynamically if API returns permalink)
+        var subjAddrForSlug = subjAddrDisplay.split(',').map(function(s){return s.trim();});
+        var subjStreetSlug = (subjAddrForSlug[0] || '').replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
+        var subjCitySlug = (subjAddrForSlug[1] || '').replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
+        var subjStateZip = subjAddrForSlug.length >= 3 ? subjAddrForSlug.slice(2).join(' ').trim() : '';
+        var subjSM = subjStateZip.match(/([A-Z]{2})\s*(\d{5})?/);
+        var subjState = subjSM ? subjSM[1] : '';
+        var subjZipCode = subjSM && subjSM[2] ? subjSM[2] : '';
+        var subjRealtorUrl = 'https://www.realtor.com/realestateandhomes-detail/' + subjStreetSlug + '_' + subjCitySlug + (subjState ? '_' + subjState : '') + (subjZipCode ? '_' + subjZipCode : '');
+        html += '<a id="subject-realtor-link" href="' + subjRealtorUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#FDE8E8;border:1px solid #D92228;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#D92228;">RC↗ Realtor.com</a>';
+        // Redfin link (search by address)
+        var subjRedfinUrl = 'https://www.redfin.com/search#query=' + encodeURIComponent(subjAddrDisplay);
+        html += '<a href="' + subjRedfinUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#FDE8E8;border:1px solid #A4262C;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#A4262C;">RF↗ Redfin</a>';
+        html += '</div>';
         html += '</div>';
       }
 
@@ -6285,7 +6304,7 @@
           // Cross-reference links (smaller, secondary)
           var xrefLinks = '<div style="margin-top:3px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;">';
           if (dataSrc !== 'zillow' && zillowLink) {
-            xrefLinks += '<a href="' + zillowLink + '" target="_blank" title="View on Zillow" style="display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#006AFF;">Z↗</a>';
+            xrefLinks += '<a id="zillow-xref-' + c + '" href="' + zillowLink + '" target="_blank" title="View on Zillow" style="display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#006AFF;">Z↗</a>';
           }
           if (dataSrc !== 'redfin' && redfinLink) {
             xrefLinks += '<a href="' + redfinLink + '" target="_blank" title="View on Redfin" style="display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#A4262C;">R↗</a>';
@@ -6700,6 +6719,23 @@
       } catch (err) {
         if (loader) loader.innerHTML = '<span style="color:#C62828;font-size:12px;">Failed to load photos: ' + err.message + '</span>';
       }
+      // Also fetch Realtor.com data for the subject to update the link with a real permalink
+      try {
+        var workerUrl2 = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        var subj = (arvCalcState.data && arvCalcState.data.subject) ? arvCalcState.data.subject : null;
+        if (subj) {
+          var subjAddr = subj.address || '';
+          if (typeof subjAddr === 'object') subjAddr = (subjAddr.streetAddress || '') + ', ' + (subjAddr.city || '') + ', ' + (subjAddr.state || '') + ' ' + (subjAddr.zipcode || '');
+          if (subjAddr) {
+            var rcResp = await fetch(workerUrl2 + '/api/realtor/photos?address=' + encodeURIComponent(subjAddr));
+            var rcData = await rcResp.json();
+            if (rcData.permalink) {
+              var subjRcLink = document.getElementById('subject-realtor-link');
+              if (subjRcLink) subjRcLink.href = rcData.permalink;
+            }
+          }
+        }
+      } catch (e) { /* Realtor link update is best-effort */ }
     }
 
     /**
@@ -6861,8 +6897,55 @@
         if (newRealtorLink) {
           var xrefEl = document.getElementById('realtor-xref-' + compIdx);
           if (xrefEl) xrefEl.href = newRealtorLink;
+          // If no xref link existed (it wasn't rendered initially), add one now
+          if (!xrefEl) {
+            var addrCell = document.getElementById('src-badge-' + compIdx);
+            if (addrCell) {
+              var xrefContainer = addrCell.closest('td');
+              if (xrefContainer) {
+                var xrefDiv = xrefContainer.querySelector('div[style*="flex"]');
+                if (xrefDiv) {
+                  var rcLink = document.createElement('a');
+                  rcLink.id = 'realtor-xref-' + compIdx;
+                  rcLink.href = newRealtorLink;
+                  rcLink.target = '_blank';
+                  rcLink.title = 'View on Realtor.com';
+                  rcLink.style.cssText = 'display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#D92228;';
+                  rcLink.textContent = 'RC↗';
+                  xrefDiv.appendChild(rcLink);
+                }
+              }
+            }
+          }
           var badgeEl = document.getElementById('src-badge-' + compIdx);
           if (badgeEl && badgeEl.getAttribute('data-src') === 'realtor') badgeEl.href = newRealtorLink;
+        }
+        // Also update/add Zillow link if zpid was discovered during photo load
+        if (comp && comp.zpid) {
+          var zLink = 'https://www.zillow.com/homedetails/' + comp.zpid + '_zpid/';
+          var zXref = document.getElementById('zillow-xref-' + compIdx);
+          if (zXref) {
+            zXref.href = zLink;
+          } else {
+            // Add Zillow xref link dynamically
+            var badgeEl2 = document.getElementById('src-badge-' + compIdx);
+            if (badgeEl2) {
+              var xrefContainer2 = badgeEl2.closest('td');
+              if (xrefContainer2) {
+                var xrefDiv2 = xrefContainer2.querySelector('div[style*="flex"]');
+                if (xrefDiv2) {
+                  var zAnchor = document.createElement('a');
+                  zAnchor.id = 'zillow-xref-' + compIdx;
+                  zAnchor.href = zLink;
+                  zAnchor.target = '_blank';
+                  zAnchor.title = 'View on Zillow';
+                  zAnchor.style.cssText = 'display:inline-flex;align-items:center;gap:2px;padding:1px 5px;background:#f5f5f5;border:1px solid #ddd;border-radius:3px;text-decoration:none;font-size:8px;font-weight:600;color:#006AFF;';
+                  zAnchor.textContent = 'Z↗';
+                  xrefDiv2.insertBefore(zAnchor, xrefDiv2.firstChild);
+                }
+              }
+            }
+          }
         }
       }
 
