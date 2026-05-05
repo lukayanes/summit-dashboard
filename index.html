@@ -4933,14 +4933,15 @@
 
       var type = getDealTypeCategory(deal);
 
-      // Try to read current FB post field values (they may have been filled by Zillow fetch)
-      var beds = (document.getElementById('fb_beds_' + safeAddr) || {}).value || (deal.meta && deal.meta['bedrooms']) || '';
-      var baths = (document.getElementById('fb_baths_' + safeAddr) || {}).value || (deal.meta && deal.meta['bathrooms']) || '';
-      var sqft = (document.getElementById('fb_sqft_' + safeAddr) || {}).value || (deal.meta && deal.meta['sqft']) || '';
-      var lotSqft = (document.getElementById('fb_lot_' + safeAddr) || {}).value || (deal.meta && deal.meta['lot sqft']) || '';
-      var yearBuilt = (document.getElementById('fb_year_' + safeAddr) || {}).value || (deal.meta && deal.meta['year built']) || '';
-      var arvVal = (document.getElementById('fb_arv_' + safeAddr) || {}).value || (document.getElementById('arv_' + safeAddr) || {}).value || deal.listed || deal.arv || '';
-      var rentVal = (document.getElementById('fb_rent_' + safeAddr) || {}).value || (deal.meta && deal.meta['rent estimate']) || '';
+      // Try to read current FB post field values, then deal.meta, then zillowDataCache (set by previous Zillow fetch)
+      var zCache = zillowDataCache[deal.address] || {};
+      var beds = (document.getElementById('fb_beds_' + safeAddr) || {}).value || (deal.meta && deal.meta['bedrooms']) || zCache.bedrooms || '';
+      var baths = (document.getElementById('fb_baths_' + safeAddr) || {}).value || (deal.meta && deal.meta['bathrooms']) || zCache.bathrooms || '';
+      var sqft = (document.getElementById('fb_sqft_' + safeAddr) || {}).value || (deal.meta && deal.meta['sqft']) || zCache.livingArea || '';
+      var lotSqft = (document.getElementById('fb_lot_' + safeAddr) || {}).value || (deal.meta && deal.meta['lot sqft']) || zCache.lotSize || '';
+      var yearBuilt = (document.getElementById('fb_year_' + safeAddr) || {}).value || (deal.meta && deal.meta['year built']) || zCache.yearBuilt || '';
+      var arvVal = (document.getElementById('fb_arv_' + safeAddr) || {}).value || (document.getElementById('arv_' + safeAddr) || {}).value || deal.listed || deal.arv || zCache.zestimate || '';
+      var rentVal = (document.getElementById('fb_rent_' + safeAddr) || {}).value || (deal.meta && deal.meta['rent estimate']) || zCache.rentZestimate || '';
       var isSubTo = type === 'subject-to';
       var pitiVal = (document.getElementById('fb_piti_' + safeAddr) || {}).value || deal.piti || deal.monthlyPayment || '';
       var rateVal = (document.getElementById('fb_rate_' + safeAddr) || {}).value || deal.interestRate || '';
@@ -4950,11 +4951,14 @@
       var whAge = (document.getElementById('cond_wh_' + safeAddr) || {}).value || '';
       var roofAge = (document.getElementById('cond_roof_' + safeAddr) || {}).value || '';
       var closingCosts = (document.getElementById('cond_cc_' + safeAddr) || {}).value || '';
-      // Read rentometer cached data
-      var rentoData = rentometerCache[deal.address] || {};
+      // Read rentometer cached data — cache key is address + '_' + bedrooms
+      var rentoBeds = beds || 3;
+      var rentoData = rentometerCache[deal.address + '_' + rentoBeds] || {};
+      // Try without bedrooms suffix as fallback (legacy cache entries)
+      if (!rentoData.median) rentoData = rentometerCache[deal.address] || rentoData;
       var rentoMedian = rentoData.median || '';
-      var rentoLow = rentoData.percentile_25 || '';
-      var rentoHigh = rentoData.percentile_75 || '';
+      var rentoLow = rentoData.percentile_25 || rentoData.min || '';
+      var rentoHigh = rentoData.percentile_75 || rentoData.max || '';
       // Determine contact based on dispo
       var defaultContact = (deal.dispo && deal.dispo.toLowerCase().indexOf('luka') !== -1) ? 'luka' : 'aubrey';
 
@@ -5055,7 +5059,7 @@
       h += '<input type="number" id="pdf_entry" value="' + entryVal + '" oninput="calcTotalEntry(\'' + safeAddr + '\')" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;font-size:13px;font-weight:600;"></div>';
 
       h += '<div><label style="font-size:10px;font-weight:600;color:#666;display:block;margin-bottom:2px;">TC FEE ($)</label>';
-      h += '<input type="number" id="pdf_tc" value="" oninput="calcTotalEntry(\'' + safeAddr + '\')" placeholder="800" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;font-size:13px;font-weight:600;"></div>';
+      h += '<input type="number" id="pdf_tc" value="800" oninput="calcTotalEntry(\'' + safeAddr + '\')" placeholder="800" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:4px;font-size:13px;font-weight:600;"></div>';
 
       h += '</div>';
 
@@ -5185,18 +5189,18 @@
       var tcVal = parseFloat((tcEl || {}).value) || 0;
       var askingVal = parseFloat((askingEl || {}).value) || 0;
 
-      if (!entryVal && !ccVal && !tcVal) {
-        previewEl.textContent = '—';
-        return;
+      // Default TC to 800 if blank — flat fee in TSG workflow
+      if (tcVal === 0 && tcEl && tcEl.value === '') {
+        tcEl.value = '800';
+        tcVal = 800;
       }
 
       var totalEntry = entryVal + ccVal + tcVal;
       var pct = askingVal > 0 ? ((totalEntry / askingVal) * 100).toFixed(2) : 0;
 
       var fmtM = function(v) { return '$' + v.toLocaleString('en-US', {maximumFractionDigits: 0}); };
-      var parts = 'TOTAL ENTRY: ' + fmtM(entryVal);
-      if (ccVal) parts += ' + CC';
-      if (tcVal) parts += ' + TC (' + fmtM(tcVal) + ')';
+      // Always show full format: $X + CC + TC ($X) (X%)
+      var parts = 'TOTAL ENTRY: ' + fmtM(entryVal) + ' + CC + TC (' + fmtM(tcVal) + ')';
       if (askingVal > 0) parts += ' (' + pct + '%)';
 
       previewEl.textContent = parts;
@@ -5286,7 +5290,7 @@
         photos.forEach(function(photo) {
           var imgUrl = typeof photo === 'string' ? photo : (photo.url || '');
           if (imgUrl && existingUrls.indexOf(imgUrl) === -1) {
-            listingPdfPhotos[safeAddr].push({ url: imgUrl, selected: true });
+            listingPdfPhotos[safeAddr].push({ url: imgUrl, selected: true, cover: false });
             added++;
           }
         });
@@ -5307,23 +5311,85 @@
       var container = document.getElementById('pdfPhotoSelector');
       if (!container) return;
       var photos = listingPdfPhotos[safeAddr] || [];
+      // Toolbar (always present, even with no photos)
+      var toolbar = '<div style="font-size:11px;color:#666;margin-bottom:8px;">Click a photo to select/deselect for the PDF. Click ★ to mark it as the cover/highlight (appears large on page 1). Drag to reorder.</div>';
+      toolbar += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center;">';
+      toolbar += '<label style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;background:#1B2A4A;color:white;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">📁 Upload from computer<input type="file" multiple accept="image/*" style="display:none;" onchange="uploadPDFPhotosFromComputer(\'' + safeAddr + '\', event)"></label>';
+      if (photos.length > 0) {
+        toolbar += '<button onclick="selectAllPDFPhotos(\'' + safeAddr + '\', true)" style="padding:5px 12px;background:#2E75B6;color:white;border:none;border-radius:4px;font-size:11px;cursor:pointer;">Select All</button>';
+        toolbar += '<button onclick="selectAllPDFPhotos(\'' + safeAddr + '\', false)" style="padding:5px 12px;background:#f5f5f5;color:#666;border:1px solid #ddd;border-radius:4px;font-size:11px;cursor:pointer;">Deselect All</button>';
+      }
+      toolbar += '</div>';
+
       if (photos.length === 0) {
-        container.innerHTML = '<div style="text-align:center;padding:20px;color:#999;background:#f9f9f9;border-radius:8px;">No photos. Add photo URLs manually below.<br><div style="margin-top:8px;"><input type="text" id="pdf_manual_photo" placeholder="Paste photo URL..." style="padding:6px 10px;border:1px solid #ddd;border-radius:4px;width:300px;font-size:12px;"><button onclick="addManualPDFPhoto(\'' + safeAddr + '\')" style="margin-left:6px;padding:6px 12px;background:#2E75B6;color:white;border:none;border-radius:4px;font-size:12px;cursor:pointer;">Add</button></div></div>';
+        container.innerHTML = toolbar + '<div style="text-align:center;padding:20px;color:#999;background:#f9f9f9;border-radius:8px;">No photos yet. Upload from your computer above, or paste a URL below.<div style="margin-top:8px;"><input type="text" id="pdf_manual_photo" placeholder="Paste photo URL..." style="padding:6px 10px;border:1px solid #ddd;border-radius:4px;width:280px;font-size:12px;"><button onclick="addManualPDFPhoto(\'' + safeAddr + '\')" style="margin-left:6px;padding:6px 12px;background:#2E75B6;color:white;border:none;border-radius:4px;font-size:12px;cursor:pointer;">Add</button></div></div>';
         return;
       }
-      var ph = '<div style="font-size:11px;color:#666;margin-bottom:8px;">Click photos to select/deselect. Drag to reorder. Selected photos will appear in the PDF.</div>';
-      ph += '<div style="display:flex;gap:2px;margin-bottom:8px;"><button onclick="selectAllPDFPhotos(\'' + safeAddr + '\', true)" style="padding:4px 10px;background:#2E75B6;color:white;border:none;border-radius:4px;font-size:11px;cursor:pointer;">Select All</button><button onclick="selectAllPDFPhotos(\'' + safeAddr + '\', false)" style="padding:4px 10px;background:#f5f5f5;color:#666;border:1px solid #ddd;border-radius:4px;font-size:11px;cursor:pointer;">Deselect All</button></div>';
+
+      var ph = toolbar;
       ph += '<div id="pdfPhotoGrid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(120px, 1fr));gap:8px;">';
       photos.forEach(function(photo, idx) {
-        ph += '<div id="pdfPhoto_' + idx + '" draggable="true" ondragstart="pdfPhotoDragStart(event,' + idx + ')" ondragover="pdfPhotoDragOver(event)" ondrop="pdfPhotoDrop(event,\'' + safeAddr + '\',' + idx + ')" onclick="togglePDFPhoto(\'' + safeAddr + '\',' + idx + ')" style="position:relative;cursor:pointer;border:3px solid ' + (photo.selected ? '#2E75B6' : '#ddd') + ';border-radius:6px;overflow:hidden;aspect-ratio:1;transition:all 0.15s;opacity:' + (photo.selected ? '1' : '0.4') + ';">';
+        var borderColor = photo.cover ? '#ED7D31' : (photo.selected ? '#2E75B6' : '#ddd');
+        var borderWidth = photo.cover ? '4px' : '3px';
+        ph += '<div id="pdfPhoto_' + idx + '" draggable="true" ondragstart="pdfPhotoDragStart(event,' + idx + ')" ondragover="pdfPhotoDragOver(event)" ondrop="pdfPhotoDrop(event,\'' + safeAddr + '\',' + idx + ')" onclick="togglePDFPhoto(\'' + safeAddr + '\',' + idx + ')" style="position:relative;cursor:pointer;border:' + borderWidth + ' solid ' + borderColor + ';border-radius:6px;overflow:hidden;aspect-ratio:1;transition:all 0.15s;opacity:' + (photo.selected ? '1' : '0.4') + ';">';
         ph += '<img src="' + photo.url + '" style="width:100%;height:100%;object-fit:cover;pointer-events:none;" onerror="this.style.display=&quot;none&quot;">';
+        // Selected check
         ph += '<div style="position:absolute;top:4px;right:4px;background:#2E75B6;color:white;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;' + (photo.selected ? '' : 'display:none;') + '">✓</div>';
+        // Index badge
         ph += '<div style="position:absolute;top:4px;left:4px;background:rgba(0,0,0,0.5);color:white;width:20px;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;pointer-events:none;">' + (idx + 1) + '</div>';
+        // Cover star button (bottom-left)
+        ph += '<button onclick="event.stopPropagation();setCoverPhoto(\'' + safeAddr + '\',' + idx + ')" title="' + (photo.cover ? 'Cover photo (page 1)' : 'Set as cover photo') + '" style="position:absolute;bottom:4px;left:4px;width:26px;height:26px;border-radius:50%;border:none;background:' + (photo.cover ? '#ED7D31' : 'rgba(255,255,255,0.85)') + ';color:' + (photo.cover ? 'white' : '#888') + ';font-size:14px;font-weight:700;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,0.2);">★</button>';
+        // Remove button (bottom-right)
+        ph += '<button onclick="event.stopPropagation();removePDFPhoto(\'' + safeAddr + '\',' + idx + ')" title="Remove" style="position:absolute;bottom:4px;right:4px;width:22px;height:22px;border-radius:50%;border:none;background:rgba(0,0,0,0.5);color:white;font-size:12px;font-weight:700;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center;">×</button>';
+        if (photo.cover) {
+          ph += '<div style="position:absolute;top:50%;left:0;right:0;transform:translateY(-50%);text-align:center;background:rgba(237,125,49,0.9);color:white;font-size:10px;font-weight:700;letter-spacing:1px;padding:3px 0;pointer-events:none;">COVER</div>';
+        }
         ph += '</div>';
       });
       ph += '</div>';
-      ph += '<div style="margin-top:8px;display:flex;align-items:center;gap:6px;"><input type="text" id="pdf_manual_photo" placeholder="Add photo URL..." style="flex:1;padding:6px 10px;border:1px solid #ddd;border-radius:4px;font-size:12px;"><button onclick="addManualPDFPhoto(\'' + safeAddr + '\')" style="padding:6px 12px;background:#2E75B6;color:white;border:none;border-radius:4px;font-size:12px;cursor:pointer;">Add</button></div>';
+      ph += '<div style="margin-top:8px;display:flex;align-items:center;gap:6px;"><input type="text" id="pdf_manual_photo" placeholder="Add photo URL..." style="flex:1;padding:6px 10px;border:1px solid #ddd;border-radius:4px;font-size:12px;"><button onclick="addManualPDFPhoto(\'' + safeAddr + '\')" style="padding:6px 12px;background:#2E75B6;color:white;border:none;border-radius:4px;font-size:12px;cursor:pointer;">Add URL</button></div>';
       container.innerHTML = ph;
+    }
+
+    function uploadPDFPhotosFromComputer(safeAddr, event) {
+      var files = Array.from(event.target.files || []);
+      if (!files.length) return;
+      if (!listingPdfPhotos[safeAddr]) listingPdfPhotos[safeAddr] = [];
+      var pending = files.length;
+      files.forEach(function(file) {
+        if (!file.type.startsWith('image/')) { pending--; return; }
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          listingPdfPhotos[safeAddr].push({ url: e.target.result, selected: true, cover: false });
+          pending--;
+          if (pending <= 0) renderPDFPhotoGrid(safeAddr);
+        };
+        reader.onerror = function() { pending--; if (pending <= 0) renderPDFPhotoGrid(safeAddr); };
+        reader.readAsDataURL(file);
+      });
+      // Allow re-selecting the same files later
+      event.target.value = '';
+    }
+
+    function setCoverPhoto(safeAddr, idx) {
+      var photos = listingPdfPhotos[safeAddr];
+      if (!photos || !photos[idx]) return;
+      var wasCover = !!photos[idx].cover;
+      // Unset all covers
+      photos.forEach(function(p) { p.cover = false; });
+      // Toggle: clicking the current cover clears it
+      if (!wasCover) {
+        photos[idx].cover = true;
+        photos[idx].selected = true;
+      }
+      renderPDFPhotoGrid(safeAddr);
+    }
+
+    function removePDFPhoto(safeAddr, idx) {
+      var photos = listingPdfPhotos[safeAddr];
+      if (!photos || !photos[idx]) return;
+      photos.splice(idx, 1);
+      renderPDFPhotoGrid(safeAddr);
     }
 
     var pdfPhotoDragIdx = null;
@@ -5362,7 +5428,7 @@
           return;
         }
 
-        listingPdfPhotos[safeAddr] = photos.map(function(p) { return { url: p.url, selected: true }; });
+        listingPdfPhotos[safeAddr] = photos.map(function(p) { return { url: p.url, selected: true, cover: false }; });
         renderPDFPhotoGrid(safeAddr);
       } catch(e) {
         container.innerHTML = '<div style="color:#c00;">Error loading photos: ' + e.message + '</div>';
@@ -5400,7 +5466,7 @@
       var input = document.getElementById('pdf_manual_photo');
       if (!input || !input.value || !input.value.startsWith('http')) return;
       if (!listingPdfPhotos[safeAddr]) listingPdfPhotos[safeAddr] = [];
-      listingPdfPhotos[safeAddr].push({ url: input.value, selected: true });
+      listingPdfPhotos[safeAddr].push({ url: input.value, selected: true, cover: false });
       input.value = '';
       renderPDFPhotoGrid(safeAddr);
     }
@@ -5413,12 +5479,28 @@
         var jsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
         if (!jsPDF) { alert('jsPDF library not loaded. Check your internet connection and refresh.'); return; }
 
-        // Pre-load logo as Image element for reliable jsPDF embedding
+        // Pre-load Summit logo from images/ folder (more reliable than embedded base64)
         var logoImg = await new Promise(function(resolve) {
           var img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = function() { resolve(img); };
+          img.onerror = function() {
+            // Fallback to embedded base64 if file load fails
+            var fallback = new Image();
+            fallback.onload = function() { resolve(fallback); };
+            fallback.onerror = function() { resolve(null); };
+            fallback.src = SUMMIT_LOGO_B64;
+          };
+          img.src = 'images/throne trans 2.png';
+        });
+
+        // Pre-load Rentometer logo for the rent analysis section
+        var rentometerLogoImg = await new Promise(function(resolve) {
+          var img = new Image();
+          img.crossOrigin = 'anonymous';
           img.onload = function() { resolve(img); };
           img.onerror = function() { resolve(null); };
-          img.src = SUMMIT_LOGO_B64;
+          img.src = 'images/rentometer.png';
         });
 
         var doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
@@ -5520,6 +5602,14 @@
         doc.setTextColor(255, 255, 255);
         doc.setFont('helvetica', 'normal');
         doc.text('EXCLUSIVE INVESTMENT OPPORTUNITY', pageW - margin - 65, 72, { align: 'center' });
+
+        // Estimated close date — pinned in the header so buyers see it first
+        if (closeDate) {
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(255, 255, 255);
+          doc.text('EST. CLOSE: ' + closeDate, pageW - margin - 65, 88, { align: 'center' });
+        }
 
         y = 130;
 
@@ -5632,82 +5722,71 @@
           y += 20;
         }
 
-        // ROI metrics row
-        if (pdfIsSubTo) {
-          // Subject-To: show PITI, EST. RENT, CASHFLOW, CLOSE DATE
-          var pitiNum = parseFloat(piti) || 0;
-          var rentNum = parseFloat(rent) || 0;
-          var cashflow = rentNum - pitiNum;
-
-          doc.setFillColor(245, 250, 245);
-          doc.roundedRect(margin, y, contentW, 50, 4, 4, 'F');
-          doc.setDrawColor(200, 230, 200);
-          doc.roundedRect(margin, y, contentW, 50, 4, 4, 'S');
-
-          var metricW = contentW / 4;
-          var metrics = [
-            { label: 'PITI', value: pitiNum ? fmtMoney(pitiNum) + '/mo' : '—' },
-            { label: 'EST. RENT', value: rentNum ? fmtMoney(rentNum) + '/mo' : '—' },
-            { label: 'CASHFLOW', value: (rentNum || pitiNum) ? fmtMoney(cashflow) + '/mo' : '—' },
-            { label: 'CLOSE DATE', value: closeDate || '—' },
-          ];
-          metrics.forEach(function(m, i) {
-            var mx = margin + i * metricW;
-            doc.setFontSize(8);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(gray[0], gray[1], gray[2]);
-            doc.text(m.label, mx + metricW / 2, y + 18, { align: 'center' });
-            doc.setFontSize(16);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(green[0], green[1], green[2]);
-            doc.text(m.value, mx + metricW / 2, y + 38, { align: 'center' });
+        // ============ COVER PHOTO (page 1, after disclaimer) ============
+        // Find the user-selected cover photo from the PDF photo selector
+        var coverPhotoEntry = (listingPdfPhotos[safeAddr] || []).find(function(p) { return p.cover && p.selected; });
+        var coverImgEl = null;
+        if (coverPhotoEntry) {
+          coverImgEl = await new Promise(function(resolve) {
+            var img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = function() { resolve(img); };
+            img.onerror = function() { resolve(null); };
+            img.src = coverPhotoEntry.url;
           });
-          y += 66;
-        } else if (asking && arv) {
-          var askNum = parseFloat(asking);
-          var arvNum = parseFloat(arv);
-          var rehabNum = parseFloat(rehab) || 0;
-          var rentNum = parseFloat(rent) || 0;
-          var spread = arvNum - askNum;
-          var potentialProfit = arvNum - askNum - rehabNum;
-          var roi = askNum > 0 ? ((potentialProfit / askNum) * 100).toFixed(1) : 0;
-
-          doc.setFillColor(245, 250, 245);
-          doc.roundedRect(margin, y, contentW, 50, 4, 4, 'F');
-          doc.setDrawColor(200, 230, 200);
-          doc.roundedRect(margin, y, contentW, 50, 4, 4, 'S');
-
-          var metricW = contentW / 4;
-          var metrics = [
-            { label: 'SPREAD', value: fmtMoney(spread) },
-            { label: 'EST. PROFIT', value: fmtMoney(potentialProfit) },
-            { label: 'ROI', value: roi + '%' },
-            { label: 'EST. RENT', value: rentNum ? fmtMoney(rentNum) + '/mo' : '—' },
-          ];
-          metrics.forEach(function(m, i) {
-            var mx = margin + i * metricW;
-            doc.setFontSize(8);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(gray[0], gray[1], gray[2]);
-            doc.text(m.label, mx + metricW / 2, y + 18, { align: 'center' });
-            doc.setFontSize(16);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(green[0], green[1], green[2]);
-            doc.text(m.value, mx + metricW / 2, y + 38, { align: 'center' });
-          });
-          y += 66;
+        }
+        if (coverImgEl) {
+          // Page break if not enough room for hero image (~300pt)
+          if (y > pageH - 320) { doc.addPage(); y = margin + 20; }
+          var coverRatio = coverImgEl.width / coverImgEl.height;
+          var coverMaxW = contentW;
+          var coverMaxH = 280;
+          var coverW = coverMaxW;
+          var coverH = coverW / coverRatio;
+          if (coverH > coverMaxH) { coverH = coverMaxH; coverW = coverH * coverRatio; }
+          var coverX = margin + (contentW - coverW) / 2;
+          try {
+            doc.addImage(coverImgEl, 'JPEG', coverX, y, coverW, coverH);
+          } catch(e) { /* if image embed fails, skip silently */ }
+          y += coverH + 14;
         }
 
-        // Rent Analysis section (if rentometer data present)
+        // ============ RENT ANALYSIS WITH RENTOMETER BRANDING ============
         if (rentMedian || rentLow || rentHigh) {
-          if (y > pageH - 120) { doc.addPage(); y = margin + 20; }
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(13);
-          doc.setTextColor(navy[0], navy[1], navy[2]);
-          doc.text('Rent Analysis', margin, y);
+          if (y > pageH - 130) { doc.addPage(); y = margin + 20; }
+
+          // Section title with Rentometer logo (if loaded)
+          if (rentometerLogoImg) {
+            try {
+              // Logo aspect-aware sizing — 16pt tall
+              var rmLogoH = 16;
+              var rmLogoRatio = rentometerLogoImg.width / rentometerLogoImg.height;
+              var rmLogoW = rmLogoH * rmLogoRatio;
+              doc.addImage(rentometerLogoImg, 'PNG', margin, y - 12, rmLogoW, rmLogoH);
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(13);
+              doc.setTextColor(navy[0], navy[1], navy[2]);
+              doc.text('Rent Analysis', margin + rmLogoW + 8, y);
+            } catch(e) {
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(13);
+              doc.setTextColor(navy[0], navy[1], navy[2]);
+              doc.text('Rent Analysis', margin, y);
+            }
+          } else {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(13);
+            doc.setTextColor(navy[0], navy[1], navy[2]);
+            doc.text('Rent Analysis', margin, y);
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(gray[0], gray[1], gray[2]);
+            doc.text('Powered by Rentometer', margin + 110, y);
+          }
           y += 16;
+
           doc.setFillColor(232, 245, 233);
-          doc.roundedRect(margin, y, contentW, 40, 4, 4, 'F');
+          doc.roundedRect(margin, y, contentW, 50, 4, 4, 'F');
           var rentAW = contentW / 3;
           var rentItems = [
             { label: 'MEDIAN', value: rentMedian ? fmtMoney(rentMedian) + '/mo' : '—' },
@@ -5719,13 +5798,13 @@
             doc.setFontSize(8);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(gray[0], gray[1], gray[2]);
-            doc.text(ri.label, rx + rentAW / 2, y + 14, { align: 'center' });
-            doc.setFontSize(14);
+            doc.text(ri.label, rx + rentAW / 2, y + 18, { align: 'center' });
+            doc.setFontSize(15);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(green[0], green[1], green[2]);
-            doc.text(ri.value, rx + rentAW / 2, y + 30, { align: 'center' });
+            doc.text(ri.value, rx + rentAW / 2, y + 36, { align: 'center' });
           });
-          y += 52;
+          y += 60;
         }
 
         // Description
@@ -5791,7 +5870,8 @@
         }
 
         // ============ PAGE 2: Photos ============
-        var selectedPhotos = (listingPdfPhotos[safeAddr] || []).filter(function(p) { return p.selected; });
+        // Exclude the cover photo (already rendered on page 1) so it doesn't appear twice
+        var selectedPhotos = (listingPdfPhotos[safeAddr] || []).filter(function(p) { return p.selected && !p.cover; });
         if (selectedPhotos.length > 0) {
           doc.addPage();
           y = 0;
@@ -6771,6 +6851,17 @@
       if (opts.autoFillARVCalc && median > 0) {
         applyRentometerToARVCalc(median);
       }
+      // If the listing PDF modal is open, push values into its rent fields too
+      if (median > 0) {
+        var pdfMedian = document.getElementById('pdf_rent_median');
+        var pdfLow = document.getElementById('pdf_rent_low');
+        var pdfHigh = document.getElementById('pdf_rent_high');
+        if (pdfMedian && !pdfMedian.value) pdfMedian.value = median;
+        if (pdfLow && !pdfLow.value && low > 0) pdfLow.value = low;
+        if (pdfHigh && !pdfHigh.value && high > 0) pdfHigh.value = high;
+        // Trigger save so localStorage picks up the new values
+        if (pdfMedian && pdfMedian.dispatchEvent) pdfMedian.dispatchEvent(new Event('change'));
+      }
     }
 
     /**
@@ -6992,6 +7083,26 @@
         var rentEl = document.getElementById('fb_rent_' + safeAddr);
         if (rentEl && !rentEl.value) rentEl.value = data.rentZestimate;
       }
+
+      // If the listing PDF modal is currently open, push values into its fields too
+      var pdfFieldMap = [
+        { id: 'pdf_beds', val: data.bedrooms },
+        { id: 'pdf_baths', val: data.bathrooms },
+        { id: 'pdf_sqft', val: data.livingArea },
+        { id: 'pdf_lot', val: data.lotSize },
+        { id: 'pdf_year', val: data.yearBuilt },
+        { id: 'pdf_arv', val: data.zestimate },
+        { id: 'pdf_rent', val: data.rentZestimate }
+      ];
+      pdfFieldMap.forEach(function(f) {
+        if (f.val) {
+          var el = document.getElementById(f.id);
+          if (el && !el.value) {
+            el.value = f.val;
+            if (el.dispatchEvent) el.dispatchEvent(new Event('change'));
+          }
+        }
+      });
 
       // Photos grid
       var photos = data.photos || [];
