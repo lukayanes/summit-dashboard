@@ -4951,11 +4951,19 @@
       var whAge = (document.getElementById('cond_wh_' + safeAddr) || {}).value || '';
       var roofAge = (document.getElementById('cond_roof_' + safeAddr) || {}).value || '';
       var closingCosts = (document.getElementById('cond_cc_' + safeAddr) || {}).value || '';
-      // Read rentometer cached data — cache key is address + '_' + bedrooms
-      var rentoBeds = beds || 3;
-      var rentoData = rentometerCache[deal.address + '_' + rentoBeds] || {};
-      // Try without bedrooms suffix as fallback (legacy cache entries)
-      if (!rentoData.median) rentoData = rentometerCache[deal.address] || rentoData;
+      // Read rentometer cached data — match the dispo center exactly.
+      // The dispo card caches under `address + '_' + <whatever bedrooms the user picked>`,
+      // so we scan for ANY entry whose key starts with this address.
+      var rentoData = {};
+      var addrPrefix = deal.address + '_';
+      for (var rk in rentometerCache) {
+        if (rk.indexOf(addrPrefix) === 0 && rentometerCache[rk] && rentometerCache[rk].median) {
+          rentoData = rentometerCache[rk];
+          break;
+        }
+      }
+      // Legacy fallback: cache entries stored without the bedroom suffix
+      if (!rentoData.median && rentometerCache[deal.address]) rentoData = rentometerCache[deal.address];
       var rentoMedian = rentoData.median || '';
       var rentoLow = rentoData.percentile_25 || rentoData.min || '';
       var rentoHigh = rentoData.percentile_75 || rentoData.max || '';
@@ -5675,16 +5683,14 @@
 
           var ey = y + 18;
 
-          // Build "TOTAL ENTRY: $15,000 + CC + TC ($800) (7.66%)" line
+          // Build "TOTAL ENTRY: $15,000 + CC + TC ($800) (7.66%)" line — always show all parts
           var entryNum = parseFloat(entry) || 0;
           var ccNum = parseFloat(pdfCc) || 0;
-          var tcNum = parseFloat(tcFee) || 0;
+          var tcNum = parseFloat(tcFee) || 800;
           var askNum_ = parseFloat(asking) || 0;
           var totalEntryVal = entryNum + ccNum + tcNum;
-          var entryLine = 'TOTAL ENTRY: ' + fmtMoney(entryNum);
-          if (ccNum) entryLine += ' + CC';
-          if (tcNum) entryLine += ' + TC (' + fmtMoney(tcNum) + ')';
-          if (askNum_ > 0 && totalEntryVal > 0) entryLine += ' (' + ((totalEntryVal / askNum_) * 100).toFixed(2) + '%)';
+          var entryLine = 'TOTAL ENTRY: ' + fmtMoney(entryNum) + ' + CC + TC (' + fmtMoney(tcNum) + ')';
+          if (askNum_ > 0) entryLine += ' (' + ((totalEntryVal / askNum_) * 100).toFixed(2) + '%)';
 
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(14);
@@ -5807,8 +5813,102 @@
           y += 60;
         }
 
+        // ============ PHOTOS — inline, right after rent analysis ============
+        // Exclude the cover photo (already rendered on page 1) so it doesn't appear twice
+        var selectedPhotos = (listingPdfPhotos[safeAddr] || []).filter(function(p) { return p.selected && !p.cover; });
+        if (selectedPhotos.length > 0) {
+          // Inline section title (no full-width banner — photos flow on the same page as rent analysis)
+          if (y > pageH - 100) { doc.addPage(); y = margin + 20; }
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(13);
+          doc.setTextColor(navy[0], navy[1], navy[2]);
+          doc.text('Property Photos', margin, y);
+          y += 16;
+
+          // Load and place photos
+          var photoPromises = selectedPhotos.map(function(p) {
+            return new Promise(function(resolve) {
+              var img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = function() { resolve({ img: img, url: p.url }); };
+              img.onerror = function() { resolve(null); };
+              img.src = p.url;
+            });
+          });
+
+          var loadedPhotos = (await Promise.all(photoPromises)).filter(Boolean);
+
+          if (loadedPhotos.length > 0) {
+            // First photo large — page-break if it won't fit
+            var first = loadedPhotos[0];
+            var imgRatio = first.img.width / first.img.height;
+            var maxW = contentW;
+            var maxH = 280;
+            var imgW = maxW;
+            var imgH = imgW / imgRatio;
+            if (imgH > maxH) { imgH = maxH; imgW = imgH * imgRatio; }
+            if (y + imgH > pageH - 60) {
+              doc.addPage();
+              // Mini continuation header for new page
+              doc.setFillColor(navy[0], navy[1], navy[2]);
+              doc.rect(0, 0, pageW, 50, 'F');
+              doc.setFillColor(74, 127, 181);
+              doc.rect(0, 50, pageW, 3, 'F');
+              try { if (logoImg) doc.addImage(logoImg, 'PNG', margin - 2, 5, 40, 40); } catch(e) {}
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(16);
+              doc.setTextColor(255, 255, 255);
+              doc.text('Property Photos (cont.)', margin + 44, 30);
+              y = 70;
+            }
+            var imgX = margin + (contentW - imgW) / 2;
+            try {
+              doc.addImage(first.img, 'JPEG', imgX, y, imgW, imgH);
+            } catch(e) { /* skip if image can't be embedded */ }
+            y += imgH + 12;
+
+            // Remaining photos in 2-column grid
+            if (loadedPhotos.length > 1) {
+              var gridW = (contentW - 10) / 2;
+              var gridH = 180;
+              for (var pi = 1; pi < loadedPhotos.length; pi++) {
+                if (y + gridH > pageH - 60) {
+                  doc.addPage();
+                  // Mini header — SOP style
+                  doc.setFillColor(navy[0], navy[1], navy[2]);
+                  doc.rect(0, 0, pageW, 50, 'F');
+                  doc.setFillColor(74, 127, 181);
+                  doc.rect(0, 50, pageW, 3, 'F');
+                  try { if (logoImg) doc.addImage(logoImg, 'PNG', margin - 2, 5, 40, 40); } catch(e) {}
+                  doc.setFont('helvetica', 'bold');
+                  doc.setFontSize(16);
+                  doc.setTextColor(255, 255, 255);
+                  doc.text('Property Photos (cont.)', margin + 44, 30);
+                  y = 70;
+                }
+                var col = (pi - 1) % 2;
+                var px = margin + col * (gridW + 10);
+                try {
+                  var pImg = loadedPhotos[pi];
+                  var pRatio = pImg.img.width / pImg.img.height;
+                  var pw = gridW;
+                  var ph = pw / pRatio;
+                  if (ph > gridH) { ph = gridH; pw = ph * pRatio; }
+                  var pxOff = px + (gridW - pw) / 2;
+                  doc.addImage(pImg.img, 'JPEG', pxOff, y, pw, ph);
+                } catch(e) { /* skip */ }
+                if (col === 1 || pi === loadedPhotos.length - 1) {
+                  y += gridH + 10;
+                }
+              }
+            }
+          }
+          y += 8; // small gap before the next section
+        }
+
         // Description
         if (description) {
+          if (y > pageH - 100) { doc.addPage(); y = margin + 20; }
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(13);
           doc.setTextColor(navy[0], navy[1], navy[2]);
@@ -5824,6 +5924,7 @@
 
         // Highlights
         if (highlights) {
+          if (y > pageH - 100) { doc.addPage(); y = margin + 20; }
           doc.setFont('helvetica', 'bold');
           doc.setFontSize(13);
           doc.setTextColor(navy[0], navy[1], navy[2]);
@@ -5867,95 +5968,6 @@
             y += 16;
           });
           y += 6;
-        }
-
-        // ============ PAGE 2: Photos ============
-        // Exclude the cover photo (already rendered on page 1) so it doesn't appear twice
-        var selectedPhotos = (listingPdfPhotos[safeAddr] || []).filter(function(p) { return p.selected && !p.cover; });
-        if (selectedPhotos.length > 0) {
-          doc.addPage();
-          y = 0;
-
-          // Header bar — SOP style
-          doc.setFillColor(navy[0], navy[1], navy[2]);
-          doc.rect(0, 0, pageW, 50, 'F');
-          doc.setFillColor(74, 127, 181);
-          doc.rect(0, 50, pageW, 3, 'F');
-          try { if (logoImg) doc.addImage(logoImg, 'PNG', margin - 2, 5, 40, 40); } catch(e) {}
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(16);
-          doc.setTextColor(255, 255, 255);
-          doc.text('Property Photos', margin + 44, 30);
-          doc.setFontSize(10);
-          doc.setFont('helvetica', 'normal');
-          doc.text(address, pageW - margin, 30, { align: 'right' });
-
-          y = 70;
-
-          // Load and place photos
-          var photoPromises = selectedPhotos.map(function(p) {
-            return new Promise(function(resolve) {
-              var img = new Image();
-              img.crossOrigin = 'anonymous';
-              img.onload = function() { resolve({ img: img, url: p.url }); };
-              img.onerror = function() { resolve(null); };
-              img.src = p.url;
-            });
-          });
-
-          var loadedPhotos = (await Promise.all(photoPromises)).filter(Boolean);
-
-          if (loadedPhotos.length > 0) {
-            // First photo large
-            var first = loadedPhotos[0];
-            var imgRatio = first.img.width / first.img.height;
-            var maxW = contentW;
-            var maxH = 280;
-            var imgW = maxW;
-            var imgH = imgW / imgRatio;
-            if (imgH > maxH) { imgH = maxH; imgW = imgH * imgRatio; }
-            var imgX = margin + (contentW - imgW) / 2;
-            try {
-              doc.addImage(first.img, 'JPEG', imgX, y, imgW, imgH);
-            } catch(e) { /* skip if image can't be embedded */ }
-            y += imgH + 12;
-
-            // Remaining photos in 2-column grid
-            if (loadedPhotos.length > 1) {
-              var gridW = (contentW - 10) / 2;
-              var gridH = 180;
-              for (var pi = 1; pi < loadedPhotos.length; pi++) {
-                if (y + gridH > pageH - 60) {
-                  doc.addPage();
-                  // Mini header — SOP style
-                  doc.setFillColor(navy[0], navy[1], navy[2]);
-                  doc.rect(0, 0, pageW, 50, 'F');
-                  doc.setFillColor(74, 127, 181);
-                  doc.rect(0, 50, pageW, 3, 'F');
-                  try { if (logoImg) doc.addImage(logoImg, 'PNG', margin - 2, 5, 40, 40); } catch(e) {}
-                  doc.setFont('helvetica', 'bold');
-                  doc.setFontSize(16);
-                  doc.setTextColor(255, 255, 255);
-                  doc.text('Property Photos (cont.)', margin + 44, 30);
-                  y = 70;
-                }
-                var col = (pi - 1) % 2;
-                var px = margin + col * (gridW + 10);
-                try {
-                  var pImg = loadedPhotos[pi];
-                  var pRatio = pImg.img.width / pImg.img.height;
-                  var pw = gridW;
-                  var ph = pw / pRatio;
-                  if (ph > gridH) { ph = gridH; pw = ph * pRatio; }
-                  var pxOff = px + (gridW - pw) / 2;
-                  doc.addImage(pImg.img, 'JPEG', pxOff, y, pw, ph);
-                } catch(e) { /* skip */ }
-                if (col === 1 || pi === loadedPhotos.length - 1) {
-                  y += gridH + 10;
-                }
-              }
-            }
-          }
         }
 
         // ============ FOOTER on every page — matches SOP branding ============
