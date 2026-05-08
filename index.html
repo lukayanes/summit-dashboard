@@ -4444,11 +4444,53 @@
     let dispoFilter = 'all'; // 'all', 'cash', 'novation', 'seller-finance', 'subject-to'
 
     function computeEntryFee(deal) {
+      // Entry fee (listed - contract spread) only applies to Cash, Sub-to, Seller Finance.
+      // Novations don't have an "entry fee" in this sense — only an est. profit.
+      var strategy = (deal.strategy || '').toLowerCase();
+      if (strategy.includes('novation')) return null;
       if (deal.listed && deal.contract) {
         var diff = parseFloat(deal.listed) - parseFloat(deal.contract);
         if (diff > 0) return diff;
       }
       return null;
+    }
+
+    // ─── State-based seller closing cost estimator ─────────────────────────
+    // Approximate seller-side closing cost percentages (excluding realtor commission).
+    // Higher in transfer-tax states (NY, NJ, DE, PA, MD, etc); ~1.5% baseline elsewhere.
+    var STATE_CC_PCT = {
+      AL:1.5, AK:1.5, AZ:1.5, AR:1.5, CA:1.5, CO:1.5, CT:2.5, DE:3.0, DC:2.5,
+      FL:2.0, GA:1.5, HI:2.0, ID:1.5, IL:2.0, IN:1.5, IA:1.5, KS:1.5, KY:1.5,
+      LA:1.5, ME:2.0, MD:2.5, MA:2.0, MI:1.5, MN:1.5, MS:1.5, MO:1.5, MT:1.5,
+      NE:1.5, NV:1.5, NH:2.0, NJ:2.5, NM:1.5, NY:3.5, NC:1.5, ND:1.5, OH:1.5,
+      OK:1.5, OR:1.5, PA:2.5, RI:2.0, SC:1.5, SD:1.5, TN:1.5, TX:1.5, UT:1.5,
+      VT:2.0, VA:1.5, WA:2.0, WV:1.5, WI:1.5, WY:1.5
+    };
+
+    /**
+     * Pull a 2-letter state code from a deal — prefers `market` field, falls back
+     * to extracting from the property address (e.g. "..., City, ST ZIP").
+     */
+    function getDealState(deal) {
+      var market = (deal.market || '').toUpperCase().trim();
+      if (/^[A-Z]{2}$/.test(market)) return market;
+      var addr = deal.address || '';
+      var match = addr.match(/,\s*([A-Z]{2})\s*\d{0,5}\s*$/);
+      if (match) return match[1];
+      return '';
+    }
+
+    /**
+     * Estimate seller-side closing costs from sale price + state.
+     * Returns dollar amount rounded to nearest $50. Uses 1.5% as fallback.
+     */
+    function estimateClosingCosts(salePrice, stateCode) {
+      var price = parseFloat(salePrice) || 0;
+      if (!price) return 0;
+      var state = (stateCode || '').toUpperCase().trim();
+      var pct = STATE_CC_PCT[state] || 1.5;
+      var cc = price * (pct / 100);
+      return Math.round(cc / 50) * 50;
     }
     /**
      * Get active deals (Under Contract + Listed/Posted) from DEALS array
@@ -5163,6 +5205,16 @@
       // Calculate entry preview
       calcTotalEntry(safeAddr);
 
+      // Force-refresh rent fields from the Rentometer cache (source of truth).
+      // This runs AFTER loadPDFFormData so it overrides any stale localStorage values
+      // saved by an earlier build of this modal that persisted these fields.
+      var medianFieldEl = document.getElementById('pdf_rent_median');
+      var lowFieldEl = document.getElementById('pdf_rent_low');
+      var highFieldEl = document.getElementById('pdf_rent_high');
+      if (rentoMedian && medianFieldEl) medianFieldEl.value = rentoMedian;
+      if (rentoLow && lowFieldEl) lowFieldEl.value = rentoLow;
+      if (rentoHigh && highFieldEl) highFieldEl.value = rentoHigh;
+
       // Hook up auto-save on every field change
       hookPDFFormAutoSave(safeAddr);
 
@@ -5215,6 +5267,9 @@
     }
 
     // === Dispo Form Persistence (localStorage) ===
+    // Note: pdf_rent_median / _low / _high are intentionally NOT persisted —
+    // they're derived from rentometerCache (the source of truth), not user-typed data.
+    // Persisting them caused stale empty/zero values to overwrite freshly-fetched cache values on modal open.
     var DISPO_FORM_FIELDS = [
       'pdf_address','pdf_beds','pdf_baths','pdf_sqft','pdf_lot','pdf_year',
       'pdf_asking','pdf_piti','pdf_rate','pdf_closedate','pdf_arv','pdf_rehab',
@@ -5222,7 +5277,6 @@
       'pdf_entry','pdf_tc','pdf_cc','pdf_disclaimer',
       'pdf_description','pdf_highlights',
       'pdf_hvac','pdf_wh','pdf_roof',
-      'pdf_rent_median','pdf_rent_low','pdf_rent_high',
       'pdf_contact_select','pdf_contact','pdf_email','pdf_phone'
     ];
     var DISPO_CHECKBOXES = ['pdf_cc_both'];
@@ -6326,9 +6380,14 @@
       html += '<input type="number" id="novRepairs_' + safeAddr + '" value="' + (deal.repairs || 0) + '" oninput="calcNovation(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
       html += '</div>';
 
+      var dealState = getDealState(deal);
+      var ccPctUsed = STATE_CC_PCT[dealState] || 1.5;
+      var ccEstimate = estimateClosingCosts(deal.listed, dealState);
+
       html += '<div>';
       html += '<label style="font-size:11px;font-weight:600;color:#666;">Closing Costs ($)</label>';
-      html += '<input type="number" id="novCC_' + safeAddr + '" value="0" oninput="calcNovation(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '<input type="number" id="novCC_' + safeAddr + '" value="' + ccEstimate + '" oninput="calcNovation(\'' + safeAddr + '\')" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px;font-weight:600;">';
+      html += '<div style="font-size:9px;color:#999;margin-top:2px;">Auto-est: ' + (dealState || '?') + ' @ ' + ccPctUsed + '% · <a href="#" onclick="reestimateNovationCC(\'' + safeAddr + '\');return false;" style="color:#1565C0;text-decoration:none;">↻ Re-estimate</a></div>';
       html += '</div>';
 
       html += '</div>';
@@ -6357,6 +6416,22 @@
       var deal = getDispoDeals().find(d => d.address.replace(/[^a-zA-Z0-9]/g, '_') === safeAddr);
       if (!deal) return;
       resultsDiv.innerHTML = calcNovationHTML(safeAddr, deal);
+    }
+
+    /**
+     * Re-estimate the novation CC field from the current sale price input + deal state.
+     * Triggered by the "↻ Re-estimate" link below the CC field.
+     */
+    function reestimateNovationCC(safeAddr) {
+      var deal = getDispoDeals().find(d => d.address.replace(/[^a-zA-Z0-9]/g, '_') === safeAddr);
+      if (!deal) return;
+      var saleEl = document.getElementById('novSale_' + safeAddr);
+      var ccEl = document.getElementById('novCC_' + safeAddr);
+      if (!saleEl || !ccEl) return;
+      var salePrice = parseFloat(saleEl.value) || 0;
+      var state = getDealState(deal);
+      ccEl.value = estimateClosingCosts(salePrice, state);
+      calcNovation(safeAddr);
     }
 
     function calcNovationHTML(safeAddr, deal) {
