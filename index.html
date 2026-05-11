@@ -8440,6 +8440,34 @@
     // Global carousel state tracker
     var _carouselStates = {};
 
+    /**
+     * Hero image onerror handler — when a comp photo URL is broken (404, captcha, placeholder),
+     * remove it from the carousel state and advance to the next photo. Updates the counter so
+     * the user sees the real available count, never a blank slot.
+     */
+    function handleBrokenCompPhoto(galleryId, imgEl) {
+      var state = _carouselStates[galleryId];
+      if (!state) { imgEl.style.display = 'none'; return; }
+      // Remove the broken photo (and its source) from the state arrays
+      var brokenSrc = imgEl.src;
+      var i = state.photos.indexOf(brokenSrc);
+      if (i === -1) i = state.index;
+      state.photos.splice(i, 1);
+      if (state.sources) state.sources.splice(i, 1);
+      // No photos left → hide the gallery
+      if (state.photos.length === 0) {
+        imgEl.style.display = 'none';
+        var emptyCounter = document.getElementById(galleryId + '_counter');
+        if (emptyCounter) emptyCounter.style.display = 'none';
+        return;
+      }
+      // Clamp index and load the next photo
+      if (state.index >= state.photos.length) state.index = 0;
+      imgEl.src = state.photos[state.index];
+      var counter = document.getElementById(galleryId + '_counter');
+      if (counter) counter.textContent = (state.index + 1) + ' / ' + state.photos.length;
+    }
+
     function buildPhotoGallery(photos, sourceName) {
       var galleryId = 'gallery_' + Math.random().toString(36).substr(2, 8);
       _carouselStates[galleryId] = { photos: photos, index: 0 };
@@ -8448,7 +8476,7 @@
 
       // Hero image with navigation overlay
       html += '<div style="flex:0 0 auto;position:relative;width:320px;">';
-      html += '<img id="' + galleryId + '_hero" src="' + photos[0] + '" style="width:320px;height:220px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid #1B2A4A;" onclick="openCompPhotoModal(\'' + galleryId + '\')">';
+      html += '<img id="' + galleryId + '_hero" src="' + photos[0] + '" style="width:320px;height:220px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid #1B2A4A;" onclick="openCompPhotoModal(\'' + galleryId + '\')" onerror="handleBrokenCompPhoto(\'' + galleryId + '\', this)">';
 
       // Left/Right navigation arrows on hero
       if (photos.length > 1) {
@@ -8465,7 +8493,7 @@
       html += '<div id="' + galleryId + '_thumbs" style="display:flex;gap:5px;flex-wrap:nowrap;max-height:220px;overflow-y:auto;overflow-x:hidden;flex-direction:row;flex-wrap:wrap;">';
       for (var i = 0; i < photos.length; i++) {
         var activeBorder = (i === 0) ? '2px solid #ED7D31' : '2px solid transparent';
-        html += '<img data-idx="' + i + '" src="' + photos[i] + '" style="width:68px;height:50px;object-fit:cover;border-radius:4px;cursor:pointer;border:' + activeBorder + ';flex-shrink:0;transition:border 0.15s;" onclick="carouselJump(\'' + galleryId + '\',' + i + ')" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">';
+        html += '<img data-idx="' + i + '" src="' + photos[i] + '" style="width:68px;height:50px;object-fit:cover;border-radius:4px;cursor:pointer;border:' + activeBorder + ';flex-shrink:0;transition:border 0.15s;" onclick="carouselJump(\'' + galleryId + '\',' + i + ')" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'" onerror="this.parentElement && this.parentElement.tagName===\'DIV\' ? (this.parentElement.style.display=\'none\') : (this.style.display=\'none\')">';
       }
       html += '</div>';
       html += '<div style="font-size:10px;color:#999;margin-top:4px;">' + photos.length + ' ' + sourceName + ' photos · Use arrows or click to browse · Click photo to enlarge</div>';
@@ -8486,7 +8514,7 @@
 
       // Hero image with navigation overlay
       html += '<div style="flex:0 0 auto;position:relative;width:320px;">';
-      html += '<img id="' + galleryId + '_hero" src="' + photos[0] + '" style="width:320px;height:220px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid #1B2A4A;" onclick="openCompPhotoModal(\'' + galleryId + '\')">';
+      html += '<img id="' + galleryId + '_hero" src="' + photos[0] + '" style="width:320px;height:220px;object-fit:cover;border-radius:8px;cursor:pointer;border:2px solid #1B2A4A;" onclick="openCompPhotoModal(\'' + galleryId + '\')" onerror="handleBrokenCompPhoto(\'' + galleryId + '\', this)">';
 
       // Source badge on hero image
       html += '<div id="' + galleryId + '_srcBadge" style="position:absolute;top:8px;left:8px;background:' + srcColor + ';color:white;font-size:9px;padding:2px 7px;border-radius:8px;font-weight:700;letter-spacing:0.3px;">' + currentSrc + '</div>';
@@ -8509,7 +8537,7 @@
         var thumbColor = srcColors[thumbSrc] || '#999';
         var activeBorder = (i === 0) ? '2px solid #ED7D31' : '2px solid transparent';
         html += '<div style="position:relative;flex-shrink:0;">';
-        html += '<img data-idx="' + i + '" src="' + photos[i] + '" style="width:68px;height:50px;object-fit:cover;border-radius:4px;cursor:pointer;border:' + activeBorder + ';transition:border 0.15s;" onclick="carouselJump(\'' + galleryId + '\',' + i + ')" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'">';
+        html += '<img data-idx="' + i + '" src="' + photos[i] + '" style="width:68px;height:50px;object-fit:cover;border-radius:4px;cursor:pointer;border:' + activeBorder + ';transition:border 0.15s;" onclick="carouselJump(\'' + galleryId + '\',' + i + ')" onmouseover="this.style.opacity=\'0.8\'" onmouseout="this.style.opacity=\'1\'" onerror="this.parentElement.style.display=\'none\'">';
         html += '<div style="position:absolute;bottom:1px;right:1px;background:' + thumbColor + ';width:8px;height:8px;border-radius:50%;border:1px solid white;" title="' + thumbSrc + '"></div>';
         html += '</div>';
       }
