@@ -8216,6 +8216,15 @@
               if (data2.debug && data2.debug.matchedAddr) comp._realtorAddress = data2.debug.matchedAddr;
               if (data2.permalink) comp._realtorPermalink = data2.permalink;
             }
+            // Pass through worker's full debug — most importantly the `scrape` field which tells
+            // us whether __NEXT_DATA__ was found and whether the target property node matched.
+            if (data2.debug) {
+              dbg.workerDebug = {
+                photoCount: data2.debug.photoCount,
+                scrape: data2.debug.scrape || null,
+                strategies: data2.debug.strategies,
+              };
+            }
           } catch (e) { dbg.byAddrError = e.message; }
         }
 
@@ -8231,6 +8240,8 @@
           var resp = await fetch(workerUrl + '/api/redfin/photos?url=' + encodeURIComponent(redfinUrl));
           var data = await resp.json();
           dbg.urlResult = { count: (data.photos || []).length, error: data.error || null, cached: data.cached || false };
+          // Expose worker's strategy debug — tells us if photoUrls API fired and what it returned
+          if (data.debug) dbg.workerDebug = { propertyId: data.debug.propertyId, attempts: data.debug.attempts };
           if (!data.error && data.photos && data.photos.length > 0) {
             return { source: 'redfin', photos: data.photos, debug: dbg };
           }
@@ -8241,9 +8252,9 @@
       var debugLogs = [];
       var results = await Promise.all(fetchPromises);
       results.forEach(function(r) {
-        if (r.source === 'zillow') { zillowPhotos = r.photos; debugLogs.push('Zillow: ' + r.photos.length + ' photos' + (r.error ? ' (err: ' + r.error + ')' : '') + (r.debug ? ' [' + JSON.stringify(r.debug).substring(0, 100) + ']' : '')); }
-        else if (r.source === 'realtor') { realtorPhotos = r.photos; debugLogs.push('Realtor: ' + r.photos.length + ' photos' + (r.error ? ' (err: ' + r.error + ')' : '') + (r.debug ? ' [' + JSON.stringify(r.debug).substring(0, 100) + ']' : '')); }
-        else if (r.source === 'redfin') { redfinPhotos = r.photos; debugLogs.push('Redfin: ' + r.photos.length + ' photos' + (r.error ? ' (err: ' + r.error + ')' : '') + (r.debug ? ' [' + JSON.stringify(r.debug).substring(0, 100) + ']' : '')); }
+        if (r.source === 'zillow') { zillowPhotos = r.photos; debugLogs.push('Zillow: ' + r.photos.length + ' photos' + (r.error ? ' (err: ' + r.error + ')' : '') + (r.debug ? ' [' + JSON.stringify(r.debug).substring(0, 500) + ']' : '')); }
+        else if (r.source === 'realtor') { realtorPhotos = r.photos; debugLogs.push('Realtor: ' + r.photos.length + ' photos' + (r.error ? ' (err: ' + r.error + ')' : '') + (r.debug ? ' [' + JSON.stringify(r.debug).substring(0, 500) + ']' : '')); }
+        else if (r.source === 'redfin') { redfinPhotos = r.photos; debugLogs.push('Redfin: ' + r.photos.length + ' photos' + (r.error ? ' (err: ' + r.error + ')' : '') + (r.debug ? ' [' + JSON.stringify(r.debug).substring(0, 500) + ']' : '')); }
       });
       debugLogs.push('Address used: "' + compAddr + '"');
       debugLogs.push('zpid: ' + (zpid || 'none') + ', realtorId: ' + (comp ? (comp._realtorPropertyId || 'none') : 'none') + ', source: ' + (comp ? (comp._dataSource || '?') : '?'));
