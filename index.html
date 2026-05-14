@@ -7979,11 +7979,12 @@
       // Inputs row — 5 columns
       html += '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px;">';
 
-      // Avg list price (read-only, derived from selected comps)
+      // Avg list price (read-only, derived from selected comps) — has IDs so we can
+      // refresh it surgically when comps are toggled without re-rendering inputs.
       html += '<div style="background:white;border-radius:6px;padding:10px;border:1px solid #CE93D8;">';
       html += '<label style="font-size:10px;font-weight:700;color:#7B1FA2;text-transform:uppercase;">Avg List Price</label>';
-      html += '<div style="font-size:18px;font-weight:800;color:#1B2A4A;margin-top:2px;">' + fmt(novListPrice) + '</div>';
-      html += '<div style="font-size:9px;color:#999;margin-top:1px;">From selected comps</div>';
+      html += '<div id="novCalc_listDisplay" style="font-size:18px;font-weight:800;color:#1B2A4A;margin-top:2px;">' + fmt(novListPrice) + '</div>';
+      html += '<div id="novCalc_listSubtext" style="font-size:9px;color:#999;margin-top:1px;">From selected comps</div>';
       html += '</div>';
 
       // Closing costs ($) — editable, default = state-based estimate
@@ -7993,11 +7994,11 @@
       html += '<div style="font-size:9px;color:#999;margin-top:1px;">Est. ' + (subjStateForCC || '?') + ' @ ' + ccPctDefault + '%</div>';
       html += '</div>';
 
-      // Realtor commission %
+      // Realtor commission % — dollar preview also gets an ID for live updates
       html += '<div style="background:white;border-radius:6px;padding:10px;border:1px solid #CE93D8;">';
       html += '<label style="font-size:10px;font-weight:700;color:#7B1FA2;text-transform:uppercase;">Realtor Commission (%)</label>';
       html += '<input type="number" id="novCalc_comm" value="' + arvCalcState.novCommissionPct + '" step="0.5" oninput="updateNovationCalc()" style="width:100%;padding:4px 6px;font-size:16px;font-weight:700;border:1px solid #ddd;border-radius:4px;margin-top:2px;color:#1B2A4A;">';
-      html += '<div style="font-size:9px;color:#999;margin-top:1px;">= ' + fmt(novListPrice * (arvCalcState.novCommissionPct / 100)) + '</div>';
+      html += '<div id="novCalc_commPreview" style="font-size:9px;color:#999;margin-top:1px;">= ' + fmt(novListPrice * (arvCalcState.novCommissionPct / 100)) + '</div>';
       html += '</div>';
 
       // Our fee
@@ -9444,7 +9445,15 @@
 
       var maoGrid = document.getElementById('arvCalcMAOGrid');
       if (maoGrid) maoGrid.innerHTML = buildARVCalcMAOGrid();
-      // Novation list price = avg of selected comps. Re-render the novation results.
+
+      // Novation calc — refresh the inputs-row Avg List Price display + the commission $ preview + the results panel
+      var novListEl = document.getElementById('novCalc_listDisplay');
+      if (novListEl) novListEl.textContent = fmt(arv);
+      var novListSubEl = document.getElementById('novCalc_listSubtext');
+      if (novListSubEl) novListSubEl.textContent = selectedCount > 0 ? 'Avg of ' + selectedCount + ' selected comps' : 'No comps selected';
+      var commPreview = document.getElementById('novCalc_commPreview');
+      var commPct = parseFloat(arvCalcState.novCommissionPct) || 0;
+      if (commPreview) commPreview.textContent = '= ' + fmt(arv * (commPct / 100));
       var novResults = document.getElementById('novCalcResults');
       if (novResults) novResults.innerHTML = buildNovationCalcResults();
     }
@@ -9678,6 +9687,11 @@
       if (commEl) arvCalcState.novCommissionPct = parseFloat(commEl.value) || 0;
       if (feeEl) arvCalcState.novOurFee = parseFloat(feeEl.value) || 0;
       if (dealEl) arvCalcState.novDealCosts = parseFloat(dealEl.value) || 0;
+      // Refresh the commission $-preview based on the new % and current list price
+      var commPreview = document.getElementById('novCalc_commPreview');
+      var listPrice = arvCalcState.calculatedARV || 0;
+      var commPct = parseFloat(arvCalcState.novCommissionPct) || 0;
+      if (commPreview) commPreview.textContent = '= ' + fmt(listPrice * (commPct / 100));
       var results = document.getElementById('novCalcResults');
       if (results) results.innerHTML = buildNovationCalcResults();
     }
