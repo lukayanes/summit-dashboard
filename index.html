@@ -7968,15 +7968,16 @@
       if (typeof arvCalcState.novCommissionPct === 'undefined') arvCalcState.novCommissionPct = 6;
       if (typeof arvCalcState.novOurFee === 'undefined') arvCalcState.novOurFee = 20000;
       if (typeof arvCalcState.novClosingCosts === 'undefined' || arvCalcState.novClosingCosts === null) arvCalcState.novClosingCosts = defaultCC;
+      if (typeof arvCalcState.novDealCosts === 'undefined') arvCalcState.novDealCosts = 0;
 
       html += '<div style="background:#F3E5F5;border:2px solid #7B1FA2;border-radius:10px;padding:20px;margin-bottom:20px;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">';
-      html += '<div style="font-size:16px;font-weight:800;color:#4A148C;">💰 Novation Profit Calculator</div>';
+      html += '<div style="font-size:16px;font-weight:800;color:#4A148C;">💰 Novation — Max Contract Price</div>';
       html += '<div style="font-size:11px;color:#7B1FA2;font-weight:600;">Based on avg of selected comps · No ARV</div>';
       html += '</div>';
 
-      // Inputs row
-      html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">';
+      // Inputs row — 5 columns
+      html += '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px;">';
 
       // Avg list price (read-only, derived from selected comps)
       html += '<div style="background:white;border-radius:6px;padding:10px;border:1px solid #CE93D8;">';
@@ -8004,6 +8005,13 @@
       html += '<label style="font-size:10px;font-weight:700;color:#7B1FA2;text-transform:uppercase;">Our Fee ($)</label>';
       html += '<input type="number" id="novCalc_ourfee" value="' + arvCalcState.novOurFee + '" oninput="updateNovationCalc()" style="width:100%;padding:4px 6px;font-size:16px;font-weight:700;border:1px solid #ddd;border-radius:4px;margin-top:2px;color:#1B2A4A;">';
       html += '<div style="font-size:9px;color:#999;margin-top:1px;">Default $20,000</div>';
+      html += '</div>';
+
+      // Repair / Deal Costs — editable, default $0
+      html += '<div style="background:white;border-radius:6px;padding:10px;border:1px solid #CE93D8;">';
+      html += '<label style="font-size:10px;font-weight:700;color:#7B1FA2;text-transform:uppercase;">Repair / Deal Costs ($)</label>';
+      html += '<input type="number" id="novCalc_dealcosts" value="' + arvCalcState.novDealCosts + '" oninput="updateNovationCalc()" style="width:100%;padding:4px 6px;font-size:16px;font-weight:700;border:1px solid #ddd;border-radius:4px;margin-top:2px;color:#1B2A4A;">';
+      html += '<div style="font-size:9px;color:#999;margin-top:1px;">Title fees, EMD, repairs</div>';
       html += '</div>';
 
       html += '</div>'; // end inputs grid
@@ -9447,11 +9455,11 @@
       arvCalcState.contractPrice = contractEl ? parseFloat(contractEl.value) || 0 : 0;
       arvCalcState.repairs = repairsEl ? parseFloat(repairsEl.value) || 0 : 0;
 
+      // Cash MAO uses contract price + repairs — refresh that grid.
       var maoGrid = document.getElementById('arvCalcMAOGrid');
       if (maoGrid) maoGrid.innerHTML = buildARVCalcMAOGrid();
-      // Contract price affects novation profit too — re-render that block.
-      var novResults = document.getElementById('novCalcResults');
-      if (novResults) novResults.innerHTML = buildNovationCalcResults();
+      // Novation calc no longer subtracts contract price (output IS the contract ceiling),
+      // so contract changes here don't affect it. No refresh needed.
     }
 
     function setARVCalcRepairs(val) {
@@ -9612,43 +9620,46 @@
     }
 
     /**
-     * Build the Novation Calculator results panel.
-     * Profit = list price − closing costs − commission − our fee − contract price
+     * Build the Novation Calculator results panel — outputs MAX CONTRACT PRICE.
+     * Max Contract = list price − closing costs − commission − our fee − repair/deal costs
+     * This is the ceiling we can offer the seller while still hitting our $20K fee.
      */
     function buildNovationCalcResults() {
       var listPrice = arvCalcState.calculatedARV || 0;
       var cc = parseFloat(arvCalcState.novClosingCosts) || 0;
       var commPct = parseFloat(arvCalcState.novCommissionPct) || 0;
       var ourFee = parseFloat(arvCalcState.novOurFee) || 0;
-      var contract = arvCalcState.contractPrice || 0;
+      var dealCosts = parseFloat(arvCalcState.novDealCosts) || 0;
 
       var commissionAmt = listPrice * (commPct / 100);
-      var totalDeductions = cc + commissionAmt + ourFee + contract;
-      var profit = listPrice - totalDeductions;
-      var marginPct = listPrice > 0 ? (profit / listPrice * 100) : 0;
+      var totalDeductions = cc + commissionAmt + ourFee + dealCosts;
+      var maxContract = listPrice - totalDeductions;
+      var contractPctOfList = listPrice > 0 ? (maxContract / listPrice * 100) : 0;
 
-      var profitColor = profit >= 10000 ? '#2E7D32' : (profit >= 0 ? '#F57F17' : '#C62828');
-      var profitBg = profit >= 10000 ? '#C8E6C9' : (profit >= 0 ? '#FFF8E1' : '#FFCDD2');
+      // Color logic: anything above $50K is decent novation territory; below $0 is impossible
+      var maxColor = maxContract >= 50000 ? '#2E7D32' : (maxContract > 0 ? '#F57F17' : '#C62828');
+      var maxBg = maxContract >= 50000 ? '#C8E6C9' : (maxContract > 0 ? '#FFF8E1' : '#FFCDD2');
 
       var html = '';
-      // Breakdown grid
+      // Breakdown grid — 5 cols: List, -CC, -Realtor, -OurFee, -DealCosts
       html += '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;background:#FAFAFA;border-radius:6px;padding:10px;margin-bottom:10px;font-size:11px;">';
       html += '<div><div style="color:#999;text-transform:uppercase;font-weight:700;">List</div><div style="font-size:14px;font-weight:700;color:#1B2A4A;">' + fmt(listPrice) + '</div></div>';
       html += '<div><div style="color:#999;text-transform:uppercase;font-weight:700;">− CC</div><div style="font-size:14px;font-weight:700;color:#C62828;">' + fmt(cc) + '</div></div>';
       html += '<div><div style="color:#999;text-transform:uppercase;font-weight:700;">− Realtor (' + commPct + '%)</div><div style="font-size:14px;font-weight:700;color:#C62828;">' + fmt(commissionAmt) + '</div></div>';
       html += '<div><div style="color:#999;text-transform:uppercase;font-weight:700;">− Our Fee</div><div style="font-size:14px;font-weight:700;color:#C62828;">' + fmt(ourFee) + '</div></div>';
-      html += '<div><div style="color:#999;text-transform:uppercase;font-weight:700;">− Contract</div><div style="font-size:14px;font-weight:700;color:#C62828;">' + fmt(contract) + '</div></div>';
+      html += '<div><div style="color:#999;text-transform:uppercase;font-weight:700;">− Repair / Deal</div><div style="font-size:14px;font-weight:700;color:#C62828;">' + fmt(dealCosts) + '</div></div>';
       html += '</div>';
 
-      // Profit headline
-      html += '<div style="background:' + profitBg + ';border-radius:8px;padding:14px;display:flex;justify-content:space-between;align-items:center;">';
+      // Max Contract Price headline
+      html += '<div style="background:' + maxBg + ';border-radius:8px;padding:14px;display:flex;justify-content:space-between;align-items:center;">';
       html += '<div>';
-      html += '<div style="font-size:11px;font-weight:700;color:' + profitColor + ';text-transform:uppercase;">Estimated Novation Profit</div>';
-      html += '<div style="font-size:28px;font-weight:800;color:' + profitColor + ';margin-top:2px;">' + fmt(profit) + '</div>';
+      html += '<div style="font-size:11px;font-weight:700;color:' + maxColor + ';text-transform:uppercase;">Max Contract Price</div>';
+      html += '<div style="font-size:28px;font-weight:800;color:' + maxColor + ';margin-top:2px;">' + fmt(maxContract) + '</div>';
+      html += '<div style="font-size:11px;color:#555;margin-top:2px;">Offer this or less to seller to hit $' + (ourFee/1000).toFixed(0) + 'K fee</div>';
       html += '</div>';
       html += '<div style="text-align:right;">';
-      html += '<div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;">Margin</div>';
-      html += '<div style="font-size:22px;font-weight:800;color:' + profitColor + ';">' + marginPct.toFixed(1) + '%</div>';
+      html += '<div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;">% of List</div>';
+      html += '<div style="font-size:22px;font-weight:800;color:' + maxColor + ';">' + contractPctOfList.toFixed(1) + '%</div>';
       html += '</div>';
       html += '</div>';
 
@@ -9662,9 +9673,11 @@
       var ccEl = document.getElementById('novCalc_cc');
       var commEl = document.getElementById('novCalc_comm');
       var feeEl = document.getElementById('novCalc_ourfee');
+      var dealEl = document.getElementById('novCalc_dealcosts');
       if (ccEl) arvCalcState.novClosingCosts = parseFloat(ccEl.value) || 0;
       if (commEl) arvCalcState.novCommissionPct = parseFloat(commEl.value) || 0;
       if (feeEl) arvCalcState.novOurFee = parseFloat(feeEl.value) || 0;
+      if (dealEl) arvCalcState.novDealCosts = parseFloat(dealEl.value) || 0;
       var results = document.getElementById('novCalcResults');
       if (results) results.innerHTML = buildNovationCalcResults();
     }
