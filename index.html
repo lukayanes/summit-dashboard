@@ -7282,8 +7282,51 @@
       calculatedARV: 0,
       daysBack: 365,
       radiusMiles: 1.0,
-      lastAddress: ''
+      lastAddress: '',
+      // Lot display unit — toggled by user, persisted in localStorage.
+      // Internally lot sizes are always stored in sqft so the scoring function math stays consistent.
+      lotUnit: (function() {
+        try { return localStorage.getItem('arvLotUnitPref') || 'sqft'; } catch (e) { return 'sqft'; }
+      })()
     };
+
+    // 1 acre = 43,560 sqft
+    var SQFT_PER_ACRE = 43560;
+
+    /**
+     * Format a lot size (always stored as sqft) into a display string using arvCalcState.lotUnit.
+     * Examples: 21780 sqft + 'acres' → "0.50 ac"; 21780 sqft + 'sqft' → "21,780 sf"
+     */
+    function fmtLot(sqftValue, opts) {
+      if (!sqftValue || sqftValue <= 0) return '—';
+      var unit = (opts && opts.unit) || arvCalcState.lotUnit || 'sqft';
+      if (unit === 'acres') {
+        var acres = sqftValue / SQFT_PER_ACRE;
+        // 2 decimals under 1 acre, 1 decimal otherwise
+        return acres.toFixed(acres < 1 ? 2 : 1) + ' ac';
+      }
+      return Math.round(sqftValue).toLocaleString() + ' sf';
+    }
+
+    /**
+     * Parse a lot input string in the current display unit and return sqft (the canonical form).
+     * Returns null if invalid.
+     */
+    function parseLotInput(input, fromUnit) {
+      var n = parseFloat(String(input || '').replace(/[^0-9.]/g, ''));
+      if (isNaN(n) || n <= 0) return null;
+      var unit = fromUnit || arvCalcState.lotUnit || 'sqft';
+      return unit === 'acres' ? Math.round(n * SQFT_PER_ACRE) : Math.round(n);
+    }
+
+    /**
+     * Toggle the lot display unit between sqft and acres. Persists choice and re-renders.
+     */
+    function toggleLotUnit() {
+      arvCalcState.lotUnit = (arvCalcState.lotUnit === 'acres') ? 'sqft' : 'acres';
+      try { localStorage.setItem('arvLotUnitPref', arvCalcState.lotUnit); } catch (e) {}
+      if (arvCalcState.data) renderARVCalcResults(arvCalcState.data);
+    }
 
     function renderARVCalcTab() {
       var container = document.getElementById('arvcalcContent');
@@ -7514,11 +7557,21 @@
       // trigger instant client-side comp re-grading.
       var srcMap = subj._sourceMap || {};
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:8px;">';
+      // Subject lot may have come in with a unit field (Zillow returns lotUnit). If it's
+      // 'acres', normalize to sqft for internal storage. After this, subj.lotSize is always sqft.
+      if (subj.lotSize && (subj.lotUnit === 'acres' || (subj.lotSize > 0 && subj.lotSize < 50))) {
+        // Heuristic: if lotUnit is 'acres' OR the number is suspiciously small for sqft,
+        // treat it as acres and convert to sqft for our canonical store.
+        subj.lotSize = Math.round(subj.lotSize * SQFT_PER_ACRE);
+        subj.lotUnit = 'sqft';
+      }
+      var lotUnitToggle = '<span onclick="event.stopPropagation();toggleLotUnit();" title="Toggle sqft / acres" style="display:inline-block;margin-left:5px;padding:1px 5px;background:#1B2A4A;color:white;font-size:8px;font-weight:700;border-radius:3px;cursor:pointer;vertical-align:middle;">' + (arvCalcState.lotUnit === 'acres' ? 'AC' : 'SF') + ' ⇄</span>';
+
       var details = [
         { label: 'Beds', value: subj.bedrooms || '—', srcKey: 'bedrooms', rawValue: subj.bedrooms },
         { label: 'Baths', value: subj.bathrooms || '—', srcKey: 'bathrooms', rawValue: subj.bathrooms },
         { label: 'Sqft', value: subj.livingArea ? subj.livingArea.toLocaleString() : '—', srcKey: 'livingArea', rawValue: subj.livingArea },
-        { label: 'Lot', value: subj.lotSize ? subj.lotSize.toLocaleString() : '—', srcKey: 'lotSize', rawValue: subj.lotSize },
+        { label: 'Lot' + lotUnitToggle, value: fmtLot(subj.lotSize), srcKey: 'lotSize', rawValue: subj.lotSize },
         { label: 'Year Built', value: subj.yearBuilt || '—', srcKey: 'yearBuilt', rawValue: subj.yearBuilt },
         { label: 'Zestimate', value: subj.zestimate ? fmt(subj.zestimate) : '—' },
         { label: 'Rent Est', value: subj.rentZestimate ? fmt(subj.rentZestimate) + '/mo' : '—' },
@@ -7617,6 +7670,7 @@
         html += '<th style="padding:8px;text-align:center;">Beds</th>';
         html += '<th style="padding:8px;text-align:center;">Baths</th>';
         html += '<th style="padding:8px;text-align:right;">Sqft</th>';
+        html += '<th style="padding:8px;text-align:right;">Lot (' + (arvCalcState.lotUnit === 'acres' ? 'ac' : 'sf') + ')</th>';
         html += '<th style="padding:8px;text-align:right;">$/Sqft</th>';
         html += '<th style="padding:8px;text-align:right;">Dist</th>';
         html += '<th style="padding:8px;text-align:right;">Year</th>';
@@ -7657,6 +7711,11 @@
           var comp = comps[c];
           var cPrice = comp.price || 0;
           var cSqft = comp.livingArea || 0;
+          // Lot size — normalize to sqft if the source declared acres or value looks like acres
+          var cLotSqft = comp.lotSize || comp.lotAreaValue || 0;
+          if (cLotSqft && (comp.lotUnit === 'acres' || comp.lotAreaUnit === 'acres' || (cLotSqft > 0 && cLotSqft < 50))) {
+            cLotSqft = Math.round(cLotSqft * SQFT_PER_ACRE);
+          }
           var cPpsf = cSqft > 0 ? Math.round(cPrice / cSqft) : 0;
           var cAddr = comp.address || '—';
           if (typeof cAddr === 'object') cAddr = (cAddr.streetAddress || cAddr.line || '') + (cAddr.city ? ', ' + cAddr.city : '') + (cAddr.state || cAddr.state_code ? ', ' + (cAddr.state || cAddr.state_code) : '') + (cAddr.zipcode || cAddr.postal_code ? ' ' + (cAddr.zipcode || cAddr.postal_code) : '');
@@ -7783,6 +7842,23 @@
           html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bedrooms || '—') + _compDelta(comp.bedrooms, _subjBeds, ' bd') + '</td>';
           html += '<td style="padding:6px 8px;text-align:center;">' + (comp.bathrooms || '—') + _compDelta(comp.bathrooms, _subjBaths, ' ba') + '</td>';
           html += '<td style="padding:6px 8px;text-align:right;">' + (cSqft ? cSqft.toLocaleString() : '—') + _compDelta(cSqft, _subjSqft, ' sf') + '</td>';
+          // Lot column — same unit as subject toggle. Shows colored delta vs subject lot.
+          var _subjLotForDelta = (_subj.lotSize && _subj.lotSize > 0) ? _subj.lotSize : 0;
+          var lotDeltaHtml = '';
+          if (cLotSqft && _subjLotForDelta) {
+            var diff = cLotSqft - _subjLotForDelta;
+            if (Math.abs(diff) > 100) {
+              var color = diff > 0 ? '#2E7D32' : '#C62828';
+              var arrow = diff > 0 ? '▲' : '▼';
+              var deltaLabel = arvCalcState.lotUnit === 'acres'
+                ? ((diff > 0 ? '+' : '−') + (Math.abs(diff) / SQFT_PER_ACRE).toFixed(2) + ' ac')
+                : ((diff > 0 ? '+' : '−') + Math.abs(diff).toLocaleString() + ' sf');
+              lotDeltaHtml = '<span style="font-size:9px;color:' + color + ';display:block;" title="vs subject">' + arrow + ' ' + deltaLabel + '</span>';
+            } else {
+              lotDeltaHtml = '<span style="font-size:9px;color:#999;display:block;">= same</span>';
+            }
+          }
+          html += '<td style="padding:6px 8px;text-align:right;">' + fmtLot(cLotSqft) + lotDeltaHtml + '</td>';
           html += '<td style="padding:6px 8px;text-align:right;">' + (cPpsf ? '$' + cPpsf : '—') + _compDelta(cPpsf, _subjPpsf, '/sf', false, true) + '</td>';
           html += '<td style="padding:6px 8px;text-align:right;">' + cDist + '</td>';
           html += '<td style="padding:6px 8px;text-align:right;">' + (comp.yearBuilt || '—') + _compDelta(comp.yearBuilt, _subjYear, ' yr') + '</td>';
@@ -8271,51 +8347,131 @@
     }
 
     /**
-     * Edit handler — click a subject card to inline-edit the value.
-     * Uses prompt() for simplicity. Empty/zero/cleared input removes the override.
+     * Edit handler — click a subject card → inline input field appears.
+     * On Enter or blur, save the value and trigger client-side comp re-grading.
      */
     function editSubjectField(fieldKey) {
+      console.log('[ARV Edit] editSubjectField fired for', fieldKey);
+      var subj = (arvCalcState.data && arvCalcState.data.subject) ? arvCalcState.data.subject : null;
+      if (!subj) { console.warn('[ARV Edit] No subject in state'); return; }
+      var card = document.querySelector('[data-subj-field="' + fieldKey + '"]');
+      if (!card) { console.warn('[ARV Edit] Card not found for', fieldKey); return; }
+      var valueDiv = card.querySelector('div:nth-child(2)');
+      if (!valueDiv) { console.warn('[ARV Edit] Value div not found in card'); return; }
+      // For lot size, show the value in whatever unit is currently selected and use
+      // a smart step. For acres a 0.01 step is fine; for sqft we use 100.
+      var displayValue, stepAttr;
+      if (fieldKey === 'lotSize') {
+        if (arvCalcState.lotUnit === 'acres') {
+          displayValue = subj.lotSize ? (subj.lotSize / SQFT_PER_ACRE).toFixed(2) : '';
+          stepAttr = '0.01';
+        } else {
+          displayValue = subj.lotSize || '';
+          stepAttr = '100';
+        }
+      } else {
+        displayValue = subj[fieldKey] || '';
+        stepAttr = '0.5';
+      }
+      var inputId = 'editFld_' + fieldKey + '_' + Date.now();
+      var unitLabel = fieldKey === 'lotSize' ? (arvCalcState.lotUnit === 'acres' ? ' ac' : ' sf') : '';
+      valueDiv.innerHTML = '<input type="number" id="' + inputId + '" value="' + displayValue + '" min="0" step="' + stepAttr + '" autofocus '
+        + 'style="width:90%;padding:4px 6px;font-size:15px;font-weight:700;border:2px solid #ED7D31;border-radius:4px;text-align:center;color:#1B2A4A;outline:none;" '
+        + 'onkeydown="if(event.key===\'Enter\'){this.blur();}else if(event.key===\'Escape\'){this.value=\'__cancel__\';this.blur();}" '
+        + 'onblur="saveSubjectField(\'' + fieldKey + '\',\'' + inputId + '\')">'
+        + (unitLabel ? '<div style="font-size:9px;color:#999;margin-top:2px;">enter in' + unitLabel + '</div>' : '');
+      var el = document.getElementById(inputId);
+      if (el) { el.focus(); el.select(); }
+    }
+
+    /**
+     * Commit handler — fires when the inline input loses focus or Enter is pressed.
+     */
+    function saveSubjectField(fieldKey, inputId) {
+      console.log('[ARV Edit] saveSubjectField called', fieldKey, inputId);
       var subj = (arvCalcState.data && arvCalcState.data.subject) ? arvCalcState.data.subject : null;
       if (!subj) return;
-      var labels = { bedrooms: 'Beds', bathrooms: 'Baths', livingArea: 'Sqft', lotSize: 'Lot size (sqft)', yearBuilt: 'Year Built' };
-      var label = labels[fieldKey] || fieldKey;
-      var current = subj[fieldKey];
-      var input = prompt('Enter correct ' + label + ' for this property (leave blank to clear override):', current || '');
-      if (input === null) return; // cancelled
-      var trimmed = String(input).trim();
+      var input = document.getElementById(inputId);
+      if (!input) { console.warn('[ARV Edit] Input element missing'); return; }
+      var raw = input.value;
+      if (raw === '__cancel__') {
+        console.log('[ARV Edit] Edit cancelled');
+        renderARVCalcResults(arvCalcState.data);
+        return;
+      }
+      var trimmed = String(raw).trim();
+      var oldValue = subj[fieldKey];
       if (trimmed === '') {
-        // Clear override — revert to whatever Zillow/Realtor originally provided
+        // Clear override
         saveSubjectOverrideValue(subj.address, fieldKey, null);
-        // Need to re-fetch to get original value back. Easier: just set to null for now.
-        // (User can hit Find Comps again to restore from API if needed.)
-        subj[fieldKey] = null;
         if (subj._sourceMap) subj._sourceMap[fieldKey] = null;
+        console.log('[ARV Edit] Cleared override for', fieldKey);
       } else {
         var num = parseFloat(trimmed);
-        if (isNaN(num) || num <= 0) { alert('Please enter a positive number'); return; }
-        saveSubjectOverrideValue(subj.address, fieldKey, num);
-        subj[fieldKey] = num;
+        if (isNaN(num) || num <= 0) {
+          showArvEditToast('Invalid number — edit cancelled', '#C62828');
+          renderARVCalcResults(arvCalcState.data);
+          return;
+        }
+        // For lot size, convert from the current display unit (acres or sqft) to sqft for storage.
+        var storedValue = num;
+        if (fieldKey === 'lotSize' && arvCalcState.lotUnit === 'acres') {
+          storedValue = Math.round(num * SQFT_PER_ACRE);
+          console.log('[ARV Edit] Lot input', num, 'acres → stored as', storedValue, 'sqft');
+        } else if (fieldKey === 'lotSize') {
+          storedValue = Math.round(num);
+        }
+        saveSubjectOverrideValue(subj.address, fieldKey, storedValue);
+        subj[fieldKey] = storedValue;
         if (!subj._sourceMap) subj._sourceMap = {};
         subj._sourceMap[fieldKey] = 'manual';
+        console.log('[ARV Edit] Saved', fieldKey, '=', storedValue, '(was', oldValue + ')');
       }
-      // Re-grade comps with the updated subject and re-render
+
+      // Re-grade comps client-side using updated subject
+      var regraded = 0;
+      var gradeChanges = 0;
       if (arvCalcState.data.comps && arvCalcState.data.comps.length > 0) {
         arvCalcState.data.comps.forEach(function(c) {
+          var oldGrade = c.grade;
+          var oldPct = c.matchPct;
           var r = scoreCompClient(subj, c);
           c.matchPct = r.matchPct;
           c.grade = r.grade;
           c.scoreBreakdown = { penalties: r.penalties };
+          regraded++;
+          if (oldGrade !== r.grade || oldPct !== r.matchPct) gradeChanges++;
         });
         arvCalcState.data.comps.sort(function(a, b) { return (b.matchPct || 0) - (a.matchPct || 0); });
-        // Re-auto-select A/B comps with new grades
+        // Re-auto-select A/B comps
         arvCalcState.selectedComps = {};
         arvCalcState.data.comps.forEach(function(c, i) {
           var ct = c._compType || '';
           var isTrueComp = (ct === 'sold' || ct === 'pending');
           arvCalcState.selectedComps[i] = isTrueComp && (c.grade === 'A' || c.grade === 'B');
         });
+        console.log('[ARV Edit] Re-graded', regraded, 'comps,', gradeChanges, 'changed grade/match%');
       }
       renderARVCalcResults(arvCalcState.data);
+      showArvEditToast('✓ Saved ' + (labelFor(fieldKey)) + ' = ' + (trimmed || 'cleared') + ' · Re-graded ' + regraded + ' comps (' + gradeChanges + ' changed)', '#2E7D32');
+    }
+
+    function labelFor(fieldKey) {
+      return ({ bedrooms: 'Beds', bathrooms: 'Baths', livingArea: 'Sqft', lotSize: 'Lot', yearBuilt: 'Year' }[fieldKey] || fieldKey);
+    }
+
+    /**
+     * Brief toast notification at top of ARV calc — confirms re-grade or shows error.
+     */
+    function showArvEditToast(message, color) {
+      var existing = document.getElementById('arvEditToast');
+      if (existing) existing.remove();
+      var toast = document.createElement('div');
+      toast.id = 'arvEditToast';
+      toast.style.cssText = 'position:fixed;top:20px;right:20px;background:' + (color || '#1B2A4A') + ';color:white;padding:12px 18px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.2);z-index:10000;max-width:400px;';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(function() { if (toast.parentElement) toast.remove(); }, 4000);
     }
 
     /**
