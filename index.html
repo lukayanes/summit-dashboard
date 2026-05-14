@@ -7538,16 +7538,44 @@
         html += '<div style="margin-bottom:12px;">';
         html += '<div style="font-size:15px;font-weight:700;color:#1B2A4A;margin-bottom:6px;">' + (subjAddrDisplay || 'Subject Property') + '</div>';
         html += '<div id="subject-links" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">';
-        // Zillow link
-        if (subj.zpid) {
-          var subjZillowUrl = 'https://www.zillow.com/homedetails/' + subj.zpid + '_zpid/';
+
+        // Zillow: prefer direct /homedetails/<zpid>/ if known; fall back to /homes/<addr>_rb/
+        // which routes through Zillow's address resolver and lands on the property.
+        var subjZillowUrl = subj.zpid
+          ? 'https://www.zillow.com/homedetails/' + subj.zpid + '_zpid/'
+          : (subjAddrDisplay ? 'https://www.zillow.com/homes/' + encodeURIComponent(subjAddrDisplay) + '_rb/' : '');
+        if (subjZillowUrl) {
           html += '<a href="' + subjZillowUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#E8F0FE;border:1px solid #006AFF;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#006AFF;">Z↗ Zillow</a>';
         }
-        // Realtor.com link — use Google to find the exact listing (most reliable)
-        var subjRealtorUrl = 'https://www.google.com/search?q=' + encodeURIComponent(subjAddrDisplay + ' site:realtor.com');
-        html += '<a id="subject-realtor-link" href="' + subjRealtorUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#FDE8E8;border:1px solid #D92228;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#D92228;">RC↗ Realtor.com</a>';
-        // Redfin link — use Google to find the exact listing (most reliable)
-        var subjRedfinUrl = 'https://www.google.com/search?q=' + encodeURIComponent(subjAddrDisplay + ' site:redfin.com');
+
+        // Realtor.com — direct address-slug URL (no Google detour). After loadSubjectPhotos
+        // runs, this href gets upgraded to the real permalink if the API matched the property.
+        var subjRealtorUrl = '';
+        if (subjAddrDisplay) {
+          var subjRcParts = subjAddrDisplay.split(',').map(function(s) { return s.trim(); });
+          if (subjRcParts.length >= 2) {
+            var subjRcStreet = subjRcParts[0].replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
+            var subjRcCity = subjRcParts[1].replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-]/g, '');
+            var subjRcStateZip = subjRcParts.slice(2).join(' ').trim();
+            var subjRcSM = subjRcStateZip.match(/([A-Z]{2})\s*(\d{5})?/);
+            var subjRcState = subjRcSM ? subjRcSM[1] : '';
+            var subjRcZip = subjRcSM && subjRcSM[2] ? subjRcSM[2] : '';
+            subjRealtorUrl = 'https://www.realtor.com/realestateandhomes-search/' + subjRcStreet
+              + '_' + subjRcCity
+              + (subjRcState ? '_' + subjRcState : '')
+              + (subjRcZip ? '_' + subjRcZip : '');
+          } else {
+            subjRealtorUrl = 'https://www.realtor.com/realestateandhomes-search/' + encodeURIComponent(subjAddrDisplay);
+          }
+        }
+        if (subjRealtorUrl) {
+          html += '<a id="subject-realtor-link" href="' + subjRealtorUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#FDE8E8;border:1px solid #D92228;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#D92228;">RC↗ Realtor.com</a>';
+        }
+
+        // Redfin — only show if we have a real URL OR fall back to homepage search. The
+        // page-scrape doesn't have a reliable address-search URL pattern for Redfin so we
+        // use Zillow's address resolver as a useful general link.
+        var subjRedfinUrl = subj.redfinUrl || ('https://www.redfin.com/?search_query=' + encodeURIComponent(subjAddrDisplay));
         html += '<a id="subject-redfin-link" href="' + subjRedfinUrl + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:#FDE8E8;border:1px solid #A4262C;border-radius:4px;text-decoration:none;font-size:11px;font-weight:600;color:#A4262C;">RF↗ Redfin</a>';
         html += '</div>';
         html += '</div>';
