@@ -7407,6 +7407,21 @@
           arvCalcState.data = data;
           arvCalcState.selectedComps = {};
           arvCalcState._subjPhotosAttempted = false; // reset for new search
+          // Apply any saved subject overrides (manual user-entered beds/baths/sqft/etc)
+          // BEFORE auto-selecting comps so grading uses the correct subject data.
+          if (data.subject && data.subject.address) {
+            applySubjectOverridesToSubject(data.subject);
+            // Re-grade all comps client-side against the override-corrected subject
+            if (data.comps && data.comps.length > 0) {
+              data.comps.forEach(function(c) {
+                var r = scoreCompClient(data.subject, c);
+                c.matchPct = r.matchPct;
+                c.grade = r.grade;
+                c.scoreBreakdown = { penalties: r.penalties };
+              });
+              data.comps.sort(function(a, b) { return (b.matchPct || 0) - (a.matchPct || 0); });
+            }
+          }
           // Auto-select A and B grade comps — but only sold/pending (true comps)
           var comps = data.comps || [];
           for (var i = 0; i < comps.length; i++) {
@@ -7493,17 +7508,18 @@
         html += '</div>';
       }
 
-      // Subject property details cards with source badges
-      // Source badges show which data provider gave us each field — Z=Zillow, R=Realtor.
-      // The _sourceMap is set by the worker (see find-comps Realtor fallback).
+      // Subject property details cards with source badges + inline editing.
+      // Source badges: Z=Zillow, R=Realtor, M=Manual (user override), —=no data
+      // Click any card with a srcKey to edit the value. Edits persist per address and
+      // trigger instant client-side comp re-grading.
       var srcMap = subj._sourceMap || {};
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:8px;">';
       var details = [
-        { label: 'Beds', value: subj.bedrooms || '—', srcKey: 'bedrooms' },
-        { label: 'Baths', value: subj.bathrooms || '—', srcKey: 'bathrooms' },
-        { label: 'Sqft', value: subj.livingArea ? subj.livingArea.toLocaleString() : '—', srcKey: 'livingArea' },
-        { label: 'Lot', value: subj.lotSize ? subj.lotSize.toLocaleString() : '—', srcKey: 'lotSize' },
-        { label: 'Year Built', value: subj.yearBuilt || '—', srcKey: 'yearBuilt' },
+        { label: 'Beds', value: subj.bedrooms || '—', srcKey: 'bedrooms', rawValue: subj.bedrooms },
+        { label: 'Baths', value: subj.bathrooms || '—', srcKey: 'bathrooms', rawValue: subj.bathrooms },
+        { label: 'Sqft', value: subj.livingArea ? subj.livingArea.toLocaleString() : '—', srcKey: 'livingArea', rawValue: subj.livingArea },
+        { label: 'Lot', value: subj.lotSize ? subj.lotSize.toLocaleString() : '—', srcKey: 'lotSize', rawValue: subj.lotSize },
+        { label: 'Year Built', value: subj.yearBuilt || '—', srcKey: 'yearBuilt', rawValue: subj.yearBuilt },
         { label: 'Zestimate', value: subj.zestimate ? fmt(subj.zestimate) : '—' },
         { label: 'Rent Est', value: subj.rentZestimate ? fmt(subj.rentZestimate) + '/mo' : '—' },
         { label: 'Type', value: subj.propertyType || '—' }
@@ -7512,11 +7528,13 @@
         var dt = details[d];
         var src = dt.srcKey ? srcMap[dt.srcKey] : null;
         var srcBadge = '';
-        if (src === 'realtor') srcBadge = '<span title="Source: Realtor.com" style="display:inline-block;background:#D92228;color:white;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:4px;vertical-align:middle;">R</span>';
+        if (src === 'manual') srcBadge = '<span title="Manual override (saved)" style="display:inline-block;background:#2E7D32;color:white;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:4px;vertical-align:middle;">M</span>';
+        else if (src === 'realtor') srcBadge = '<span title="Source: Realtor.com" style="display:inline-block;background:#D92228;color:white;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:4px;vertical-align:middle;">R</span>';
         else if (src === 'zillow') srcBadge = '<span title="Source: Zillow" style="display:inline-block;background:#006AFF;color:white;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:4px;vertical-align:middle;">Z</span>';
-        else if (src === null && dt.srcKey) srcBadge = '<span title="No data from any source" style="display:inline-block;background:#999;color:white;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:4px;vertical-align:middle;">—</span>';
-        html += '<div style="background:white;border:1px solid #eee;border-radius:8px;padding:12px;text-align:center;">';
-        html += '<div style="font-size:10px;font-weight:600;color:#999;text-transform:uppercase;margin-top:4px;">' + dt.label + srcBadge + '</div>';
+        else if (src === null && dt.srcKey) srcBadge = '<span title="No data — click to enter manually" style="display:inline-block;background:#999;color:white;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:4px;vertical-align:middle;">—</span>';
+        var editAttrs = dt.srcKey ? ' data-subj-field="' + dt.srcKey + '" onclick="editSubjectField(\'' + dt.srcKey + '\')" style="background:white;border:1px solid #eee;border-radius:8px;padding:12px;text-align:center;cursor:pointer;transition:border-color 0.15s;" onmouseover="this.style.borderColor=\'#ED7D31\'" onmouseout="this.style.borderColor=\'#eee\'" title="Click to edit"' : ' style="background:white;border:1px solid #eee;border-radius:8px;padding:12px;text-align:center;"';
+        html += '<div' + editAttrs + '>';
+        html += '<div style="font-size:10px;font-weight:600;color:#999;text-transform:uppercase;margin-top:4px;">' + dt.label + srcBadge + (dt.srcKey ? ' <span style="font-size:8px;color:#bbb;">✏️</span>' : '') + '</div>';
         html += '<div style="font-size:15px;font-weight:700;color:#1B2A4A;margin-top:2px;">' + dt.value + '</div>';
         html += '</div>';
       }
@@ -8100,6 +8118,206 @@
       fetchRentometer(address, bedrooms, 'arvCalcRentoResults', { autoFillARVCalc: true, autoFillCalc: false });
     }
 
+    // ==================== SUBJECT OVERRIDE SYSTEM ====================
+    // Persist user-edited subject property attributes (beds/baths/sqft/year/lot) per address
+    // in localStorage. When Zillow/Realtor return wrong or missing values, the user can click
+    // any subject card to enter the correct number — saved permanently, applied on every load,
+    // and triggers instant client-side comp re-grading so comp rankings reflect the truth.
+
+    function getSubjectOverrideKey(address) {
+      return 'arvSubjectOverride_' + (address || '').toLowerCase().replace(/[^a-z0-9]/g, '_');
+    }
+
+    function getSubjectOverrides(address) {
+      try {
+        var raw = localStorage.getItem(getSubjectOverrideKey(address));
+        return raw ? JSON.parse(raw) : {};
+      } catch (e) { return {}; }
+    }
+
+    function saveSubjectOverrideValue(address, field, value) {
+      var ov = getSubjectOverrides(address);
+      if (value === null || value === undefined || value === '' || (typeof value === 'number' && (isNaN(value) || value <= 0))) {
+        delete ov[field];
+      } else {
+        ov[field] = value;
+      }
+      try {
+        localStorage.setItem(getSubjectOverrideKey(address), JSON.stringify(ov));
+      } catch (e) {}
+    }
+
+    /**
+     * Apply saved overrides to a subject object, marking each overridden field with
+     * _sourceMap[field] = 'manual'.
+     */
+    function applySubjectOverridesToSubject(subj) {
+      if (!subj || !subj.address) return subj;
+      var ov = getSubjectOverrides(subj.address);
+      if (!subj._sourceMap) subj._sourceMap = {};
+      Object.keys(ov).forEach(function(k) {
+        subj[k] = ov[k];
+        subj._sourceMap[k] = 'manual';
+      });
+      return subj;
+    }
+
+    /**
+     * Client-side port of the worker's scoreComp function. Lets us re-grade comps
+     * instantly when the subject is edited, without paying for another find-comps call.
+     * Must stay in sync with the worker version at dashboard-worker-v13.js scoreComp().
+     */
+    function scoreCompClient(subject, comp) {
+      var score = 0;
+      var maxScore = 0;
+      var penalties = [];
+
+      // Sqft similarity (25 pts)
+      maxScore += 25;
+      var sSqft = subject.livingArea || 0;
+      var cSqft = comp.livingArea || comp.sqft || 0;
+      if (sSqft > 0 && cSqft > 0) {
+        var sqftRatio = Math.min(sSqft, cSqft) / Math.max(sSqft, cSqft);
+        if (sqftRatio >= 0.85) score += 25;
+        else if (sqftRatio >= 0.75) score += 18;
+        else if (sqftRatio >= 0.60) score += 10;
+        else { score += 3; penalties.push('Sqft diff >' + Math.round((1-sqftRatio)*100) + '%'); }
+      }
+
+      // Bed count (15 pts)
+      maxScore += 15;
+      var sBeds = subject.bedrooms || 0;
+      var cBeds = comp.bedrooms || comp.beds || 0;
+      if (sBeds > 0 && cBeds > 0) {
+        var bedDiff = Math.abs(sBeds - cBeds);
+        if (bedDiff === 0) score += 15;
+        else if (bedDiff === 1) score += 10;
+        else { score += 3; penalties.push(bedDiff + ' bed diff'); }
+      }
+
+      // Bath count (10 pts)
+      maxScore += 10;
+      var sBaths = subject.bathrooms || 0;
+      var cBaths = comp.bathrooms || comp.baths || 0;
+      if (sBaths > 0 && cBaths > 0) {
+        var bathDiff = Math.abs(sBaths - cBaths);
+        if (bathDiff === 0) score += 10;
+        else if (bathDiff <= 1) score += 7;
+        else { score += 2; penalties.push(bathDiff + ' bath diff'); }
+      }
+
+      // Lot size (10 pts)
+      maxScore += 10;
+      var sLot = subject.lotSize || 0;
+      var cLot = comp.lotSize || comp.lotAreaValue || 0;
+      if (sLot > 0 && cLot > 0) {
+        var lotRatio = Math.min(sLot, cLot) / Math.max(sLot, cLot);
+        if (lotRatio >= 0.70) score += 10;
+        else if (lotRatio >= 0.50) score += 6;
+        else { score += 2; penalties.push('Lot size diff'); }
+      }
+
+      // Year built (10 pts)
+      maxScore += 10;
+      var sYear = subject.yearBuilt || 0;
+      var cYear = comp.yearBuilt || 0;
+      if (sYear > 0 && cYear > 0) {
+        var yearDiff = Math.abs(sYear - cYear);
+        if (yearDiff <= 5) score += 10;
+        else if (yearDiff <= 15) score += 7;
+        else if (yearDiff <= 30) score += 4;
+        else { score += 1; penalties.push(yearDiff + 'yr age diff'); }
+      }
+
+      // Distance (20 pts) — distance is set by worker, doesn't change with edits
+      maxScore += 20;
+      var dist = comp._distance || comp.distance || 999;
+      if (dist <= 0.25) score += 20;
+      else if (dist <= 0.5) score += 17;
+      else if (dist <= 1.0) score += 13;
+      else if (dist <= 2.0) score += 8;
+      else if (dist <= 5.0) score += 4;
+      else { score += 1; penalties.push((typeof dist === 'number' ? dist.toFixed(1) : dist) + ' mi away'); }
+
+      // Property type match (5 pts)
+      maxScore += 5;
+      var sType = (subject.propertyType || '').toLowerCase();
+      var cType = (comp.homeType || comp.propertyType || '').toLowerCase();
+      if (sType && cType && (sType.indexOf(cType) >= 0 || cType.indexOf(sType) >= 0 || sType === cType)) {
+        score += 5;
+      } else if (sType && cType) {
+        penalties.push('Type: ' + cType);
+      }
+
+      // Recency bonus (5 pts)
+      maxScore += 5;
+      var soldDate = comp.soldDate || comp.dateSold || comp.lastSoldDate || comp.datePosted || null;
+      if (soldDate) {
+        var daysAgo = Math.floor((Date.now() - new Date(soldDate).getTime()) / (1000 * 60 * 60 * 24));
+        if (daysAgo <= 30) score += 5;
+        else if (daysAgo <= 60) score += 3;
+        else if (daysAgo <= 90) score += 2;
+        else score += 1;
+      }
+
+      var pct = maxScore > 0 ? Math.round((score / maxScore) * 100) : 0;
+      return {
+        score: score,
+        maxScore: maxScore,
+        matchPct: pct,
+        penalties: penalties,
+        grade: pct >= 85 ? 'A' : pct >= 70 ? 'B' : pct >= 55 ? 'C' : pct >= 40 ? 'D' : 'F',
+      };
+    }
+
+    /**
+     * Edit handler — click a subject card to inline-edit the value.
+     * Uses prompt() for simplicity. Empty/zero/cleared input removes the override.
+     */
+    function editSubjectField(fieldKey) {
+      var subj = (arvCalcState.data && arvCalcState.data.subject) ? arvCalcState.data.subject : null;
+      if (!subj) return;
+      var labels = { bedrooms: 'Beds', bathrooms: 'Baths', livingArea: 'Sqft', lotSize: 'Lot size (sqft)', yearBuilt: 'Year Built' };
+      var label = labels[fieldKey] || fieldKey;
+      var current = subj[fieldKey];
+      var input = prompt('Enter correct ' + label + ' for this property (leave blank to clear override):', current || '');
+      if (input === null) return; // cancelled
+      var trimmed = String(input).trim();
+      if (trimmed === '') {
+        // Clear override — revert to whatever Zillow/Realtor originally provided
+        saveSubjectOverrideValue(subj.address, fieldKey, null);
+        // Need to re-fetch to get original value back. Easier: just set to null for now.
+        // (User can hit Find Comps again to restore from API if needed.)
+        subj[fieldKey] = null;
+        if (subj._sourceMap) subj._sourceMap[fieldKey] = null;
+      } else {
+        var num = parseFloat(trimmed);
+        if (isNaN(num) || num <= 0) { alert('Please enter a positive number'); return; }
+        saveSubjectOverrideValue(subj.address, fieldKey, num);
+        subj[fieldKey] = num;
+        if (!subj._sourceMap) subj._sourceMap = {};
+        subj._sourceMap[fieldKey] = 'manual';
+      }
+      // Re-grade comps with the updated subject and re-render
+      if (arvCalcState.data.comps && arvCalcState.data.comps.length > 0) {
+        arvCalcState.data.comps.forEach(function(c) {
+          var r = scoreCompClient(subj, c);
+          c.matchPct = r.matchPct;
+          c.grade = r.grade;
+          c.scoreBreakdown = { penalties: r.penalties };
+        });
+        arvCalcState.data.comps.sort(function(a, b) { return (b.matchPct || 0) - (a.matchPct || 0); });
+        // Re-auto-select A/B comps with new grades
+        arvCalcState.selectedComps = {};
+        arvCalcState.data.comps.forEach(function(c, i) {
+          var ct = c._compType || '';
+          var isTrueComp = (ct === 'sold' || ct === 'pending');
+          arvCalcState.selectedComps[i] = isTrueComp && (c.grade === 'A' || c.grade === 'B');
+        });
+      }
+      renderARVCalcResults(arvCalcState.data);
+    }
+
     /**
      * Toggle the subject's data source diagnostic panel.
      * Shows which provider (zillow/realtor) supplied each field, what the Realtor
@@ -8130,7 +8348,8 @@
       ];
       fields.forEach(function(f) {
         var src = srcMap[f.key];
-        var srcLabel = src === 'realtor' ? '<span style="color:#D92228;font-weight:700;">REALTOR</span>'
+        var srcLabel = src === 'manual' ? '<span style="color:#2E7D32;font-weight:700;">MANUAL (you edited)</span>'
+          : src === 'realtor' ? '<span style="color:#D92228;font-weight:700;">REALTOR</span>'
           : src === 'zillow' ? '<span style="color:#006AFF;font-weight:700;">ZILLOW</span>'
           : '<span style="color:#999;">— (no data)</span>';
         var val = f.value !== null && f.value !== undefined ? f.value : 'null';
