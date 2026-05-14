@@ -8634,7 +8634,8 @@
       } catch (err) {
         if (loader) loader.innerHTML = '<span style="color:#C62828;font-size:12px;">Failed to load photos: ' + err.message + '</span>';
       }
-      // Also fetch Realtor.com data for the subject to update the link with a real permalink
+      // Also fetch Realtor.com photos + permalink for the subject. Photos get merged into
+      // the gallery (with dedup), permalink updates the subject's RC↗ link target.
       try {
         var workerUrl2 = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
         var subj = (arvCalcState.data && arvCalcState.data.subject) ? arvCalcState.data.subject : null;
@@ -8644,13 +8645,31 @@
           if (subjAddr) {
             var rcResp = await fetch(workerUrl2 + '/api/realtor/photos?address=' + encodeURIComponent(subjAddr));
             var rcData = await rcResp.json();
+            // Update the Realtor.com subject link with the real permalink (instead of search URL)
             if (rcData.permalink) {
               var subjRcLink = document.getElementById('subject-realtor-link');
               if (subjRcLink) subjRcLink.href = rcData.permalink;
             }
+            // Merge Realtor photos into subject.photos array, deduped by URL.
+            // With ScraperAPI proxy active, the worker page-scrape pulls 12-40 photos from
+            // Realtor.com's __NEXT_DATA__. Without proxy, we get the API's 3 photos.
+            if (rcData.photos && rcData.photos.length > 0) {
+              var existingPhotos = subj.photos || [];
+              var seenSubjPhotos = new Set(existingPhotos);
+              var newRcPhotos = rcData.photos.filter(function(u) {
+                if (seenSubjPhotos.has(u)) return false;
+                seenSubjPhotos.add(u);
+                return true;
+              });
+              if (newRcPhotos.length > 0) {
+                subj.photos = existingPhotos.concat(newRcPhotos);
+                console.log('[Subject Photos] Added', newRcPhotos.length, 'Realtor photos · total now', subj.photos.length);
+                renderARVCalcResults(arvCalcState.data);
+              }
+            }
           }
         }
-      } catch (e) { /* Realtor link update is best-effort */ }
+      } catch (e) { console.warn('[Subject Photos] Realtor fetch failed:', e.message); }
     }
 
     /**
