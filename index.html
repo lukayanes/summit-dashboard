@@ -7493,24 +7493,39 @@
         html += '</div>';
       }
 
-      // Subject property details cards
-      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px;">';
+      // Subject property details cards with source badges
+      // Source badges show which data provider gave us each field — Z=Zillow, R=Realtor.
+      // The _sourceMap is set by the worker (see find-comps Realtor fallback).
+      var srcMap = subj._sourceMap || {};
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:8px;">';
       var details = [
-        { label: 'Beds', value: subj.bedrooms || '—' },
-        { label: 'Baths', value: subj.bathrooms || '—' },
-        { label: 'Sqft', value: subj.livingArea ? subj.livingArea.toLocaleString() : '—' },
-        { label: 'Lot', value: subj.lotSize ? subj.lotSize.toLocaleString() : '—' },
-        { label: 'Year Built', value: subj.yearBuilt || '—' },
+        { label: 'Beds', value: subj.bedrooms || '—', srcKey: 'bedrooms' },
+        { label: 'Baths', value: subj.bathrooms || '—', srcKey: 'bathrooms' },
+        { label: 'Sqft', value: subj.livingArea ? subj.livingArea.toLocaleString() : '—', srcKey: 'livingArea' },
+        { label: 'Lot', value: subj.lotSize ? subj.lotSize.toLocaleString() : '—', srcKey: 'lotSize' },
+        { label: 'Year Built', value: subj.yearBuilt || '—', srcKey: 'yearBuilt' },
         { label: 'Zestimate', value: subj.zestimate ? fmt(subj.zestimate) : '—' },
         { label: 'Rent Est', value: subj.rentZestimate ? fmt(subj.rentZestimate) + '/mo' : '—' },
         { label: 'Type', value: subj.propertyType || '—' }
       ];
       for (var d = 0; d < details.length; d++) {
+        var dt = details[d];
+        var src = dt.srcKey ? srcMap[dt.srcKey] : null;
+        var srcBadge = '';
+        if (src === 'realtor') srcBadge = '<span title="Source: Realtor.com" style="display:inline-block;background:#D92228;color:white;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:4px;vertical-align:middle;">R</span>';
+        else if (src === 'zillow') srcBadge = '<span title="Source: Zillow" style="display:inline-block;background:#006AFF;color:white;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:4px;vertical-align:middle;">Z</span>';
+        else if (src === null && dt.srcKey) srcBadge = '<span title="No data from any source" style="display:inline-block;background:#999;color:white;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:4px;vertical-align:middle;">—</span>';
         html += '<div style="background:white;border:1px solid #eee;border-radius:8px;padding:12px;text-align:center;">';
-        html += '<div style="font-size:10px;font-weight:600;color:#999;text-transform:uppercase;margin-top:4px;">' + details[d].label + '</div>';
-        html += '<div style="font-size:15px;font-weight:700;color:#1B2A4A;margin-top:2px;">' + details[d].value + '</div>';
+        html += '<div style="font-size:10px;font-weight:600;color:#999;text-transform:uppercase;margin-top:4px;">' + dt.label + srcBadge + '</div>';
+        html += '<div style="font-size:15px;font-weight:700;color:#1B2A4A;margin-top:2px;">' + dt.value + '</div>';
         html += '</div>';
       }
+      html += '</div>';
+
+      // Data sources debug toggle — shows full _sourceMap + Realtor fallback diagnostics
+      html += '<div style="margin-bottom:20px;">';
+      html += '<button onclick="toggleSubjectSourcesPanel()" id="subjSourcesBtn" style="background:none;border:none;color:#1565C0;font-size:11px;cursor:pointer;text-decoration:underline;padding:2px 0;">🔍 Show data sources</button>';
+      html += '<div id="subjSourcesPanel" style="display:none;margin-top:8px;padding:10px 12px;background:#F8F9FA;border:1px solid #E0E0E0;border-radius:6px;font-size:11px;color:#444;font-family:monospace;line-height:1.6;"></div>';
       html += '</div>';
 
       // Search summary
@@ -8083,6 +8098,71 @@
       var beds = document.getElementById('arvCalcRentoBeds');
       var bedrooms = beds ? beds.value : 3;
       fetchRentometer(address, bedrooms, 'arvCalcRentoResults', { autoFillARVCalc: true, autoFillCalc: false });
+    }
+
+    /**
+     * Toggle the subject's data source diagnostic panel.
+     * Shows which provider (zillow/realtor) supplied each field, what the Realtor
+     * fallback did, and whether the page-scrape for missing description fields ran.
+     */
+    function toggleSubjectSourcesPanel() {
+      var panel = document.getElementById('subjSourcesPanel');
+      var btn = document.getElementById('subjSourcesBtn');
+      if (!panel) return;
+      var open = panel.style.display !== 'none';
+      if (open) {
+        panel.style.display = 'none';
+        if (btn) btn.textContent = '🔍 Show data sources';
+        return;
+      }
+      var subj = (arvCalcState.data && arvCalcState.data.subject) ? arvCalcState.data.subject : {};
+      var srcMap = subj._sourceMap || {};
+      var fb = subj._realtorFallback || null;
+      var ps = subj._realtorPageScrape || null;
+      var html = '';
+      html += '<div style="font-weight:700;color:#1B2A4A;margin-bottom:6px;font-family:inherit;">Field Source Map</div>';
+      var fields = [
+        { key: 'bedrooms', label: 'Beds', value: subj.bedrooms },
+        { key: 'bathrooms', label: 'Baths', value: subj.bathrooms },
+        { key: 'livingArea', label: 'Sqft', value: subj.livingArea },
+        { key: 'lotSize', label: 'Lot', value: subj.lotSize },
+        { key: 'yearBuilt', label: 'Year Built', value: subj.yearBuilt },
+      ];
+      fields.forEach(function(f) {
+        var src = srcMap[f.key];
+        var srcLabel = src === 'realtor' ? '<span style="color:#D92228;font-weight:700;">REALTOR</span>'
+          : src === 'zillow' ? '<span style="color:#006AFF;font-weight:700;">ZILLOW</span>'
+          : '<span style="color:#999;">— (no data)</span>';
+        var val = f.value !== null && f.value !== undefined ? f.value : 'null';
+        html += '  ' + f.label.padEnd(12, ' ').replace(/ /g, '&nbsp;') + ' = ' + val + ' [' + srcLabel + ']<br>';
+      });
+      html += '<br><div style="font-weight:700;color:#1B2A4A;margin-bottom:4px;font-family:inherit;">Realtor API Fallback</div>';
+      if (fb) {
+        html += '  used: ' + (fb.used ? '<span style="color:#2E7D32;">YES</span>' : '<span style="color:#C62828;">NO</span>') + '<br>';
+        if (fb.propertyId) html += '  matched property_id: ' + fb.propertyId + '<br>';
+        if (fb.overridden && fb.overridden.length > 0) {
+          html += '  overridden: <br>';
+          fb.overridden.forEach(function(o) {
+            html += '    ' + o.field + ': zillow=' + (o.zillow || 'null') + ' → realtor=' + o.realtor + '<br>';
+          });
+        }
+        if (fb.reason) html += '  reason: ' + fb.reason + '<br>';
+        if (fb.error) html += '  error: <span style="color:#C62828;">' + fb.error + '</span><br>';
+      } else {
+        html += '  <span style="color:#999;">not run</span><br>';
+      }
+      html += '<br><div style="font-weight:700;color:#1B2A4A;margin-bottom:4px;font-family:inherit;">Realtor Page Scrape (for missing description)</div>';
+      if (ps) {
+        html += '  used: ' + (ps.used ? '<span style="color:#2E7D32;">YES</span>' : '<span style="color:#C62828;">NO</span>') + '<br>';
+        if (ps.source) html += '  source: ' + ps.source + '<br>';
+        if (ps.reason) html += '  reason: ' + ps.reason + '<br>';
+        if (ps.error) html += '  error: <span style="color:#C62828;">' + ps.error + '</span><br>';
+      } else {
+        html += '  <span style="color:#999;">not needed (Realtor API had description)</span><br>';
+      }
+      panel.innerHTML = html;
+      panel.style.display = 'block';
+      if (btn) btn.textContent = '✕ Hide data sources';
     }
 
     /**
