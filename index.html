@@ -567,7 +567,7 @@
     <button class="tab-button" onclick="switchTab('projections')">Projections</button>
     <button class="tab-button" onclick="switchTab('pipelineflow')">Pipeline Flow</button>
     <button class="tab-button" onclick="switchTab('callledger')">Call Ledger</button>
-    <button class="tab-button" onclick="switchTab('arvcalc')">ARV Calculator</button>
+    <button class="tab-button" onclick="switchTab('arvcalc')">Acq Calculator</button>
     <button class="tab-button" onclick="switchTab('dispo')">Dispo</button>
     <button class="tab-button" onclick="switchTab('buyers')">Buyers</button>
     <button class="tab-button" onclick="switchTab('agents')">Listing Agents</button>
@@ -7333,7 +7333,7 @@
       var html = '';
 
       html += '<div style="margin-bottom:16px;">';
-      html += '<h2 style="font-size:22px;font-weight:700;color:#1B2A4A;margin:0;">ARV Calculator</h2>';
+      html += '<h2 style="font-size:22px;font-weight:700;color:#1B2A4A;margin:0;">Acq Calculator</h2>';
       html += '<p style="font-size:13px;color:#666;margin:4px 0 0;">Analyze any property before going under contract</p>';
       html += '</div>';
 
@@ -7385,7 +7385,9 @@
         { val: 1.0, label: '1 mi' },
         { val: 1.5, label: '1.5 mi' },
         { val: 2.0, label: '2 mi' },
-        { val: 3.0, label: '3 mi' }
+        { val: 3.0, label: '3 mi' },
+        { val: 5.0, label: '5 mi' },
+        { val: 10.0, label: '10 mi (rural)' }
       ];
       for (var ri = 0; ri < radiusOptions.length; ri++) {
         var rVal = radiusOptions[ri].val;
@@ -7618,6 +7620,13 @@
         html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-bottom:8px;">📍 Comp Map</div>';
         html += '<div id="arvCompMap" style="height:400px;border-radius:10px;border:1px solid #ddd;overflow:hidden;"></div>';
         html += '</div>';
+      }
+
+      // Cap the comp table at top 25 by match%. Anything beyond that gets noisy and
+      // shouldn't be used for valuation anyway.
+      var MAX_COMPS_DISPLAYED = 25;
+      if (comps.length > MAX_COMPS_DISPLAYED) {
+        comps = comps.slice(0, MAX_COMPS_DISPLAYED);
       }
 
       // Comps table with match scoring
@@ -7947,6 +7956,61 @@
       // ARV summary + deal analysis
       var calcARV = recalcARVFromCompsValue();
       arvCalcState.calculatedARV = calcARV;
+
+      // === NOVATION CALCULATOR (top section — no ARV used) ===
+      // Selected comps' average sale price = the as-is list price we'd post on MLS.
+      // Profit = listPrice − closing costs (state-based) − realtor commission (%) − our fee ($20K) − contract price.
+      var subjStateForCC = getDealState({ market: subj.state || '', address: subj.address || '' });
+      var ccPctDefault = STATE_CC_PCT[subjStateForCC] || 1.5;
+      var novListPrice = calcARV; // avg of selected comps (same calc as ARV display)
+      var defaultCC = Math.round((novListPrice * (ccPctDefault / 100)) / 50) * 50;
+      // Initialize inputs from state (persist between renders)
+      if (typeof arvCalcState.novCommissionPct === 'undefined') arvCalcState.novCommissionPct = 6;
+      if (typeof arvCalcState.novOurFee === 'undefined') arvCalcState.novOurFee = 20000;
+      if (typeof arvCalcState.novClosingCosts === 'undefined' || arvCalcState.novClosingCosts === null) arvCalcState.novClosingCosts = defaultCC;
+
+      html += '<div style="background:#F3E5F5;border:2px solid #7B1FA2;border-radius:10px;padding:20px;margin-bottom:20px;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">';
+      html += '<div style="font-size:16px;font-weight:800;color:#4A148C;">💰 Novation Profit Calculator</div>';
+      html += '<div style="font-size:11px;color:#7B1FA2;font-weight:600;">Based on avg of selected comps · No ARV</div>';
+      html += '</div>';
+
+      // Inputs row
+      html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">';
+
+      // Avg list price (read-only, derived from selected comps)
+      html += '<div style="background:white;border-radius:6px;padding:10px;border:1px solid #CE93D8;">';
+      html += '<label style="font-size:10px;font-weight:700;color:#7B1FA2;text-transform:uppercase;">Avg List Price</label>';
+      html += '<div style="font-size:18px;font-weight:800;color:#1B2A4A;margin-top:2px;">' + fmt(novListPrice) + '</div>';
+      html += '<div style="font-size:9px;color:#999;margin-top:1px;">From selected comps</div>';
+      html += '</div>';
+
+      // Closing costs ($) — editable, default = state-based estimate
+      html += '<div style="background:white;border-radius:6px;padding:10px;border:1px solid #CE93D8;">';
+      html += '<label style="font-size:10px;font-weight:700;color:#7B1FA2;text-transform:uppercase;">Closing Costs ($)</label>';
+      html += '<input type="number" id="novCalc_cc" value="' + arvCalcState.novClosingCosts + '" oninput="updateNovationCalc()" style="width:100%;padding:4px 6px;font-size:16px;font-weight:700;border:1px solid #ddd;border-radius:4px;margin-top:2px;color:#1B2A4A;">';
+      html += '<div style="font-size:9px;color:#999;margin-top:1px;">Est. ' + (subjStateForCC || '?') + ' @ ' + ccPctDefault + '%</div>';
+      html += '</div>';
+
+      // Realtor commission %
+      html += '<div style="background:white;border-radius:6px;padding:10px;border:1px solid #CE93D8;">';
+      html += '<label style="font-size:10px;font-weight:700;color:#7B1FA2;text-transform:uppercase;">Realtor Commission (%)</label>';
+      html += '<input type="number" id="novCalc_comm" value="' + arvCalcState.novCommissionPct + '" step="0.5" oninput="updateNovationCalc()" style="width:100%;padding:4px 6px;font-size:16px;font-weight:700;border:1px solid #ddd;border-radius:4px;margin-top:2px;color:#1B2A4A;">';
+      html += '<div style="font-size:9px;color:#999;margin-top:1px;">= ' + fmt(novListPrice * (arvCalcState.novCommissionPct / 100)) + '</div>';
+      html += '</div>';
+
+      // Our fee
+      html += '<div style="background:white;border-radius:6px;padding:10px;border:1px solid #CE93D8;">';
+      html += '<label style="font-size:10px;font-weight:700;color:#7B1FA2;text-transform:uppercase;">Our Fee ($)</label>';
+      html += '<input type="number" id="novCalc_ourfee" value="' + arvCalcState.novOurFee + '" oninput="updateNovationCalc()" style="width:100%;padding:4px 6px;font-size:16px;font-weight:700;border:1px solid #ddd;border-radius:4px;margin-top:2px;color:#1B2A4A;">';
+      html += '<div style="font-size:9px;color:#999;margin-top:1px;">Default $20,000</div>';
+      html += '</div>';
+
+      html += '</div>'; // end inputs grid
+
+      // Results row — auto-recalculates via updateNovationCalc()
+      html += '<div id="novCalcResults">' + buildNovationCalcResults() + '</div>';
+      html += '</div>'; // end novation calc card
 
       html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">';
 
@@ -9372,6 +9436,9 @@
 
       var maoGrid = document.getElementById('arvCalcMAOGrid');
       if (maoGrid) maoGrid.innerHTML = buildARVCalcMAOGrid();
+      // Novation list price = avg of selected comps. Re-render the novation results.
+      var novResults = document.getElementById('novCalcResults');
+      if (novResults) novResults.innerHTML = buildNovationCalcResults();
     }
 
     function updateARVCalcDeal() {
@@ -9382,6 +9449,9 @@
 
       var maoGrid = document.getElementById('arvCalcMAOGrid');
       if (maoGrid) maoGrid.innerHTML = buildARVCalcMAOGrid();
+      // Contract price affects novation profit too — re-render that block.
+      var novResults = document.getElementById('novCalcResults');
+      if (novResults) novResults.innerHTML = buildNovationCalcResults();
     }
 
     function setARVCalcRepairs(val) {
@@ -9509,74 +9579,94 @@
     }
 
     function buildARVCalcMAOGrid() {
+      // Now ONLY shows Cash MAO — Novation has its own dedicated calculator at the top
+      // of the Acq Calculator (with closing costs, commission, our fee).
       var arv = arvCalcState.calculatedARV || 0;
       var repairs = arvCalcState.repairs || 0;
       var contract = arvCalcState.contractPrice || 0;
 
       var cashMAO = arv * 0.70 - repairs;
-      var novMAO = arv * 0.85 - repairs;
       var cashSpread = contract > 0 ? cashMAO - contract : 0;
-      var novSpread = contract > 0 ? novMAO - contract : 0;
 
       var html = '';
       html += '<div style="background:white;border:1px solid #eee;border-radius:10px;padding:20px;margin-bottom:20px;">';
-      html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-bottom:16px;">MAO Analysis — All Strategies</div>';
-
-      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">';
+      html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-bottom:16px;">Cash MAO Analysis</div>';
 
       // Cash MAO
-      html += '<div style="background:#E8F5E9;border-radius:8px;padding:16px;">';
-      html += '<div style="font-size:11px;font-weight:600;color:#2E7D32;text-transform:uppercase;">Cash MAO (70%)</div>';
-      html += '<div style="font-size:24px;font-weight:800;color:#2E7D32;margin-top:4px;">' + fmt(cashMAO) + '</div>';
-      html += '<div style="font-size:11px;color:#666;margin-top:4px;">70% x ' + fmt(arv) + ' - ' + fmt(repairs) + ' repairs</div>';
+      html += '<div style="background:#E8F5E9;border-radius:8px;padding:16px;margin-bottom:12px;">';
+      html += '<div style="font-size:11px;font-weight:600;color:#2E7D32;text-transform:uppercase;">Cash MAO (70% Rule)</div>';
+      html += '<div style="font-size:28px;font-weight:800;color:#2E7D32;margin-top:4px;">' + fmt(cashMAO) + '</div>';
+      html += '<div style="font-size:11px;color:#666;margin-top:4px;">70% × ' + fmt(arv) + ' (ARV) − ' + fmt(repairs) + ' (repairs)</div>';
       if (contract > 0) {
         var cashColor = cashSpread >= 10000 ? '#2E7D32' : (cashSpread >= 0 ? '#F57F17' : '#C62828');
         var cashLabel = cashSpread >= 10000 ? 'Deal works!' : (cashSpread >= 0 ? 'Tight — negotiate' : 'No margin');
         var cashBg = cashSpread >= 10000 ? '#C8E6C9' : (cashSpread >= 0 ? '#FFF8E1' : '#FFCDD2');
         html += '<div style="margin-top:8px;padding:6px 10px;background:' + cashBg + ';border-radius:4px;font-size:12px;font-weight:700;color:' + cashColor + ';">' + cashLabel + ' (spread: ' + fmt(cashSpread) + ')</div>';
-      }
-      html += '</div>';
-
-      // Novation MAO
-      html += '<div style="background:#E3F2FD;border-radius:8px;padding:16px;">';
-      html += '<div style="font-size:11px;font-weight:600;color:#1565C0;text-transform:uppercase;">Novation MAO (85%)</div>';
-      html += '<div style="font-size:24px;font-weight:800;color:#1565C0;margin-top:4px;">' + fmt(novMAO) + '</div>';
-      html += '<div style="font-size:11px;color:#666;margin-top:4px;">85% x ' + fmt(arv) + ' - ' + fmt(repairs) + ' repairs</div>';
-      if (contract > 0) {
-        var novColor = novSpread >= 10000 ? '#2E7D32' : (novSpread >= 0 ? '#F57F17' : '#C62828');
-        var novLabel = novSpread >= 10000 ? 'Deal works!' : (novSpread >= 0 ? 'Tight — negotiate' : 'No margin');
-        var novBg = novSpread >= 10000 ? '#C8E6C9' : (novSpread >= 0 ? '#FFF8E1' : '#FFCDD2');
-        html += '<div style="margin-top:8px;padding:6px 10px;background:' + novBg + ';border-radius:4px;font-size:12px;font-weight:700;color:' + novColor + ';">' + novLabel + ' (spread: ' + fmt(novSpread) + ')</div>';
-      }
-      html += '</div>';
-
-      html += '</div>';
-
-      // Quick summary
-      if (contract > 0) {
-        var bestStrategy = novSpread >= cashSpread ? 'Novation' : 'Cash';
-        var bestSpread = Math.max(cashSpread, novSpread);
-        var summaryColor = bestSpread >= 10000 ? '#2E7D32' : (bestSpread >= 0 ? '#F57F17' : '#C62828');
-        var summaryBg = bestSpread >= 10000 ? '#E8F5E9' : (bestSpread >= 0 ? '#FFF8E1' : '#FFEBEE');
-        html += '<div style="background:' + summaryBg + ';border-radius:8px;padding:16px;text-align:center;">';
-        html += '<div style="font-size:13px;font-weight:700;color:' + summaryColor + ';">';
-        if (bestSpread >= 10000) {
-          html += 'This deal works as a <strong>' + bestStrategy + '</strong> deal with ' + fmt(bestSpread) + ' spread';
-        } else if (bestSpread >= 0) {
-          html += 'Margins are tight. Best option: <strong>' + bestStrategy + '</strong> with ' + fmt(bestSpread) + ' spread. Consider negotiating.';
-        } else {
-          html += 'Contract price of ' + fmt(contract) + ' exceeds both MAOs. This deal does not pencil at current numbers.';
-        }
-        html += '</div>';
-        html += '</div>';
       } else {
-        html += '<div style="background:#F0F4FF;border-radius:8px;padding:16px;text-align:center;">';
-        html += '<div style="font-size:13px;color:#666;">Enter a contract price above to see if this deal works</div>';
-        html += '</div>';
+        html += '<div style="margin-top:8px;padding:6px 10px;background:#F0F4FF;border-radius:4px;font-size:12px;color:#666;">Enter a contract price above to evaluate</div>';
       }
+      html += '</div>';
 
       html += '</div>';
       return html;
+    }
+
+    /**
+     * Build the Novation Calculator results panel.
+     * Profit = list price − closing costs − commission − our fee − contract price
+     */
+    function buildNovationCalcResults() {
+      var listPrice = arvCalcState.calculatedARV || 0;
+      var cc = parseFloat(arvCalcState.novClosingCosts) || 0;
+      var commPct = parseFloat(arvCalcState.novCommissionPct) || 0;
+      var ourFee = parseFloat(arvCalcState.novOurFee) || 0;
+      var contract = arvCalcState.contractPrice || 0;
+
+      var commissionAmt = listPrice * (commPct / 100);
+      var totalDeductions = cc + commissionAmt + ourFee + contract;
+      var profit = listPrice - totalDeductions;
+      var marginPct = listPrice > 0 ? (profit / listPrice * 100) : 0;
+
+      var profitColor = profit >= 10000 ? '#2E7D32' : (profit >= 0 ? '#F57F17' : '#C62828');
+      var profitBg = profit >= 10000 ? '#C8E6C9' : (profit >= 0 ? '#FFF8E1' : '#FFCDD2');
+
+      var html = '';
+      // Breakdown grid
+      html += '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;background:#FAFAFA;border-radius:6px;padding:10px;margin-bottom:10px;font-size:11px;">';
+      html += '<div><div style="color:#999;text-transform:uppercase;font-weight:700;">List</div><div style="font-size:14px;font-weight:700;color:#1B2A4A;">' + fmt(listPrice) + '</div></div>';
+      html += '<div><div style="color:#999;text-transform:uppercase;font-weight:700;">− CC</div><div style="font-size:14px;font-weight:700;color:#C62828;">' + fmt(cc) + '</div></div>';
+      html += '<div><div style="color:#999;text-transform:uppercase;font-weight:700;">− Realtor (' + commPct + '%)</div><div style="font-size:14px;font-weight:700;color:#C62828;">' + fmt(commissionAmt) + '</div></div>';
+      html += '<div><div style="color:#999;text-transform:uppercase;font-weight:700;">− Our Fee</div><div style="font-size:14px;font-weight:700;color:#C62828;">' + fmt(ourFee) + '</div></div>';
+      html += '<div><div style="color:#999;text-transform:uppercase;font-weight:700;">− Contract</div><div style="font-size:14px;font-weight:700;color:#C62828;">' + fmt(contract) + '</div></div>';
+      html += '</div>';
+
+      // Profit headline
+      html += '<div style="background:' + profitBg + ';border-radius:8px;padding:14px;display:flex;justify-content:space-between;align-items:center;">';
+      html += '<div>';
+      html += '<div style="font-size:11px;font-weight:700;color:' + profitColor + ';text-transform:uppercase;">Estimated Novation Profit</div>';
+      html += '<div style="font-size:28px;font-weight:800;color:' + profitColor + ';margin-top:2px;">' + fmt(profit) + '</div>';
+      html += '</div>';
+      html += '<div style="text-align:right;">';
+      html += '<div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;">Margin</div>';
+      html += '<div style="font-size:22px;font-weight:800;color:' + profitColor + ';">' + marginPct.toFixed(1) + '%</div>';
+      html += '</div>';
+      html += '</div>';
+
+      return html;
+    }
+
+    /**
+     * Live recalculation when any novation input changes.
+     */
+    function updateNovationCalc() {
+      var ccEl = document.getElementById('novCalc_cc');
+      var commEl = document.getElementById('novCalc_comm');
+      var feeEl = document.getElementById('novCalc_ourfee');
+      if (ccEl) arvCalcState.novClosingCosts = parseFloat(ccEl.value) || 0;
+      if (commEl) arvCalcState.novCommissionPct = parseFloat(commEl.value) || 0;
+      if (feeEl) arvCalcState.novOurFee = parseFloat(feeEl.value) || 0;
+      var results = document.getElementById('novCalcResults');
+      if (results) results.innerHTML = buildNovationCalcResults();
     }
 
     // ==================== SELLER PHOTO UPLOAD (Shared via Cloudflare KV) ====================
