@@ -7452,6 +7452,10 @@
           arvCalcState.data = data;
           arvCalcState.selectedComps = {};
           arvCalcState._subjPhotosAttempted = false; // reset for new search
+          // Clear any manual ARV / Novation list-price overrides from a previous
+          // address — fresh comps should drive a fresh calc.
+          arvCalcState.arvOverride = null;
+          arvCalcState.novListOverride = null;
           // Apply any saved subject overrides (manual user-entered beds/baths/sqft/etc)
           // BEFORE auto-selecting comps so grading uses the correct subject data.
           if (data.subject && data.subject.address) {
@@ -8007,12 +8011,22 @@
       // Inputs row — 5 columns
       html += '<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px;">';
 
-      // Avg list price (read-only, derived from selected comps) — has IDs so we can
-      // refresh it surgically when comps are toggled without re-rendering inputs.
+      // Avg list price — editable so the user can model a different list price
+      // than the ARV without rebuilding the ARV calc. By default it tracks the
+      // calculated ARV; once the user types, it decouples until they reset.
+      var novListInitial = (arvCalcState.novListOverride && arvCalcState.novListOverride > 0)
+        ? arvCalcState.novListOverride
+        : novListPrice;
+      var novListSubInitial = arvCalcState.novListOverride
+        ? 'Manually entered'
+        : 'From selected comps';
       html += '<div style="background:white;border-radius:6px;padding:10px;border:1px solid #CE93D8;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;">';
       html += '<label style="font-size:10px;font-weight:700;color:#7B1FA2;text-transform:uppercase;">Avg List Price</label>';
-      html += '<div id="novCalc_listDisplay" style="font-size:18px;font-weight:800;color:#1B2A4A;margin-top:2px;">' + fmt(novListPrice) + '</div>';
-      html += '<div id="novCalc_listSubtext" style="font-size:9px;color:#999;margin-top:1px;">From selected comps</div>';
+      html += '<button onclick="resetNovListToARV()" title="Reset to ARV" style="background:transparent;border:1px solid #7B1FA2;color:#7B1FA2;border-radius:3px;font-size:8px;font-weight:700;padding:1px 4px;cursor:pointer;line-height:1.2;">↻ ARV</button>';
+      html += '</div>';
+      html += '<input type="number" id="novCalc_listInput" value="' + novListInitial + '" oninput="overrideNovListPrice()" style="width:100%;padding:4px 6px;font-size:16px;font-weight:700;border:1px solid #ddd;border-radius:4px;margin-top:2px;color:#1B2A4A;">';
+      html += '<div id="novCalc_listSubtext" style="font-size:9px;color:#999;margin-top:1px;">' + novListSubInitial + '</div>';
       html += '</div>';
 
       // Closing costs ($) — editable, default = state-based estimate
@@ -8026,7 +8040,7 @@
       html += '<div style="background:white;border-radius:6px;padding:10px;border:1px solid #CE93D8;">';
       html += '<label style="font-size:10px;font-weight:700;color:#7B1FA2;text-transform:uppercase;">Realtor Commission (%)</label>';
       html += '<input type="number" id="novCalc_comm" value="' + arvCalcState.novCommissionPct + '" step="0.5" oninput="updateNovationCalc()" style="width:100%;padding:4px 6px;font-size:16px;font-weight:700;border:1px solid #ddd;border-radius:4px;margin-top:2px;color:#1B2A4A;">';
-      html += '<div id="novCalc_commPreview" style="font-size:9px;color:#999;margin-top:1px;">= ' + fmt(novListPrice * (arvCalcState.novCommissionPct / 100)) + '</div>';
+      html += '<div id="novCalc_commPreview" style="font-size:9px;color:#999;margin-top:1px;">= ' + fmt(novListInitial * (arvCalcState.novCommissionPct / 100)) + '</div>';
       html += '</div>';
 
       // Our fee
@@ -8051,13 +8065,23 @@
 
       html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">';
 
-      // Left: ARV summary
+      // Left: ARV summary — editable so the user can override the comp-derived
+      // number when their judgment says the calc is off.
       html += '<div style="background:#E8F5E9;border-radius:10px;padding:20px;text-align:center;">';
-      html += '<div style="font-size:12px;font-weight:600;color:#2E7D32;text-transform:uppercase;">Calculated ARV</div>';
-      html += '<div id="arvCalcARVDisplay" style="font-size:28px;font-weight:800;color:#2E7D32;margin-top:4px;">' + fmt(calcARV) + '</div>';
+      html += '<div style="font-size:12px;font-weight:600;color:#2E7D32;text-transform:uppercase;display:flex;justify-content:center;align-items:center;gap:8px;">';
+      html += '<span>Calculated ARV</span>';
+      html += '<button onclick="resetARVToComps()" title="Reset to comp average" style="background:transparent;border:1px solid #2E7D32;color:#2E7D32;border-radius:3px;font-size:10px;font-weight:700;padding:2px 6px;cursor:pointer;">↻ from comps</button>';
+      html += '</div>';
+      html += '<input type="number" id="arvCalcARVInput" value="' + calcARV + '" oninput="overrideARV()" style="font-size:28px;font-weight:800;color:#2E7D32;margin-top:4px;text-align:center;width:100%;background:transparent;border:none;border-bottom:2px dashed #A5D6A7;outline:none;padding:2px 0;">';
       var selectedCount = 0;
       for (var k in arvCalcState.selectedComps) { if (arvCalcState.selectedComps[k]) selectedCount++; }
-      html += '<div style="font-size:11px;color:#666;margin-top:4px;">' + (comps.length > 0 ? 'Avg of ' + selectedCount + ' selected comps' : 'Based on Zestimate') + '</div>';
+      var arvCaptionText;
+      if (arvCalcState.arvOverride) {
+        arvCaptionText = 'Manually entered · comp avg: ' + fmt(computeARVFromCompsRaw());
+      } else {
+        arvCaptionText = (comps.length > 0 ? 'Avg of ' + selectedCount + ' selected comps' : 'Based on Zestimate');
+      }
+      html += '<div id="arvCalcARVCaption" style="font-size:11px;color:#666;margin-top:4px;">' + arvCaptionText + '</div>';
       html += '</div>';
 
       // Right: Deal inputs
@@ -8406,15 +8430,25 @@
         else { score += 1; penalties.push(yearDiff + 'yr age diff'); }
       }
 
-      // Distance (20 pts) — distance is set by worker, doesn't change with edits
+      // Distance (20 pts) — distance is set by worker, doesn't change with edits.
+      // If the upstream API didn't return coordinates (common for Realtor.com's
+      // location-bounded search), give a neutral 1–2 mi score instead of
+      // treating the comp as 999 mi away. The comp was returned by a search
+      // bounded to subject's city/zip, so it IS local.
       maxScore += 20;
-      var dist = comp._distance || comp.distance || 999;
-      if (dist <= 0.25) score += 20;
-      else if (dist <= 0.5) score += 17;
-      else if (dist <= 1.0) score += 13;
-      else if (dist <= 2.0) score += 8;
-      else if (dist <= 5.0) score += 4;
-      else { score += 1; penalties.push((typeof dist === 'number' ? dist.toFixed(1) : dist) + ' mi away'); }
+      var distRaw = (comp._distance !== undefined && comp._distance !== null) ? comp._distance : comp.distance;
+      var distKnown = (typeof distRaw === 'number') && !isNaN(distRaw) && distRaw >= 0;
+      if (!distKnown) {
+        score += 8; // neutral, no penalty
+      } else {
+        var dist = distRaw;
+        if (dist <= 0.25) score += 20;
+        else if (dist <= 0.5) score += 17;
+        else if (dist <= 1.0) score += 13;
+        else if (dist <= 2.0) score += 8;
+        else if (dist <= 5.0) score += 4;
+        else { score += 1; penalties.push(dist.toFixed(1) + ' mi away'); }
+      }
 
       // Property type match (5 pts)
       maxScore += 5;
@@ -9461,7 +9495,24 @@
       recalcARVFromComps();
     }
 
+    /**
+     * Returns the ARV value that drives the calc.
+     * Manual override (user typed in the ARV input) wins over the comp-derived avg.
+     * Reset by calling resetARVToComps(), which clears arvCalcState.arvOverride.
+     */
     function recalcARVFromCompsValue() {
+      // Manual override wins
+      if (arvCalcState.arvOverride && arvCalcState.arvOverride > 0) {
+        return Math.round(arvCalcState.arvOverride);
+      }
+      return computeARVFromCompsRaw();
+    }
+
+    /**
+     * Pure comp-average (ignores override). Used to show the "would be" value
+     * next to the editable ARV input and as the reset target.
+     */
+    function computeARVFromCompsRaw() {
       if (!arvCalcState.data) return 0;
       var comps = arvCalcState.data.comps || [];
       var sum = 0;
@@ -9478,29 +9529,126 @@
       return arvCalcState.data.suggestedARV || subj.zestimate || 0;
     }
 
+    /**
+     * Returns the list price for the Novation calc.
+     * Honors an independent override (novListOverride) so the user can model a
+     * different list price than the ARV without polluting the ARV calc.
+     */
+    function getNovListPrice() {
+      if (arvCalcState.novListOverride && arvCalcState.novListOverride > 0) {
+        return Math.round(arvCalcState.novListOverride);
+      }
+      return arvCalcState.calculatedARV || 0;
+    }
+
+    /**
+     * Called from the editable ARV input. Stores the user's number as an
+     * override and refreshes everything downstream (MAO, Novation).
+     */
+    function overrideARV() {
+      var el = document.getElementById('arvCalcARVInput');
+      if (!el) return;
+      var v = parseFloat(el.value);
+      arvCalcState.arvOverride = (isNaN(v) || v <= 0) ? null : v;
+      recalcARVFromComps();
+    }
+
+    /**
+     * Clears the manual ARV override and recalculates from the selected comps.
+     */
+    function resetARVToComps() {
+      arvCalcState.arvOverride = null;
+      var arv = computeARVFromCompsRaw();
+      var el = document.getElementById('arvCalcARVInput');
+      if (el) el.value = arv;
+      recalcARVFromComps();
+    }
+
+    /**
+     * Called from the editable Novation list-price input. Stores the override
+     * and refreshes the Novation result panel + commission preview.
+     */
+    function overrideNovListPrice() {
+      var el = document.getElementById('novCalc_listInput');
+      if (!el) return;
+      var v = parseFloat(el.value);
+      arvCalcState.novListOverride = (isNaN(v) || v <= 0) ? null : v;
+      // Refresh commission $-preview and results
+      var commPreview = document.getElementById('novCalc_commPreview');
+      var listPrice = getNovListPrice();
+      var commPct = parseFloat(arvCalcState.novCommissionPct) || 0;
+      if (commPreview) commPreview.textContent = '= ' + fmt(listPrice * (commPct / 100));
+      var subEl = document.getElementById('novCalc_listSubtext');
+      if (subEl) subEl.textContent = 'Manually entered';
+      var results = document.getElementById('novCalcResults');
+      if (results) results.innerHTML = buildNovationCalcResults();
+    }
+
+    /**
+     * Clears the Novation list-price override so it tracks the ARV again.
+     */
+    function resetNovListToARV() {
+      arvCalcState.novListOverride = null;
+      var arv = arvCalcState.calculatedARV || 0;
+      var el = document.getElementById('novCalc_listInput');
+      if (el) el.value = arv;
+      var commPreview = document.getElementById('novCalc_commPreview');
+      var commPct = parseFloat(arvCalcState.novCommissionPct) || 0;
+      if (commPreview) commPreview.textContent = '= ' + fmt(arv * (commPct / 100));
+      var subEl = document.getElementById('novCalc_listSubtext');
+      var selectedCount = 0;
+      for (var k in arvCalcState.selectedComps) { if (arvCalcState.selectedComps[k]) selectedCount++; }
+      if (subEl) subEl.textContent = selectedCount > 0 ? 'Avg of ' + selectedCount + ' selected comps' : 'No comps selected';
+      var results = document.getElementById('novCalcResults');
+      if (results) results.innerHTML = buildNovationCalcResults();
+    }
+
     function recalcARVFromComps() {
       var arv = recalcARVFromCompsValue();
       arvCalcState.calculatedARV = arv;
-      var arvDisplay = document.getElementById('arvCalcARVDisplay');
-      if (arvDisplay) arvDisplay.textContent = fmt(arv);
 
+      // ARV input + caption
+      var arvInput = document.getElementById('arvCalcARVInput');
+      if (arvInput) {
+        // Only overwrite the input's value if (a) the user has NOT manually
+        // overridden it AND (b) they're not currently editing it. Otherwise we
+        // could clobber a half-typed number (e.g. typing "0" then "100000").
+        if (!arvCalcState.arvOverride && document.activeElement !== arvInput) {
+          arvInput.value = arv;
+        }
+      }
+      var arvCaption = document.getElementById('arvCalcARVCaption');
       var selectedCount = 0;
       for (var k in arvCalcState.selectedComps) { if (arvCalcState.selectedComps[k]) selectedCount++; }
-      if (arvDisplay && arvDisplay.nextElementSibling) {
-        arvDisplay.nextElementSibling.textContent = selectedCount > 0 ? 'Avg of ' + selectedCount + ' selected comps' : 'Based on Zestimate (no comps selected)';
+      if (arvCaption) {
+        if (arvCalcState.arvOverride) {
+          var rawArv = computeARVFromCompsRaw();
+          arvCaption.textContent = 'Manually entered · comp avg: ' + fmt(rawArv);
+        } else {
+          arvCaption.textContent = selectedCount > 0 ? 'Avg of ' + selectedCount + ' selected comps' : 'Based on Zestimate (no comps selected)';
+        }
       }
 
       var maoGrid = document.getElementById('arvCalcMAOGrid');
       if (maoGrid) maoGrid.innerHTML = buildARVCalcMAOGrid();
 
-      // Novation calc — refresh the inputs-row Avg List Price display + the commission $ preview + the results panel
-      var novListEl = document.getElementById('novCalc_listDisplay');
-      if (novListEl) novListEl.textContent = fmt(arv);
+      // Novation calc — refresh the inputs-row Avg List Price input + the commission $ preview + the results panel
+      var novListEl = document.getElementById('novCalc_listInput');
+      if (novListEl && !arvCalcState.novListOverride && document.activeElement !== novListEl) {
+        novListEl.value = arv;
+      }
       var novListSubEl = document.getElementById('novCalc_listSubtext');
-      if (novListSubEl) novListSubEl.textContent = selectedCount > 0 ? 'Avg of ' + selectedCount + ' selected comps' : 'No comps selected';
+      if (novListSubEl) {
+        if (arvCalcState.novListOverride) {
+          novListSubEl.textContent = 'Manually entered';
+        } else {
+          novListSubEl.textContent = selectedCount > 0 ? 'Avg of ' + selectedCount + ' selected comps' : 'No comps selected';
+        }
+      }
       var commPreview = document.getElementById('novCalc_commPreview');
       var commPct = parseFloat(arvCalcState.novCommissionPct) || 0;
-      if (commPreview) commPreview.textContent = '= ' + fmt(arv * (commPct / 100));
+      var listForComm = getNovListPrice();
+      if (commPreview) commPreview.textContent = '= ' + fmt(listForComm * (commPct / 100));
       var novResults = document.getElementById('novCalcResults');
       if (novResults) novResults.innerHTML = buildNovationCalcResults();
     }
@@ -9681,7 +9829,7 @@
      * This is the ceiling we can offer the seller while still hitting our $20K fee.
      */
     function buildNovationCalcResults() {
-      var listPrice = arvCalcState.calculatedARV || 0;
+      var listPrice = getNovListPrice();
       var cc = parseFloat(arvCalcState.novClosingCosts) || 0;
       var commPct = parseFloat(arvCalcState.novCommissionPct) || 0;
       var ourFee = parseFloat(arvCalcState.novOurFee) || 0;
@@ -9736,7 +9884,7 @@
       if (dealEl) arvCalcState.novDealCosts = parseFloat(dealEl.value) || 0;
       // Refresh the commission $-preview based on the new % and current list price
       var commPreview = document.getElementById('novCalc_commPreview');
-      var listPrice = arvCalcState.calculatedARV || 0;
+      var listPrice = getNovListPrice();
       var commPct = parseFloat(arvCalcState.novCommissionPct) || 0;
       if (commPreview) commPreview.textContent = '= ' + fmt(listPrice * (commPct / 100));
       var results = document.getElementById('novCalcResults');
