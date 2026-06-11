@@ -565,6 +565,7 @@
     <button class="tab-button" onclick="switchTab('roi')">Marketing ROI</button>
     <button class="tab-button" onclick="switchTab('financials')">Financials</button>
     <button class="tab-button" onclick="switchTab('projections')">Projections</button>
+    <button class="tab-button" onclick="switchTab('projections2')">Projections 2</button>
     <button class="tab-button" onclick="switchTab('pipelineflow')">Pipeline Flow</button>
     <button class="tab-button" onclick="switchTab('callledger')">Call Ledger</button>
     <button class="tab-button" onclick="switchTab('arvcalc')">Acq Calculator</button>
@@ -851,6 +852,99 @@
         <span id="projConnectStatus" style="font-size:11px;color:#999;"></span>
       </div>
       <div id="projectionsContent"></div>
+    </div>
+
+    <!-- PROJECTIONS 2 TAB — quarterly growth model -->
+    <!-- All styles inside this tab are scoped to .p2-root so the dark
+         theme doesn't bleed into the rest of the dashboard. -->
+    <div id="projections2" class="tab-content">
+      <style>
+        .p2-root { background: #0d1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 24px 16px; border-radius: 12px; }
+        .p2-root *, .p2-root *::before, .p2-root *::after { box-sizing: border-box; }
+        .p2-root .p2-wrap { max-width: 900px; margin: 0 auto; }
+        .p2-root .p2-eyebrow { font-size: 11px; letter-spacing: 3px; color: #58a6ff; text-transform: uppercase; margin-bottom: 6px; }
+        .p2-root .p2-h1 { font-size: 26px; font-weight: 700; color: #fff; margin: 0 0 6px; }
+        .p2-root .p2-subtitle { color: #8b949e; font-size: 13px; margin-bottom: 24px; }
+        .p2-root .p2-card { background: #161b22; border-radius: 12px; padding: 16px 20px; border: 1px solid #30363d; margin-bottom: 20px; }
+        .p2-root .p2-lbl { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+        .p2-root .p2-big { font-size: 20px; font-weight: 700; }
+        .p2-root .p2-controls-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
+        .p2-root .p2-btn-row { display: flex; gap: 8px; }
+        .p2-root button { padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; border: 1px solid #30363d; background: transparent; color: #8b949e; font-family: inherit; }
+        .p2-root button.p2-act { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+        .p2-root button.p2-sm { padding: 4px 10px; font-size: 11px; }
+        .p2-root button.p2-sm.p2-act { background: #1f3a5f; border-color: #1f6feb; color: #58a6ff; }
+        .p2-root .p2-qrows { display: grid; gap: 12px; }
+        .p2-root .p2-qrow { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding-bottom: 12px; border-bottom: 1px solid #21262d; }
+        .p2-root .p2-qrow:last-child { border-bottom: none; padding-bottom: 0; }
+        .p2-root .p2-qlabel { min-width: 80px; }
+        .p2-root .p2-qlabel .p2-qname { font-size: 13px; font-weight: 600; }
+        .p2-root .p2-qlabel .p2-qnote { font-size: 11px; color: #8b949e; }
+        .p2-root .p2-iw { display: flex; align-items: center; gap: 6px; }
+        .p2-root .p2-iw span { color: #8b949e; font-size: 13px; }
+        .p2-root input[type=number] { width: 90px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #e6edf3; padding: 4px 8px; font-size: 13px; outline: none; font-family: inherit; }
+        .p2-root input[type=number].p2-wide { width: 105px; }
+        .p2-root .p2-pct { font-size: 11px; color: #8b949e; }
+        .p2-root .p2-pct.p2-up { color: #3fb950; }
+        .p2-root .p2-table-card { background: #161b22; border-radius: 12px; border: 1px solid #30363d; overflow: hidden; margin-bottom: 20px; }
+        .p2-root .p2-table-hdr { padding: 14px 20px; border-bottom: 1px solid #30363d; font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; }
+        .p2-root .p2-tw { overflow-x: auto; }
+        .p2-root table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .p2-root thead tr { background: #0d1117; }
+        .p2-root th { padding: 10px 14px; text-align: right; color: #8b949e; font-weight: 500; font-size: 11px; white-space: nowrap; }
+        .p2-root tbody tr { border-top: 1px solid #21262d; }
+        .p2-root tbody tr:nth-child(even) { background: rgba(13,17,23,0.4); }
+        .p2-root td { padding: 12px 14px; text-align: right; }
+        .p2-root .p2-qname2 { font-weight: 600; color: #e6edf3; }
+        .p2-root .p2-qnote2 { font-size: 11px; color: #8b949e; }
+        .p2-root .p2-sumgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .p2-root .p2-sumcard { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 14px 16px; }
+        .p2-root .p2-sumval { font-size: 22px; font-weight: 700; margin-top: 4px; }
+        .p2-root .p2-hint { padding: 12px 16px; background: #161b22; border-radius: 10px; border: 1px solid #30363d; font-size: 12px; color: #8b949e; line-height: 1.6; }
+        .p2-root .p2-hint strong { color: #e6edf3; }
+      </style>
+      <div class="p2-root">
+        <div class="p2-wrap">
+          <div class="p2-eyebrow">Summit Group</div>
+          <div class="p2-h1">Quarterly Growth Projections</div>
+          <p class="p2-subtitle">5-month reserve floor · 3-partner draw · Google PPC model</p>
+          <div class="p2-card p2-controls-row">
+            <div>
+              <div class="p2-lbl">ROAS Scenario</div>
+              <div class="p2-btn-row">
+                <button id="p2-btn-low" class="p2-act">Current (3.46x)</button>
+                <button id="p2-btn-high">Optimistic (5.0x)</button>
+              </div>
+            </div>
+            <div style="flex:1;min-width:200px">
+              <div class="p2-lbl">Starting Balance</div>
+              <div class="p2-big" style="color:#3fb950">$148,000</div>
+            </div>
+            <div>
+              <div class="p2-lbl">Monthly Burn (current)</div>
+              <div id="p2-burn-display" class="p2-big" style="color:#f85149"></div>
+            </div>
+          </div>
+          <div class="p2-card">
+            <div class="p2-lbl" style="margin-bottom:12px">Configure Each Quarter</div>
+            <div class="p2-qrows" id="p2-qconfig"></div>
+          </div>
+          <div class="p2-table-card">
+            <div class="p2-table-hdr" id="p2-tbl-hdr">Quarterly Breakdown</div>
+            <div class="p2-tw">
+              <table>
+                <thead><tr>
+                  <th>Quarter</th><th>Ad Spend</th><th>Monthly Burn</th><th>5-Mo Reserve</th>
+                  <th>Qtr Revenue</th><th>End Balance</th><th>Draw Pool</th><th>Per Partner</th>
+                </tr></thead>
+                <tbody id="p2-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="p2-sumgrid" id="p2-sumgrid"></div>
+          <div class="p2-hint">💡 <strong>How to use:</strong> Adjust ad spend per quarter to model growth scenarios. Toggle between ROAS scenarios at the top. Q2 uses your actual $20K revenue — switch to Manual Input and enter it, or use ROAS projection. Red values indicate balance falls below reserve floor.</div>
+        </div>
+      </div>
     </div>
 
     <!-- CALL LEDGER TAB -->
@@ -4161,6 +4255,8 @@
         renderFinancialsTab();
       } else if (tab === 'projections') {
         renderProjectionsTab();
+      } else if (tab === 'projections2') {
+        renderProjections2Tab();
       } else if (tab === 'pipelineflow') {
         // Pipeline flow already has its controls, no additional render needed
       } else if (tab === 'callledger') {
@@ -10260,6 +10356,7 @@
       }
 
       var props = sellerPhotosData.properties || [];
+      var totalPhotos = props.reduce(function(sum, p) { return sum + (p.photos ? p.photos.length : 0); }, 0);
       var html = '';
 
       // Header
@@ -10268,13 +10365,15 @@
       html += '<h2 style="font-size:22px;font-weight:700;color:#1B2A4A;margin:0;">Seller Photos</h2>';
       html += '<p style="font-size:13px;color:#666;margin:4px 0 0;">Property photos sent by sellers via GHL. Tagged contacts are auto-scraped for image attachments.</p>';
       html += '</div>';
-      html += '<div style="display:flex;gap:8px;">';
+      html += '<div style="display:flex;gap:8px;align-items:center;">';
+      if (totalPhotos > 0) {
+        html += '<button id="downloadAllSellerPhotosBtn" onclick="downloadAllSellerPhotos()" title="Download every photo as a single zip (one folder per property)" style="padding:6px 16px;background:#2E7D32;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">📥 Download All (' + totalPhotos + ')</button>';
+      }
       html += '<button onclick="sellerPhotosData=null;renderSellerPhotosTab()" style="padding:6px 16px;background:#E65100;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Refresh</button>';
       html += '<span style="padding:6px 12px;background:#FFF3E0;border:1px solid #FFB74D;border-radius:6px;font-size:12px;font-weight:600;color:#E65100;">' + props.length + ' propert' + (props.length !== 1 ? 'ies' : 'y') + '</span>';
       html += '</div></div>';
 
       // Summary
-      var totalPhotos = props.reduce(function(sum, p) { return sum + (p.photos ? p.photos.length : 0); }, 0);
       html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">';
       html += '<div style="background:white;border-radius:8px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);border-left:4px solid #E65100;"><div style="font-size:11px;font-weight:600;color:#999;text-transform:uppercase;">Properties</div><div style="font-size:24px;font-weight:700;color:#E65100;margin-top:4px;">' + props.length + '</div></div>';
       html += '<div style="background:white;border-radius:8px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,0.08);border-left:4px solid #FF9800;"><div style="font-size:11px;font-weight:600;color:#999;text-transform:uppercase;">Total Photos</div><div style="font-size:24px;font-weight:700;color:#FF9800;margin-top:4px;">' + totalPhotos + '</div></div>';
@@ -10333,6 +10432,10 @@
           // Expanded gallery
           if (isExpanded && photoCount > 0) {
             html += '<div style="border-top:1px solid #eee;padding:16px 20px;">';
+            // Per-property download button — zips just this property's photos.
+            html += '<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">';
+            html += '<button id="dl_' + safeKey + '" onclick="downloadSellerPhotosForProperty(\'' + safeKey + '\')" style="padding:5px 12px;background:#2E7D32;color:white;border:none;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;">📥 Download ' + photoCount + ' photo' + (photoCount !== 1 ? 's' : '') + '</button>';
+            html += '</div>';
             html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;">';
             prop.photos.forEach(function(photo, pi) {
               var photoUrl = photo.url || photo;
@@ -10355,6 +10458,480 @@
       }
 
       container.innerHTML = html;
+    }
+
+    // ==================== SELLER PHOTOS — BULK DOWNLOAD ====================
+    // Downloads all photos for one property, or for every property in the tab,
+    // into a single .zip file. JSZip is loaded on-demand from CDN the first
+    // time a download is triggered, so users who never download don't pay the
+    // bandwidth.
+
+    var _jszipPromise = null;
+    function ensureJSZip() {
+      if (window.JSZip) return Promise.resolve(window.JSZip);
+      if (_jszipPromise) return _jszipPromise;
+      _jszipPromise = new Promise(function(resolve, reject) {
+        var s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+        s.onload = function() {
+          if (window.JSZip) resolve(window.JSZip);
+          else reject(new Error('JSZip loaded but window.JSZip is not defined'));
+        };
+        s.onerror = function() { reject(new Error('Failed to load JSZip from CDN')); };
+        document.head.appendChild(s);
+      });
+      return _jszipPromise;
+    }
+
+    /**
+     * Make a string safe to use as a filename inside a zip:
+     * strip path separators, collapse whitespace, trim length.
+     */
+    function safeFilenameFragment(s) {
+      return String(s || '')
+        .replace(/[\\\/\:\*\?"<>\|]/g, '')   // strip filesystem-illegal chars
+        .replace(/\s+/g, ' ')
+        .trim()
+        .substring(0, 80) || 'unknown';
+    }
+
+    /**
+     * Guess a sensible extension for a photo URL. Falls back to .jpg.
+     */
+    function guessPhotoExt(url) {
+      try {
+        var u = String(url).split('?')[0].split('#')[0].toLowerCase();
+        var m = u.match(/\.(jpe?g|png|gif|webp|heic|bmp)$/);
+        if (m) return '.' + m[1].replace('jpeg', 'jpg');
+      } catch (e) {}
+      return '.jpg';
+    }
+
+    /**
+     * Fetch one photo as a binary blob. Returns null (and logs) on failure
+     * so the caller can skip and continue.
+     *
+     * Photos are routed through the worker's /api/photos/proxy endpoint because
+     * the underlying URLs (GHL CDN, Cloudinary, etc.) often don't send CORS
+     * headers, which would otherwise block fetch() from the browser. The proxy
+     * adds Access-Control-Allow-Origin and forwards the image bytes. We fall
+     * back to a direct fetch if the proxy itself fails — for the few hosts
+     * that already do allow CORS, the fallback still works.
+     */
+    async function fetchPhotoBlob(rawUrl) {
+      // Skip data: URLs — they're already inline blobs.
+      if (typeof rawUrl !== 'string' || !rawUrl) return null;
+      if (rawUrl.startsWith('data:')) {
+        try {
+          var r = await fetch(rawUrl);
+          return await r.blob();
+        } catch (e) { return null; }
+      }
+      var workerUrl = (typeof pipelineWorkerUrl !== 'undefined' && pipelineWorkerUrl)
+        ? pipelineWorkerUrl
+        : 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+      var proxyUrl = workerUrl + '/api/photos/proxy?url=' + encodeURIComponent(rawUrl);
+      try {
+        var resp = await fetch(proxyUrl, { mode: 'cors', credentials: 'omit' });
+        if (resp.ok) return await resp.blob();
+        // Proxy refused (404/502/etc.) — fall through to direct fetch attempt.
+        console.warn('Proxy refused photo (' + resp.status + ') — trying direct:', rawUrl);
+      } catch (e) {
+        console.warn('Proxy fetch threw — trying direct:', e.message);
+      }
+      try {
+        var direct = await fetch(rawUrl, { mode: 'cors', credentials: 'omit' });
+        if (!direct.ok) throw new Error('HTTP ' + direct.status);
+        return await direct.blob();
+      } catch (e2) {
+        console.warn('Photo fetch failed for', rawUrl, e2.message);
+        return null;
+      }
+    }
+
+    /**
+     * Trigger a browser download of a Blob with a given filename.
+     */
+    function downloadBlob(blob, filename) {
+      var blobUrl = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Give the browser a beat before revoking
+      setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 1000);
+    }
+
+    /**
+     * Update a button's text/disabled state during a long-running download.
+     */
+    function setBtnState(btnId, opts) {
+      var btn = document.getElementById(btnId);
+      if (!btn) return;
+      if (opts.text !== undefined) btn.textContent = opts.text;
+      if (opts.disabled !== undefined) btn.disabled = opts.disabled;
+      btn.style.opacity = opts.disabled ? '0.6' : '1';
+      btn.style.cursor = opts.disabled ? 'wait' : 'pointer';
+    }
+
+    /**
+     * Build a zip of all photos for a single property. Photos are named
+     * "01_<date>.jpg", "02_<date>.jpg" etc. so they sort chronologically.
+     * Returns the JSZip instance and a stats object so the caller can decide
+     * whether to download or warn.
+     */
+    async function buildPropertyZipFolder(zip, folderName, photos) {
+      var folder = zip.folder(folderName);
+      var ok = 0;
+      var failed = 0;
+      for (var i = 0; i < photos.length; i++) {
+        var photo = photos[i];
+        var photoUrl = photo.url || photo;
+        var ts = photo.timestamp ? new Date(photo.timestamp) : null;
+        var dateTag = ts && !isNaN(ts.getTime())
+          ? ts.toISOString().substring(0, 10)
+          : 'undated';
+        var idx = String(i + 1).padStart(2, '0');
+        var ext = guessPhotoExt(photoUrl);
+        var filename = idx + '_' + dateTag + ext;
+        var blob = await fetchPhotoBlob(photoUrl);
+        if (blob) {
+          folder.file(filename, blob);
+          ok++;
+        } else {
+          failed++;
+        }
+      }
+      return { ok: ok, failed: failed };
+    }
+
+    /**
+     * Download every photo for a single property as a zip.
+     */
+    async function downloadSellerPhotosForProperty(safeKey) {
+      var btnId = 'dl_' + safeKey;
+      var props = (sellerPhotosData && sellerPhotosData.properties) || [];
+      var prop = null;
+      for (var i = 0; i < props.length; i++) {
+        var pk = (props[i].key || '').replace(/[^a-zA-Z0-9]/g, '_');
+        if (pk === safeKey) { prop = props[i]; break; }
+      }
+      if (!prop || !prop.photos || prop.photos.length === 0) {
+        alert('No photos found for this property.');
+        return;
+      }
+      setBtnState(btnId, { text: '⏳ Preparing...', disabled: true });
+      try {
+        var JSZip = await ensureJSZip();
+        var zip = new JSZip();
+        var folderName = safeFilenameFragment(prop.address);
+        setBtnState(btnId, { text: '⏳ Fetching 0/' + prop.photos.length, disabled: true });
+        // We re-implement the loop here instead of calling buildPropertyZipFolder
+        // so we can report progress per-photo on the button.
+        var folder = zip.folder(folderName);
+        var ok = 0, failed = 0;
+        for (var pi = 0; pi < prop.photos.length; pi++) {
+          var photo = prop.photos[pi];
+          var photoUrl = photo.url || photo;
+          var ts = photo.timestamp ? new Date(photo.timestamp) : null;
+          var dateTag = ts && !isNaN(ts.getTime()) ? ts.toISOString().substring(0, 10) : 'undated';
+          var idx = String(pi + 1).padStart(2, '0');
+          var filename = idx + '_' + dateTag + guessPhotoExt(photoUrl);
+          var blob = await fetchPhotoBlob(photoUrl);
+          if (blob) { folder.file(filename, blob); ok++; } else { failed++; }
+          setBtnState(btnId, { text: '⏳ Fetching ' + (pi + 1) + '/' + prop.photos.length, disabled: true });
+        }
+        if (ok === 0) {
+          alert('Could not download any photos. They may be blocked by CORS from their host.');
+          setBtnState(btnId, { text: '📥 Download ' + prop.photos.length + ' photo' + (prop.photos.length !== 1 ? 's' : ''), disabled: false });
+          return;
+        }
+        setBtnState(btnId, { text: '⏳ Zipping...', disabled: true });
+        var zipBlob = await zip.generateAsync({ type: 'blob' });
+        var safeAddr = safeFilenameFragment(prop.address);
+        downloadBlob(zipBlob, safeAddr + ' - seller photos.zip');
+        setBtnState(btnId, {
+          text: '✓ Downloaded' + (failed > 0 ? ' (' + failed + ' skipped)' : ''),
+          disabled: false
+        });
+        // Restore label after a moment
+        setTimeout(function() {
+          setBtnState(btnId, { text: '📥 Download ' + prop.photos.length + ' photo' + (prop.photos.length !== 1 ? 's' : ''), disabled: false });
+        }, 3000);
+      } catch (e) {
+        console.error('Property download failed:', e);
+        alert('Download failed: ' + e.message);
+        setBtnState(btnId, { text: '📥 Download ' + prop.photos.length + ' photo' + (prop.photos.length !== 1 ? 's' : ''), disabled: false });
+      }
+    }
+
+    /**
+     * Download every photo across every property as a single zip, with one
+     * folder per property keyed by the property address.
+     */
+    async function downloadAllSellerPhotos() {
+      var btnId = 'downloadAllSellerPhotosBtn';
+      var props = (sellerPhotosData && sellerPhotosData.properties) || [];
+      var totalPhotos = props.reduce(function(s, p) { return s + (p.photos ? p.photos.length : 0); }, 0);
+      if (totalPhotos === 0) {
+        alert('No seller photos to download.');
+        return;
+      }
+      setBtnState(btnId, { text: '⏳ Preparing...', disabled: true });
+      try {
+        var JSZip = await ensureJSZip();
+        var zip = new JSZip();
+        // Track collisions — two properties with the same display address would
+        // collide on folder name. Append " (2)" etc. to keep them distinct.
+        var folderNamesUsed = {};
+        var grandOk = 0, grandFailed = 0, photosDone = 0;
+        for (var i = 0; i < props.length; i++) {
+          var prop = props[i];
+          if (!prop.photos || prop.photos.length === 0) continue;
+          var baseName = safeFilenameFragment(prop.address);
+          var folderName = baseName;
+          var dupCounter = 2;
+          while (folderNamesUsed[folderName]) {
+            folderName = baseName + ' (' + dupCounter + ')';
+            dupCounter++;
+          }
+          folderNamesUsed[folderName] = true;
+          var folder = zip.folder(folderName);
+          for (var pi = 0; pi < prop.photos.length; pi++) {
+            var photo = prop.photos[pi];
+            var photoUrl = photo.url || photo;
+            var ts = photo.timestamp ? new Date(photo.timestamp) : null;
+            var dateTag = ts && !isNaN(ts.getTime()) ? ts.toISOString().substring(0, 10) : 'undated';
+            var idx = String(pi + 1).padStart(2, '0');
+            var filename = idx + '_' + dateTag + guessPhotoExt(photoUrl);
+            var blob = await fetchPhotoBlob(photoUrl);
+            if (blob) { folder.file(filename, blob); grandOk++; } else { grandFailed++; }
+            photosDone++;
+            setBtnState(btnId, { text: '⏳ Fetching ' + photosDone + '/' + totalPhotos, disabled: true });
+          }
+        }
+        if (grandOk === 0) {
+          alert('Could not download any photos. They may be blocked by CORS from their host.');
+          setBtnState(btnId, { text: '📥 Download All (' + totalPhotos + ')', disabled: false });
+          return;
+        }
+        setBtnState(btnId, { text: '⏳ Zipping...', disabled: true });
+        var zipBlob = await zip.generateAsync({ type: 'blob' });
+        var today = new Date().toISOString().substring(0, 10);
+        downloadBlob(zipBlob, 'seller-photos_' + today + '.zip');
+        setBtnState(btnId, {
+          text: '✓ Downloaded ' + grandOk + (grandFailed > 0 ? ' (' + grandFailed + ' skipped)' : ''),
+          disabled: false
+        });
+        setTimeout(function() {
+          setBtnState(btnId, { text: '📥 Download All (' + totalPhotos + ')', disabled: false });
+        }, 4000);
+      } catch (e) {
+        console.error('Download All failed:', e);
+        alert('Download failed: ' + e.message);
+        setBtnState(btnId, { text: '📥 Download All (' + totalPhotos + ')', disabled: false });
+      }
+    }
+
+    // ==================== PROJECTIONS 2 TAB ====================
+    // Quarterly growth model with configurable ROAS scenarios, 5-month
+    // reserve floor, and 3-partner draw split. All state lives in p2State
+    // so it persists across tab switches.
+
+    var p2State = {
+      FACEBOOK: 600,
+      SOFTWARE: 500,
+      SM3: 0.15,
+      RES: 5,
+      START: 148000,
+      ROAS_LOW: 3.46,
+      ROAS_HIGH: 5.0,
+      QS: [
+        { l: 'Q2 2026', n: 'End of June' },
+        { l: 'Q3 2026', n: 'End of Sept' },
+        { l: 'Q4 2026', n: 'End of Dec' },
+        { l: 'Q1 2027', n: 'End of March' },
+        { l: 'Q2 2027', n: 'End of June' }
+      ],
+      roasMode: 'low',
+      spends: [22500, 22500, 22500, 22500, 22500],
+      manRev: [20000, 0, 0, 0, 0],
+      useProj: [false, true, true, true, true],
+      wired: false
+    };
+
+    function p2Burn(s) {
+      return s + s * p2State.SM3 + p2State.FACEBOOK + p2State.SOFTWARE;
+    }
+    function p2Fmt(n) {
+      var a = Math.abs(Math.round(n)).toLocaleString();
+      return n < 0 ? '-$' + a : '$' + a;
+    }
+    function p2Pct(a, b) {
+      return b ? '+' + ((a - b) / b * 100).toFixed(1) + '%' : '—';
+    }
+    function p2Roas() {
+      return p2State.roasMode === 'low' ? p2State.ROAS_LOW : p2State.ROAS_HIGH;
+    }
+
+    function p2Compute() {
+      var bal = p2State.START;
+      var rows = [];
+      for (var i = 0; i < 5; i++) {
+        var sp = p2State.spends[i];
+        var b = p2Burn(sp);
+        var res = b * p2State.RES;
+        var mrev = p2State.useProj[i] ? sp * p2Roas() : p2State.manRev[i] / 3;
+        var qrev = mrev * 3;
+        var qb = b * 3;
+        var end = bal + qrev - qb;
+        var draw = Math.max(0, end - res);
+        var pp = draw / 3;
+        var after = end - draw;
+        rows.push({
+          l: p2State.QS[i].l, n: p2State.QS[i].n,
+          sp: sp, b: b, res: res, qrev: qrev, end: end, draw: draw, pp: pp
+        });
+        bal = after;
+      }
+      return rows;
+    }
+
+    function p2BuildConfig() {
+      var html = '';
+      for (var i = 0; i < 5; i++) {
+        var pctHtml = '';
+        if (i > 0) {
+          var up = p2State.spends[i] > p2State.spends[i - 1];
+          var diff = p2State.spends[i] !== p2State.spends[i - 1]
+            ? p2Pct(p2State.spends[i], p2State.spends[i - 1])
+            : '—';
+          pctHtml = '<span class="p2-pct' + (up ? ' p2-up' : '') + '">' + diff + '</span>';
+        }
+        var manInput = !p2State.useProj[i]
+          ? '<div><div class="p2-lbl">Quarterly Revenue</div><div class="p2-iw"><span>$</span><input type="number" class="p2-wide p2-rev-input" data-i="' + i + '" value="' + p2State.manRev[i] + '" /></div></div>'
+          : '';
+        html += '<div class="p2-qrow">'
+          + '<div class="p2-qlabel"><div class="p2-qname">' + p2State.QS[i].l + '</div><div class="p2-qnote">' + p2State.QS[i].n + '</div></div>'
+          + '<div><div class="p2-lbl">Google Ad Spend</div><div class="p2-iw"><span>$</span>'
+          + '<input type="number" class="p2-spend-input" data-i="' + i + '" value="' + p2State.spends[i] + '" />'
+          + pctHtml + '</div></div>'
+          + '<div><div class="p2-lbl">Revenue Source</div><div class="p2-btn-row">'
+          + '<button class="p2-sm p2-src-btn' + (p2State.useProj[i] ? ' p2-act' : '') + '" data-i="' + i + '" data-proj="1">ROAS Projected</button>'
+          + '<button class="p2-sm p2-src-btn' + (!p2State.useProj[i] ? ' p2-act' : '') + '" data-i="' + i + '" data-proj="0">Manual Input</button>'
+          + '</div></div>'
+          + manInput
+          + '</div>';
+      }
+      var configEl = document.getElementById('p2-qconfig');
+      if (!configEl) return;
+      // Remember which input was focused so we can restore it after innerHTML
+      // wipes the DOM. Without this, every keystroke loses focus.
+      var prev = document.activeElement;
+      var prevClass = prev && prev.classList && (prev.classList.contains('p2-spend-input') ? 'p2-spend-input' : prev.classList.contains('p2-rev-input') ? 'p2-rev-input' : null);
+      var prevIdx = prev && prev.dataset ? prev.dataset.i : null;
+      var prevSelStart = prev && prev.selectionStart != null ? prev.selectionStart : null;
+      configEl.innerHTML = html;
+      configEl.querySelectorAll('.p2-spend-input').forEach(function(el) {
+        el.addEventListener('input', function() {
+          p2State.spends[parseInt(el.dataset.i)] = Number(el.value);
+          p2Render();
+        });
+      });
+      // Restore focus + caret position
+      if (prevClass && prevIdx !== null) {
+        var sel = '.' + prevClass + '[data-i="' + prevIdx + '"]';
+        var restored = configEl.querySelector(sel);
+        if (restored) {
+          restored.focus();
+          if (prevSelStart != null) {
+            try { restored.setSelectionRange(prevSelStart, prevSelStart); } catch (e) {}
+          }
+        }
+      }
+      configEl.querySelectorAll('.p2-rev-input').forEach(function(el) {
+        el.addEventListener('input', function() {
+          p2State.manRev[parseInt(el.dataset.i)] = Number(el.value);
+          p2RenderTable();
+        });
+      });
+      configEl.querySelectorAll('.p2-src-btn').forEach(function(el) {
+        el.addEventListener('click', function() {
+          var i = parseInt(el.dataset.i);
+          p2State.useProj[i] = el.dataset.proj === '1';
+          p2BuildConfig();
+          p2RenderTable();
+        });
+      });
+    }
+
+    function p2RenderTable() {
+      var r = p2Roas();
+      var hdr = document.getElementById('p2-tbl-hdr');
+      if (hdr) hdr.textContent = 'Quarterly Breakdown — ROAS ' + r + 'x';
+      var burnEl = document.getElementById('p2-burn-display');
+      if (burnEl) burnEl.textContent = p2Fmt(p2Burn(p2State.spends[0]));
+      var rows = p2Compute();
+      var tb = '';
+      rows.forEach(function(row) {
+        var ec = row.end >= row.res ? 'color:#e6edf3;font-weight:600' : 'color:#f85149;font-weight:600';
+        var dc = row.draw > 0 ? 'color:#3fb950;font-weight:600' : 'color:#f85149;font-weight:600';
+        var pc = row.pp > 0 ? 'color:#58a6ff;font-weight:700' : 'color:#f85149;font-weight:700';
+        tb += "<tr><td style='text-align:left'><div class='p2-qname2'>" + row.l + "</div><div class='p2-qnote2'>" + row.n + '</div></td>'
+          + "<td style='color:#58a6ff;font-weight:600'>" + p2Fmt(row.sp) + '</td>'
+          + "<td style='color:#f85149'>" + p2Fmt(row.b) + '</td>'
+          + "<td style='color:#d29922'>" + p2Fmt(row.res) + '</td>'
+          + "<td style='color:#3fb950'>" + p2Fmt(row.qrev) + '</td>'
+          + "<td style='" + ec + "'>" + p2Fmt(row.end) + '</td>'
+          + "<td style='" + dc + "'>" + p2Fmt(row.draw) + '</td>'
+          + "<td style='" + pc + "'>" + p2Fmt(row.pp) + '</td></tr>';
+      });
+      var tbody = document.getElementById('p2-tbody');
+      if (tbody) tbody.innerHTML = tb;
+      var tr = rows.reduce(function(s, row) { return s + row.qrev; }, 0);
+      var td = rows.reduce(function(s, row) { return s + row.draw; }, 0);
+      var tp = rows.reduce(function(s, row) { return s + row.pp; }, 0);
+      var sumgrid = document.getElementById('p2-sumgrid');
+      if (sumgrid) {
+        sumgrid.innerHTML =
+          "<div class='p2-sumcard'><div class='p2-lbl'>Total Projected Revenue</div><div class='p2-sumval' style='color:#3fb950'>" + p2Fmt(tr) + "</div></div>"
+          + "<div class='p2-sumcard'><div class='p2-lbl'>Total Draw Available</div><div class='p2-sumval' style='color:#58a6ff'>" + p2Fmt(td) + "</div></div>"
+          + "<div class='p2-sumcard'><div class='p2-lbl'>Per Partner (all qtrs)</div><div class='p2-sumval' style='color:#a371f7'>" + p2Fmt(tp) + "</div></div>"
+          + "<div class='p2-sumcard'><div class='p2-lbl'>ROAS Used</div><div class='p2-sumval' style='color:#d29922'>" + p2Roas() + "x</div></div>";
+      }
+    }
+
+    function p2Render() {
+      p2BuildConfig();
+      p2RenderTable();
+    }
+
+    function renderProjections2Tab() {
+      // Wire up the ROAS toggle buttons only the first time the tab is opened.
+      if (!p2State.wired) {
+        var btnLow = document.getElementById('p2-btn-low');
+        var btnHigh = document.getElementById('p2-btn-high');
+        if (btnLow) {
+          btnLow.addEventListener('click', function() {
+            p2State.roasMode = 'low';
+            btnLow.className = 'p2-act';
+            if (btnHigh) btnHigh.className = '';
+            p2Render();
+          });
+        }
+        if (btnHigh) {
+          btnHigh.addEventListener('click', function() {
+            p2State.roasMode = 'high';
+            if (btnLow) btnLow.className = '';
+            btnHigh.className = 'p2-act';
+            p2Render();
+          });
+        }
+        p2State.wired = true;
+      }
+      p2Render();
     }
 
     function renderAgentsTab() {
