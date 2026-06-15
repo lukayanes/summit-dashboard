@@ -854,97 +854,103 @@
       <div id="projectionsContent"></div>
     </div>
 
-    <!-- PROJECTIONS 2 TAB — quarterly growth model -->
-    <!-- All styles inside this tab are scoped to .p2-root so the dark
-         theme doesn't bleed into the rest of the dashboard. -->
+    <!-- PROJECTIONS 2 TAB — quarterly growth model.
+         Styled to match the rest of the dashboard (light theme, kpi-cards,
+         section titles). All sub-class names are prefixed `p2-` so they
+         won't collide with dashboard-wide styles. -->
     <div id="projections2" class="tab-content">
       <style>
-        .p2-root { background: #0d1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 24px 16px; border-radius: 12px; }
-        .p2-root *, .p2-root *::before, .p2-root *::after { box-sizing: border-box; }
-        .p2-root .p2-wrap { max-width: 900px; margin: 0 auto; }
-        .p2-root .p2-eyebrow { font-size: 11px; letter-spacing: 3px; color: #58a6ff; text-transform: uppercase; margin-bottom: 6px; }
-        .p2-root .p2-h1 { font-size: 26px; font-weight: 700; color: #fff; margin: 0 0 6px; }
-        .p2-root .p2-subtitle { color: #8b949e; font-size: 13px; margin-bottom: 24px; }
-        .p2-root .p2-card { background: #161b22; border-radius: 12px; padding: 16px 20px; border: 1px solid #30363d; margin-bottom: 20px; }
-        .p2-root .p2-lbl { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
-        .p2-root .p2-big { font-size: 20px; font-weight: 700; }
-        .p2-root .p2-controls-row { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
-        .p2-root .p2-btn-row { display: flex; gap: 8px; }
-        .p2-root button { padding: 6px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; border: 1px solid #30363d; background: transparent; color: #8b949e; font-family: inherit; }
-        .p2-root button.p2-act { background: #1f6feb; border-color: #1f6feb; color: #fff; }
-        .p2-root button.p2-sm { padding: 4px 10px; font-size: 11px; }
-        .p2-root button.p2-sm.p2-act { background: #1f3a5f; border-color: #1f6feb; color: #58a6ff; }
-        .p2-root .p2-qrows { display: grid; gap: 12px; }
-        .p2-root .p2-qrow { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding-bottom: 12px; border-bottom: 1px solid #21262d; }
-        .p2-root .p2-qrow:last-child { border-bottom: none; padding-bottom: 0; }
-        .p2-root .p2-qlabel { min-width: 80px; }
-        .p2-root .p2-qlabel .p2-qname { font-size: 13px; font-weight: 600; }
-        .p2-root .p2-qlabel .p2-qnote { font-size: 11px; color: #8b949e; }
-        .p2-root .p2-iw { display: flex; align-items: center; gap: 6px; }
-        .p2-root .p2-iw span { color: #8b949e; font-size: 13px; }
-        .p2-root input[type=number] { width: 90px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #e6edf3; padding: 4px 8px; font-size: 13px; outline: none; font-family: inherit; }
-        .p2-root input[type=number].p2-wide { width: 105px; }
-        .p2-root .p2-pct { font-size: 11px; color: #8b949e; }
-        .p2-root .p2-pct.p2-up { color: #3fb950; }
-        .p2-root .p2-table-card { background: #161b22; border-radius: 12px; border: 1px solid #30363d; overflow: hidden; margin-bottom: 20px; }
-        .p2-root .p2-table-hdr { padding: 14px 20px; border-bottom: 1px solid #30363d; font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; }
-        .p2-root .p2-tw { overflow-x: auto; }
-        .p2-root table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        .p2-root thead tr { background: #0d1117; }
-        .p2-root th { padding: 10px 14px; text-align: right; color: #8b949e; font-weight: 500; font-size: 11px; white-space: nowrap; }
-        .p2-root tbody tr { border-top: 1px solid #21262d; }
-        .p2-root tbody tr:nth-child(even) { background: rgba(13,17,23,0.4); }
-        .p2-root td { padding: 12px 14px; text-align: right; }
-        .p2-root .p2-qname2 { font-weight: 600; color: #e6edf3; }
-        .p2-root .p2-qnote2 { font-size: 11px; color: #8b949e; }
-        .p2-root .p2-sumgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
-        .p2-root .p2-sumcard { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 14px 16px; }
-        .p2-root .p2-sumval { font-size: 22px; font-weight: 700; margin-top: 4px; }
-        .p2-root .p2-hint { padding: 12px 16px; background: #161b22; border-radius: 10px; border: 1px solid #30363d; font-size: 12px; color: #8b949e; line-height: 1.6; }
-        .p2-root .p2-hint strong { color: #e6edf3; }
+        .p2-controls { display: flex; gap: 8px; align-items: center; padding: 3px; background: #e8edf3; border-radius: 6px; }
+        .p2-toggle-btn { padding: 6px 14px; border: none; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer; background: transparent; color: #666; transition: all 0.15s ease; }
+        .p2-toggle-btn.active { background: #1B2A4A; color: white; }
+        .p2-qrow { display: grid; grid-template-columns: 110px 1fr 1fr 1fr; gap: 16px; align-items: end; padding: 14px 0; border-bottom: 1px solid #f0f0f0; }
+        .p2-qrow:last-child { border-bottom: none; }
+        .p2-qlbl { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 4px; }
+        .p2-qname { font-size: 14px; font-weight: 700; color: #1B2A4A; }
+        .p2-qnote { font-size: 11px; color: #888; margin-top: 2px; }
+        .p2-iw { display: flex; align-items: center; gap: 6px; }
+        .p2-iw .p2-prefix { color: #888; font-size: 13px; font-weight: 600; }
+        .p2-num { width: 100%; padding: 7px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; font-weight: 600; color: #1B2A4A; outline: none; background: white; font-family: inherit; }
+        .p2-num:focus { border-color: #2E75B6; box-shadow: 0 0 0 2px rgba(46,117,182,0.15); }
+        .p2-pct { font-size: 11px; color: #888; font-weight: 600; white-space: nowrap; margin-top: 4px; }
+        .p2-pct.up { color: #548235; }
+        .p2-pct.down { color: #C00000; }
+        .p2-src-btns { display: flex; gap: 4px; }
+        .p2-src-btn { padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; background: white; color: #666; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; flex: 1; }
+        .p2-src-btn.active { border-color: #2E75B6; background: #2E75B6; color: white; }
+        .p2-breakdown td.q-cell { text-align: left; }
+        .p2-breakdown td { font-weight: 600; }
+        .p2-cell-good { color: #548235; }
+        .p2-cell-bad { color: #C00000; }
+        .p2-cell-warn { color: #ED7D31; }
+        .p2-cell-spend { color: #2E75B6; }
+        .p2-cell-partner { color: #7030A0; font-weight: 700; }
+        .p2-hint { padding: 14px 16px; background: #FFF8E1; border-left: 4px solid #ED7D31; border-radius: 4px; font-size: 12px; color: #5D4037; line-height: 1.6; }
+        .p2-hint strong { color: #1B2A4A; }
+        @media (max-width: 768px) {
+          .p2-qrow { grid-template-columns: 1fr; gap: 8px; }
+        }
       </style>
-      <div class="p2-root">
-        <div class="p2-wrap">
-          <div class="p2-eyebrow">Summit Group</div>
-          <div class="p2-h1">Quarterly Growth Projections</div>
-          <p class="p2-subtitle">5-month reserve floor · 3-partner draw · Google PPC model</p>
-          <div class="p2-card p2-controls-row">
-            <div>
-              <div class="p2-lbl">ROAS Scenario</div>
-              <div class="p2-btn-row">
-                <button id="p2-btn-low" class="p2-act">Current (3.46x)</button>
-                <button id="p2-btn-high">Optimistic (5.0x)</button>
-              </div>
-            </div>
-            <div style="flex:1;min-width:200px">
-              <div class="p2-lbl">Starting Balance</div>
-              <div class="p2-big" style="color:#3fb950">$148,000</div>
-            </div>
-            <div>
-              <div class="p2-lbl">Monthly Burn (current)</div>
-              <div id="p2-burn-display" class="p2-big" style="color:#f85149"></div>
-            </div>
+
+      <h2 style="font-size:22px;font-weight:700;color:#1B2A4A;margin:0 0 4px;">Quarterly Growth Projections</h2>
+      <p style="font-size:13px;color:#666;margin:0 0 20px;">5-month reserve floor · 3-partner draw · Google PPC model</p>
+
+      <!-- ROAS scenario toggle -->
+      <div style="background:white;border-radius:8px;padding:14px 18px;box-shadow:0 2px 8px rgba(0,0,0,0.08);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:20px;align-items:center;">
+        <div>
+          <div class="p2-qlbl">ROAS Scenario</div>
+          <div class="p2-controls" id="p2-roas-toggle">
+            <button class="p2-toggle-btn active" data-mode="low">Current (3.46x)</button>
+            <button class="p2-toggle-btn" data-mode="high">Optimistic (5.0x)</button>
           </div>
-          <div class="p2-card">
-            <div class="p2-lbl" style="margin-bottom:12px">Configure Each Quarter</div>
-            <div class="p2-qrows" id="p2-qconfig"></div>
-          </div>
-          <div class="p2-table-card">
-            <div class="p2-table-hdr" id="p2-tbl-hdr">Quarterly Breakdown</div>
-            <div class="p2-tw">
-              <table>
-                <thead><tr>
-                  <th>Quarter</th><th>Ad Spend</th><th>Monthly Burn</th><th>5-Mo Reserve</th>
-                  <th>Qtr Revenue</th><th>End Balance</th><th>Draw Pool</th><th>Per Partner</th>
-                </tr></thead>
-                <tbody id="p2-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-          <div class="p2-sumgrid" id="p2-sumgrid"></div>
-          <div class="p2-hint">💡 <strong>How to use:</strong> Adjust ad spend per quarter to model growth scenarios. Toggle between ROAS scenarios at the top. Q2 uses your actual $20K revenue — switch to Manual Input and enter it, or use ROAS projection. Red values indicate balance falls below reserve floor.</div>
+        </div>
+        <div style="flex:1;min-width:160px;border-left:1px solid #eee;padding-left:20px;">
+          <div class="p2-qlbl">Starting Balance</div>
+          <div style="font-size:22px;font-weight:800;color:#548235;">$148,000</div>
+        </div>
+        <div style="border-left:1px solid #eee;padding-left:20px;">
+          <div class="p2-qlbl">Monthly Burn (current)</div>
+          <div id="p2-burn-display" style="font-size:22px;font-weight:800;color:#C00000;">—</div>
         </div>
       </div>
+
+      <!-- Per-quarter configuration -->
+      <div style="margin-bottom:20px;">
+        <div class="section-title" style="background-color:#1B2A4A;">Configure Each Quarter</div>
+        <div class="section-body">
+          <div id="p2-qconfig"></div>
+        </div>
+      </div>
+
+      <!-- Breakdown table -->
+      <div style="margin-bottom:20px;">
+        <div class="section-title" style="background-color:#2E75B6;" id="p2-tbl-hdr">Quarterly Breakdown</div>
+        <div class="section-body">
+          <div class="table-container">
+            <table class="p2-breakdown">
+              <thead>
+                <tr>
+                  <th>Quarter</th>
+                  <th style="text-align:right;">Ad Spend</th>
+                  <th style="text-align:right;">Monthly Burn</th>
+                  <th style="text-align:right;">5-Mo Reserve</th>
+                  <th style="text-align:right;">Qtr Revenue</th>
+                  <th style="text-align:right;">End Balance</th>
+                  <th style="text-align:right;">Draw Pool</th>
+                  <th style="text-align:right;">Per Partner</th>
+                </tr>
+              </thead>
+              <tbody id="p2-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary KPIs -->
+      <div id="p2-sumgrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px;"></div>
+
+      <!-- Hint -->
+      <div class="p2-hint">💡 <strong>How to use:</strong> Adjust ad spend per quarter to model growth scenarios. Toggle between ROAS scenarios at the top. Q2 uses your actual $20K revenue — switch to Manual Input and enter it, or use ROAS projection. Values in red indicate balance falls below the reserve floor.</div>
     </div>
 
     <!-- CALL LEDGER TAB -->
@@ -1268,8 +1274,12 @@
           'total income', 'total marketing & lead gen', 'total software & tools', 'total deal costs', 'total operations',
           'total', 'total expenses', 'net profit/loss'];
 
-        // Marketing spend categories (for ROAS)
-        const marketingCats = ['ad spend', 'google ad spend', 'facebook ad spend', 'tik tok ad spend', 'sms marketing', 'investor lift'];
+        // Marketing spend categories (for ROAS).
+        // SM3 is the agency that runs our Google Ads — their management fee is
+        // a recurring marketing expense, so it counts toward total marketing
+        // spend for ROAS purposes. We accept several common spellings so the
+        // dashboard doesn't break if the Tiller label is tweaked.
+        const marketingCats = ['ad spend', 'google ad spend', 'facebook ad spend', 'tik tok ad spend', 'sms marketing', 'investor lift', 'sm3 marketing', 'sm3 management', 'sm3', 'sm3 fee', 'sm3 management fee'];
 
         for (let i = headerIdx + 1; i < rows.length; i++) {
           const r = rows[i];
@@ -2309,7 +2319,7 @@
       // ROAS from Tiller (matches Financials & Marketing ROI tabs)
       let tillerMarketing = 0;
       if (EXPENSE_DATA) {
-        const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift'];
+        const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee'];
         Object.entries(EXPENSE_DATA.categories).forEach(([catName, monthlyVals]) => {
           if (mktCats.includes(catName.toLowerCase())) {
             Object.entries(monthlyVals).forEach(([month, value]) => {
@@ -2771,7 +2781,7 @@
         monthlyIncomeExpense[m] = { income: 0, expense: 0, marketing: 0, commission: 0, opex: 0 };
       });
 
-      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift'];
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee'];
 
       Object.entries(categories).forEach(([catName, monthlyData]) => {
         const isIncome = (monthlyData._type || '').toLowerCase() === 'income';
@@ -3122,7 +3132,9 @@
 
       const categories = EXPENSE_DATA.categories;
       const monthLabels = EXPENSE_DATA.monthLabels;
-      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift'];
+      // SM3 runs our Google Ads — their management fee counts as marketing spend.
+      // We accept several common Tiller labels so the dashboard is robust.
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee'];
 
       // ── Build monthly data from Tiller ──
       let totalIncome = 0, totalMarketing = 0;
@@ -3217,7 +3229,19 @@
 
       // ── Monthly Detail Table ──
       html += `<div style="margin-bottom:24px;"><div class="section-title" style="background-color:#1B2A4A;">Monthly Marketing Performance</div><div class="section-body"><div class="table-container">`;
-      html += `<table><thead><tr><th>Month</th><th>Ad Spend</th><th>Google Ads</th><th>Facebook Ads</th><th>TikTok</th><th>SMS</th><th>Investor Lift</th><th>Revenue</th><th>ROAS</th><th>ROI %</th></tr></thead><tbody>`;
+      html += `<table><thead><tr><th>Month</th><th>Ad Spend</th><th>Google Ads</th><th>SM3 (Google Ads Mgmt)</th><th>Facebook Ads</th><th>TikTok</th><th>SMS</th><th>Investor Lift</th><th>Revenue</th><th>ROAS</th><th>ROI %</th></tr></thead><tbody>`;
+
+      // Helper to pull a channel value out of d.channels by matching any of
+      // several name variants (case-insensitive). SM3 in particular shows up
+      // under multiple spellings depending on how the Tiller row is labeled.
+      const channelMatch = (channels, variants) => {
+        let total = 0;
+        Object.keys(channels).forEach(k => {
+          if (variants.includes(k.toLowerCase())) total += channels[k];
+        });
+        return total;
+      };
+      const SM3_VARIANTS = ['sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee'];
 
       let tTotalMkt = 0, tTotalInc = 0;
       sortedMonths.forEach(month => {
@@ -3226,10 +3250,12 @@
         const mRoas = d.marketing > 0 ? (d.income / d.marketing).toFixed(1) + 'x' : '-';
         const mRoi = d.marketing > 0 ? ((d.income - d.marketing) / d.marketing * 100).toFixed(0) + '%' : '-';
         tTotalMkt += d.marketing; tTotalInc += d.income;
+        const sm3Val = channelMatch(d.channels, SM3_VARIANTS);
         html += `<tr>
           <td>${month}</td>
           <td style="font-weight:600;">${fmt(d.marketing)}</td>
           <td>${fmt(d.channels['Google Ad Spend'] || 0)}</td>
+          <td style="color:#7030A0;">${fmt(sm3Val)}</td>
           <td>${fmt(d.channels['Facebook Ad Spend'] || 0)}</td>
           <td>${fmt(d.channels['Tik Tok Ad Spend'] || 0)}</td>
           <td>${fmt(d.channels['SMS Marketing'] || 0)}</td>
@@ -3242,7 +3268,9 @@
 
       const tRoas = tTotalMkt > 0 ? (tTotalInc / tTotalMkt).toFixed(1) + 'x' : '-';
       const tRoi = tTotalMkt > 0 ? ((tTotalInc - tTotalMkt) / tTotalMkt * 100).toFixed(0) + '%' : '-';
-      html += `<tr style="background:#f0f0f0;font-weight:700;"><td>TOTAL</td><td>${fmt(tTotalMkt)}</td><td></td><td></td><td></td><td></td><td></td><td style="color:#548235;">${fmt(tTotalInc)}</td><td>${tRoas}</td><td>${tRoi}</td></tr>`;
+      // Totals row — keep all channel cells empty to match the existing
+      // styling; the channel columns roll up into the total Ad Spend cell.
+      html += `<tr style="background:#f0f0f0;font-weight:700;"><td>TOTAL</td><td>${fmt(tTotalMkt)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td style="color:#548235;">${fmt(tTotalInc)}</td><td>${tRoas}</td><td>${tRoi}</td></tr>`;
       html += `</tbody></table></div></div></div>`;
 
       // ── Quarterly Table ──
@@ -3798,7 +3826,7 @@
       const categories = EXPENSE_DATA.categories;
       const monthLabels = EXPENSE_DATA.monthLabels;
       const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift'];
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee'];
 
       // ── Build monthly actuals from Tiller ──
       const monthlyActuals = {};
@@ -10739,6 +10767,13 @@
     // Quarterly growth model with configurable ROAS scenarios, 5-month
     // reserve floor, and 3-partner draw split. All state lives in p2State
     // so it persists across tab switches.
+    //
+    // Implementation notes:
+    // - We do NOT rebuild the entire config block when a spend input
+    //   changes — that's what was killing input focus mid-keystroke. Only
+    //   the pct indicator + the breakdown table re-render on number edits.
+    // - The config block is only fully rebuilt when the Revenue Source
+    //   toggle changes (because that adds/removes the manual revenue input).
 
     var p2State = {
       FACEBOOK: 600,
@@ -10769,8 +10804,13 @@
       var a = Math.abs(Math.round(n)).toLocaleString();
       return n < 0 ? '-$' + a : '$' + a;
     }
-    function p2Pct(a, b) {
-      return b ? '+' + ((a - b) / b * 100).toFixed(1) + '%' : '—';
+    function p2PctDiff(a, b) {
+      if (!b) return { text: '—', dir: 'flat' };
+      var d = (a - b) / b * 100;
+      if (Math.abs(d) < 0.05) return { text: '—', dir: 'flat' };
+      var dir = d > 0 ? 'up' : 'down';
+      var sign = d > 0 ? '+' : '';
+      return { text: sign + d.toFixed(1) + '%', dir: dir };
     }
     function p2Roas() {
       return p2State.roasMode === 'low' ? p2State.ROAS_LOW : p2State.ROAS_HIGH;
@@ -10799,72 +10839,123 @@
       return rows;
     }
 
-    function p2BuildConfig() {
-      var html = '';
+    /**
+     * Build one quarter row's HTML. Caller (p2BuildConfig) wires the events.
+     */
+    function p2RowHTML(i) {
+      var pctHtml = '';
+      if (i > 0) {
+        var p = p2PctDiff(p2State.spends[i], p2State.spends[i - 1]);
+        var cls = p.dir === 'up' ? 'up' : p.dir === 'down' ? 'down' : '';
+        pctHtml = '<div class="p2-pct ' + cls + '" data-pct-for="' + i + '">' + p.text + ' vs prev</div>';
+      } else {
+        pctHtml = '<div class="p2-pct" data-pct-for="' + i + '">baseline</div>';
+      }
+      var manInputHtml = !p2State.useProj[i]
+        ? '<div>'
+          + '<div class="p2-qlbl">Manual Qtr Revenue</div>'
+          + '<div class="p2-iw"><span class="p2-prefix">$</span>'
+          + '<input type="number" class="p2-num p2-rev-input" data-i="' + i + '" value="' + p2State.manRev[i] + '" placeholder="Quarterly revenue">'
+          + '</div>'
+          + '</div>'
+        : '<div></div>'; // empty cell to preserve grid alignment
+      return '<div class="p2-qrow" data-row="' + i + '">'
+        + '<div>'
+        + '<div class="p2-qname">' + p2State.QS[i].l + '</div>'
+        + '<div class="p2-qnote">' + p2State.QS[i].n + '</div>'
+        + '</div>'
+        + '<div>'
+        + '<div class="p2-qlbl">Google Ad Spend</div>'
+        + '<div class="p2-iw"><span class="p2-prefix">$</span>'
+        + '<input type="number" class="p2-num p2-spend-input" data-i="' + i + '" value="' + p2State.spends[i] + '">'
+        + '</div>'
+        + pctHtml
+        + '</div>'
+        + '<div>'
+        + '<div class="p2-qlbl">Revenue Source</div>'
+        + '<div class="p2-src-btns">'
+        + '<button type="button" class="p2-src-btn' + (p2State.useProj[i] ? ' active' : '') + '" data-i="' + i + '" data-proj="1">ROAS Projected</button>'
+        + '<button type="button" class="p2-src-btn' + (!p2State.useProj[i] ? ' active' : '') + '" data-i="' + i + '" data-proj="0">Manual Input</button>'
+        + '</div>'
+        + '</div>'
+        + manInputHtml
+        + '</div>';
+    }
+
+    /**
+     * Surgically refresh the pct indicators below each spend input.
+     * Cheap — no DOM rebuild, so doesn't disturb the focused input.
+     */
+    function p2RefreshPctIndicators() {
       for (var i = 0; i < 5; i++) {
-        var pctHtml = '';
-        if (i > 0) {
-          var up = p2State.spends[i] > p2State.spends[i - 1];
-          var diff = p2State.spends[i] !== p2State.spends[i - 1]
-            ? p2Pct(p2State.spends[i], p2State.spends[i - 1])
-            : '—';
-          pctHtml = '<span class="p2-pct' + (up ? ' p2-up' : '') + '">' + diff + '</span>';
+        var el = document.querySelector('[data-pct-for="' + i + '"]');
+        if (!el) continue;
+        if (i === 0) {
+          el.className = 'p2-pct';
+          el.textContent = 'baseline';
+          continue;
         }
-        var manInput = !p2State.useProj[i]
-          ? '<div><div class="p2-lbl">Quarterly Revenue</div><div class="p2-iw"><span>$</span><input type="number" class="p2-wide p2-rev-input" data-i="' + i + '" value="' + p2State.manRev[i] + '" /></div></div>'
-          : '';
-        html += '<div class="p2-qrow">'
-          + '<div class="p2-qlabel"><div class="p2-qname">' + p2State.QS[i].l + '</div><div class="p2-qnote">' + p2State.QS[i].n + '</div></div>'
-          + '<div><div class="p2-lbl">Google Ad Spend</div><div class="p2-iw"><span>$</span>'
-          + '<input type="number" class="p2-spend-input" data-i="' + i + '" value="' + p2State.spends[i] + '" />'
-          + pctHtml + '</div></div>'
-          + '<div><div class="p2-lbl">Revenue Source</div><div class="p2-btn-row">'
-          + '<button class="p2-sm p2-src-btn' + (p2State.useProj[i] ? ' p2-act' : '') + '" data-i="' + i + '" data-proj="1">ROAS Projected</button>'
-          + '<button class="p2-sm p2-src-btn' + (!p2State.useProj[i] ? ' p2-act' : '') + '" data-i="' + i + '" data-proj="0">Manual Input</button>'
-          + '</div></div>'
-          + manInput
-          + '</div>';
+        var p = p2PctDiff(p2State.spends[i], p2State.spends[i - 1]);
+        el.className = 'p2-pct ' + (p.dir === 'up' ? 'up' : p.dir === 'down' ? 'down' : '');
+        el.textContent = p.text + ' vs prev';
       }
-      var configEl = document.getElementById('p2-qconfig');
-      if (!configEl) return;
-      // Remember which input was focused so we can restore it after innerHTML
-      // wipes the DOM. Without this, every keystroke loses focus.
-      var prev = document.activeElement;
-      var prevClass = prev && prev.classList && (prev.classList.contains('p2-spend-input') ? 'p2-spend-input' : prev.classList.contains('p2-rev-input') ? 'p2-rev-input' : null);
-      var prevIdx = prev && prev.dataset ? prev.dataset.i : null;
-      var prevSelStart = prev && prev.selectionStart != null ? prev.selectionStart : null;
-      configEl.innerHTML = html;
-      configEl.querySelectorAll('.p2-spend-input').forEach(function(el) {
+    }
+
+    /**
+     * Wire event handlers for ONE row only. Called per-row on initial build
+     * and again on source-toggle row replacement. Re-wiring only the rebuilt
+     * row prevents duplicate handlers from stacking on rows we left alone.
+     */
+    function p2WireRow(rowEl) {
+      rowEl.querySelectorAll('.p2-spend-input').forEach(function(el) {
         el.addEventListener('input', function() {
-          p2State.spends[parseInt(el.dataset.i)] = Number(el.value);
-          p2Render();
-        });
-      });
-      // Restore focus + caret position
-      if (prevClass && prevIdx !== null) {
-        var sel = '.' + prevClass + '[data-i="' + prevIdx + '"]';
-        var restored = configEl.querySelector(sel);
-        if (restored) {
-          restored.focus();
-          if (prevSelStart != null) {
-            try { restored.setSelectionRange(prevSelStart, prevSelStart); } catch (e) {}
-          }
-        }
-      }
-      configEl.querySelectorAll('.p2-rev-input').forEach(function(el) {
-        el.addEventListener('input', function() {
-          p2State.manRev[parseInt(el.dataset.i)] = Number(el.value);
+          var v = Number(el.value);
+          p2State.spends[parseInt(el.dataset.i)] = isNaN(v) ? 0 : v;
+          // Surgical updates — do NOT call p2BuildConfig() here, otherwise the
+          // input gets recreated and the user loses focus while typing.
+          p2RefreshPctIndicators();
           p2RenderTable();
         });
       });
-      configEl.querySelectorAll('.p2-src-btn').forEach(function(el) {
+      rowEl.querySelectorAll('.p2-rev-input').forEach(function(el) {
+        el.addEventListener('input', function() {
+          var v = Number(el.value);
+          p2State.manRev[parseInt(el.dataset.i)] = isNaN(v) ? 0 : v;
+          p2RenderTable();
+        });
+      });
+      rowEl.querySelectorAll('.p2-src-btn').forEach(function(el) {
         el.addEventListener('click', function() {
           var i = parseInt(el.dataset.i);
           p2State.useProj[i] = el.dataset.proj === '1';
-          p2BuildConfig();
+          // Source toggle flips whether the manual revenue input is visible,
+          // so this row DOES need to be rebuilt (and only this row).
+          var configEl = document.getElementById('p2-qconfig');
+          if (!configEl) return;
+          var oldRow = configEl.querySelector('.p2-qrow[data-row="' + i + '"]');
+          if (oldRow) {
+            var temp = document.createElement('div');
+            temp.innerHTML = p2RowHTML(i);
+            var newRow = temp.firstChild;
+            oldRow.parentNode.replaceChild(newRow, oldRow);
+            p2WireRow(newRow);
+          } else {
+            p2BuildConfig();
+          }
           p2RenderTable();
         });
       });
+    }
+
+    function p2BuildConfig() {
+      var configEl = document.getElementById('p2-qconfig');
+      if (!configEl) return;
+      var html = '';
+      for (var i = 0; i < 5; i++) html += p2RowHTML(i);
+      configEl.innerHTML = html;
+      // Wire each row independently so future row-replacements don't double-
+      // register handlers on untouched rows.
+      configEl.querySelectorAll('.p2-qrow').forEach(p2WireRow);
     }
 
     function p2RenderTable() {
@@ -10876,17 +10967,22 @@
       var rows = p2Compute();
       var tb = '';
       rows.forEach(function(row) {
-        var ec = row.end >= row.res ? 'color:#e6edf3;font-weight:600' : 'color:#f85149;font-weight:600';
-        var dc = row.draw > 0 ? 'color:#3fb950;font-weight:600' : 'color:#f85149;font-weight:600';
-        var pc = row.pp > 0 ? 'color:#58a6ff;font-weight:700' : 'color:#f85149;font-weight:700';
-        tb += "<tr><td style='text-align:left'><div class='p2-qname2'>" + row.l + "</div><div class='p2-qnote2'>" + row.n + '</div></td>'
-          + "<td style='color:#58a6ff;font-weight:600'>" + p2Fmt(row.sp) + '</td>'
-          + "<td style='color:#f85149'>" + p2Fmt(row.b) + '</td>'
-          + "<td style='color:#d29922'>" + p2Fmt(row.res) + '</td>'
-          + "<td style='color:#3fb950'>" + p2Fmt(row.qrev) + '</td>'
-          + "<td style='" + ec + "'>" + p2Fmt(row.end) + '</td>'
-          + "<td style='" + dc + "'>" + p2Fmt(row.draw) + '</td>'
-          + "<td style='" + pc + "'>" + p2Fmt(row.pp) + '</td></tr>';
+        var endCls = row.end >= row.res ? 'p2-cell-good' : 'p2-cell-bad';
+        var drawCls = row.draw > 0 ? 'p2-cell-good' : 'p2-cell-bad';
+        var ppCls = row.pp > 0 ? 'p2-cell-partner' : 'p2-cell-bad';
+        tb += '<tr>'
+          + '<td class="q-cell">'
+          +   '<div style="font-weight:700;color:#1B2A4A;">' + row.l + '</div>'
+          +   '<div style="font-size:11px;color:#888;">' + row.n + '</div>'
+          + '</td>'
+          + '<td style="text-align:right;" class="p2-cell-spend">' + p2Fmt(row.sp) + '</td>'
+          + '<td style="text-align:right;" class="p2-cell-bad">' + p2Fmt(row.b) + '</td>'
+          + '<td style="text-align:right;" class="p2-cell-warn">' + p2Fmt(row.res) + '</td>'
+          + '<td style="text-align:right;" class="p2-cell-good">' + p2Fmt(row.qrev) + '</td>'
+          + '<td style="text-align:right;" class="' + endCls + '">' + p2Fmt(row.end) + '</td>'
+          + '<td style="text-align:right;" class="' + drawCls + '">' + p2Fmt(row.draw) + '</td>'
+          + '<td style="text-align:right;" class="' + ppCls + '">' + p2Fmt(row.pp) + '</td>'
+          + '</tr>';
       });
       var tbody = document.getElementById('p2-tbody');
       if (tbody) tbody.innerHTML = tb;
@@ -10896,42 +10992,34 @@
       var sumgrid = document.getElementById('p2-sumgrid');
       if (sumgrid) {
         sumgrid.innerHTML =
-          "<div class='p2-sumcard'><div class='p2-lbl'>Total Projected Revenue</div><div class='p2-sumval' style='color:#3fb950'>" + p2Fmt(tr) + "</div></div>"
-          + "<div class='p2-sumcard'><div class='p2-lbl'>Total Draw Available</div><div class='p2-sumval' style='color:#58a6ff'>" + p2Fmt(td) + "</div></div>"
-          + "<div class='p2-sumcard'><div class='p2-lbl'>Per Partner (all qtrs)</div><div class='p2-sumval' style='color:#a371f7'>" + p2Fmt(tp) + "</div></div>"
-          + "<div class='p2-sumcard'><div class='p2-lbl'>ROAS Used</div><div class='p2-sumval' style='color:#d29922'>" + p2Roas() + "x</div></div>";
+          '<div class="kpi-card" style="border-left:4px solid #548235;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Total Projected Revenue</div><div style="font-size:24px;font-weight:800;color:#548235;">' + p2Fmt(tr) + '</div></div>'
+          + '<div class="kpi-card" style="border-left:4px solid #2E75B6;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Total Draw Available</div><div style="font-size:24px;font-weight:800;color:#2E75B6;">' + p2Fmt(td) + '</div></div>'
+          + '<div class="kpi-card" style="border-left:4px solid #7030A0;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Per Partner (all qtrs)</div><div style="font-size:24px;font-weight:800;color:#7030A0;">' + p2Fmt(tp) + '</div></div>'
+          + '<div class="kpi-card" style="border-left:4px solid #ED7D31;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">ROAS Used</div><div style="font-size:24px;font-weight:800;color:#ED7D31;">' + p2Roas() + 'x</div></div>';
       }
-    }
-
-    function p2Render() {
-      p2BuildConfig();
-      p2RenderTable();
     }
 
     function renderProjections2Tab() {
       // Wire up the ROAS toggle buttons only the first time the tab is opened.
       if (!p2State.wired) {
-        var btnLow = document.getElementById('p2-btn-low');
-        var btnHigh = document.getElementById('p2-btn-high');
-        if (btnLow) {
-          btnLow.addEventListener('click', function() {
-            p2State.roasMode = 'low';
-            btnLow.className = 'p2-act';
-            if (btnHigh) btnHigh.className = '';
-            p2Render();
-          });
-        }
-        if (btnHigh) {
-          btnHigh.addEventListener('click', function() {
-            p2State.roasMode = 'high';
-            if (btnLow) btnLow.className = '';
-            btnHigh.className = 'p2-act';
-            p2Render();
+        var toggleEl = document.getElementById('p2-roas-toggle');
+        if (toggleEl) {
+          toggleEl.querySelectorAll('.p2-toggle-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+              p2State.roasMode = btn.dataset.mode;
+              toggleEl.querySelectorAll('.p2-toggle-btn').forEach(function(b) {
+                b.classList.toggle('active', b === btn);
+              });
+              p2RenderTable();
+            });
           });
         }
         p2State.wired = true;
       }
-      p2Render();
+      // Full build on tab open. Subsequent number edits only update what
+      // changed (pct indicators + the breakdown table).
+      p2BuildConfig();
+      p2RenderTable();
     }
 
     function renderAgentsTab() {
