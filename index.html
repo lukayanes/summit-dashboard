@@ -956,9 +956,9 @@
         </div>
       </div>
 
-      <!-- Per-quarter configuration -->
+      <!-- Per-period configuration (1 anchor month + 4 forward quarters) -->
       <div style="margin-bottom:20px;">
-        <div class="section-title" style="background-color:#1B2A4A;">Configure Each Quarter</div>
+        <div class="section-title" style="background-color:#1B2A4A;">Configure Each Period</div>
         <div class="section-body">
           <div id="p2-qconfig"></div>
         </div>
@@ -973,7 +973,7 @@
           </div>
         </div>
         <div>
-          <div class="section-title" style="background-color:#ED7D31;">Quarterly Revenue vs Burn</div>
+          <div class="section-title" style="background-color:#ED7D31;">Period Revenue vs Burn</div>
           <div class="section-body">
             <div class="chart-container" style="height:280px;"><canvas id="p2-revburn-chart"></canvas></div>
           </div>
@@ -995,11 +995,11 @@
             <table class="p2-breakdown">
               <thead>
                 <tr>
-                  <th>Quarter</th>
-                  <th style="text-align:right;">Ad Spend</th>
+                  <th>Period</th>
+                  <th style="text-align:right;">Ad Spend / mo</th>
                   <th style="text-align:right;">Monthly Burn</th>
                   <th style="text-align:right;">5-Mo Reserve</th>
-                  <th style="text-align:right;">Qtr Revenue</th>
+                  <th style="text-align:right;">Period Revenue</th>
                   <th style="text-align:right;">End Balance</th>
                   <th style="text-align:right;">Draw Pool</th>
                   <th style="text-align:right;">Per Partner</th>
@@ -10851,12 +10851,15 @@
       RES: 5,
       ROAS_LOW: 3.46,
       ROAS_HIGH: 5.0,
-      // QS is now generated dynamically — first entry is the last completed
-      // calendar quarter, followed by 4 forward-looking quarters.
+      // QS is generated dynamically — first entry is the last completed
+      // calendar MONTH (anchor), followed by 4 forward-looking QUARTERS.
       QS: [],
-      // Marks which quarters are anchored to actual Tiller data (read-only)
-      // vs editable projections. Q1 (index 0) is the historical anchor.
+      // Marks which rows are anchored to actual Tiller data (read-only). Only
+      // the anchor row (index 0) is historical.
       historical: [true, false, false, false, false],
+      // Length of each row in months (anchor = 1, forward quarters = 3).
+      // Compute uses this to size period revenue + burn correctly.
+      lengthMonths: [1, 3, 3, 3, 3],
       roasMode: 'low',
       // null = use Tiller default; number = user override
       startOverride: null,
@@ -10865,7 +10868,7 @@
       manRev: [20000, 0, 0, 0, 0],
       useProj: [false, true, true, true, true],
       tillerInitialized: false,  // whether we've populated state from Tiller
-      lastInitQKey: null,         // detect when calendar quarter has rolled over
+      lastInitMKey: null,         // detect when calendar month has rolled over
       wired: false
     };
 
@@ -10873,54 +10876,92 @@
     var P2_Q_NOTES = ['End of March', 'End of June', 'End of Sept', 'End of Dec'];
 
     /**
-     * Return { year, q } for the calendar quarter that has fully passed
-     * (q is 0-indexed: 0=Q1, 1=Q2, 2=Q3, 3=Q4).
+     * Return { year, month, label } for the calendar month that has fully
+     * passed. The model uses this as the anchor row.
+     * Today is June 15, 2026 → last completed month = May 2026.
      */
-    function p2GetLastCompletedQuarter() {
+    function p2GetLastCompletedMonth() {
       var now = new Date();
       var y = now.getFullYear();
-      var qNow = Math.floor(now.getMonth() / 3);
-      var qLast = qNow - 1;
-      if (qLast < 0) { qLast = 3; y -= 1; }
-      return { year: y, q: qLast };
+      var m = now.getMonth() - 1; // previous month (0-indexed)
+      if (m < 0) { m = 11; y -= 1; }
+      return { year: y, month: m, label: P2_MONTHS[m] + ' ' + y };
     }
 
     /**
-     * Generate 5 sequential quarters starting from `start` (inclusive).
-     * Returns an array of { l: 'Q1 2026', n: 'End of March' } objects.
+     * Categories from Tiller that count as "ad spend" in the projection model.
+     * Per the user: SM3 + Facebook + Google Ads + Investor Lift. We match
+     * generic "ad spend" too since some Tiller setups use that as a catch-all.
+     * Case-insensitive comparison.
      */
-    function p2GenerateQuarters(start) {
-      var out = [];
-      var y = start.year;
-      var qi = start.q;
-      for (var i = 0; i < 5; i++) {
-        out.push({ l: 'Q' + (qi + 1) + ' ' + y, n: P2_Q_NOTES[qi] });
+    var P2_AD_CATEGORIES = [
+      'google ad spend',
+      'ad spend',
+      'facebook ad spend',
+      'investor lift',
+      'sm3 marketing',
+      'sm3 management',
+      'sm3',
+      'sm3 fee',
+      'sm3 management fee'
+    ];
+
+    /**
+     * Sum the configured ad categories for a single Tiller month label.
+     * Returns 0 when data is missing.
+     */
+    function p2SumAdCategoriesForMonth(label) {
+      if (!EXPENSE_DATA || !EXPENSE_DATA.categories) return 0;
+      var total = 0;
+      Object.keys(EXPENSE_DATA.categories).forEach(function(catName) {
+        if (P2_AD_CATEGORIES.indexOf(catName.toLowerCase()) === -1) return;
+        var v = EXPENSE_DATA.categories[catName][label];
+        if (v && v < 0) total += Math.abs(v); // expenses come in as negative
+      });
+      return total;
+    }
+
+    /**
+     * Pull ad spend (broad: SM3 + FB + Google + IL) and revenue for one
+     * specific month from Tiller. Returns null if no data is available for
+     * the month.
+     */
+    function p2GetActualMonth(year, monthIdx) {
+      if (!EXPENSE_DATA || !EXPENSE_DATA.monthlyTotals) return null;
+      var label = P2_MONTHS[monthIdx] + ' ' + year;
+      var m = EXPENSE_DATA.monthlyTotals[label];
+      if (!m) return null;
+      var adSpend = p2SumAdCategoriesForMonth(label);
+      return {
+        adSpend: adSpend,
+        revenue: m.totalIncome || 0,
+        expense: Math.abs(m.totalExpense || 0),
+        label: label
+      };
+    }
+
+    /**
+     * Generate the 5 row labels: 1 anchor month + 4 forward quarters.
+     * Forward quarters start from the NEXT full quarter after the anchor
+     * month, so the in-progress quarter is skipped to avoid double-counting.
+     *
+     * Example for anchor = May 2026 (in Q2 2026):
+     *   Anchor:  May 2026
+     *   Forward: Q3 2026, Q4 2026, Q1 2027, Q2 2027
+     */
+    function p2GenerateRows(anchor) {
+      var out = [{ l: anchor.label, n: 'Last completed month', kind: 'month' }];
+      // Anchor month's quarter index (0-based) — next full quarter starts at q+1.
+      var anchorQ = Math.floor(anchor.month / 3);
+      var qi = anchorQ + 1;
+      var y = anchor.year;
+      if (qi > 3) { qi = 0; y += 1; }
+      for (var i = 0; i < 4; i++) {
+        out.push({ l: 'Q' + (qi + 1) + ' ' + y, n: P2_Q_NOTES[qi], kind: 'quarter' });
         qi++;
         if (qi > 3) { qi = 0; y += 1; }
       }
       return out;
-    }
-
-    /**
-     * Sum up ad-spend and revenue for one specific quarter from Tiller's
-     * monthlyTotals (which is keyed by labels like "Jan 2026"). Returns null
-     * if no data is available.
-     */
-    function p2GetActualQuarter(year, qIdx) {
-      if (!EXPENSE_DATA || !EXPENSE_DATA.monthlyTotals) return null;
-      var startMonth = qIdx * 3;
-      var totalAds = 0, totalRev = 0, totalExpense = 0, found = false;
-      for (var i = 0; i < 3; i++) {
-        var label = P2_MONTHS[startMonth + i] + ' ' + year;
-        var m = EXPENSE_DATA.monthlyTotals[label];
-        if (m) {
-          totalAds += Math.abs(m.adSpend || 0);
-          totalRev += m.totalIncome || 0;
-          totalExpense += Math.abs(m.totalExpense || 0);
-          found = true;
-        }
-      }
-      return found ? { adSpend: totalAds, revenue: totalRev, expense: totalExpense } : null;
     }
 
     /**
@@ -10974,37 +11015,41 @@
 
     /**
      * On first tab open (or after the user clicks Refresh), generate the
-     * quarter labels from today's date and pre-fill Q1 with actual ad spend
-     * and revenue from Tiller. Idempotent: safe to call repeatedly.
+     * row labels (1 anchor month + 4 forward quarters) and pre-fill the
+     * anchor with the last completed month's actual ad spend (SM3 + FB +
+     * Google + Investor Lift summed) and revenue. Idempotent.
      */
     function p2InitFromTiller(force) {
-      var last = p2GetLastCompletedQuarter();
-      var qKey = last.year + '-Q' + last.q;
-      // Regenerate quarter labels every time so the tab reflects today's date.
-      p2State.QS = p2GenerateQuarters(last);
+      var last = p2GetLastCompletedMonth();
+      var mKey = last.year + '-' + last.month;
+      // Regenerate row labels every time so the tab reflects today's date.
+      p2State.QS = p2GenerateRows(last);
+      // lengthMonths follows the layout: 1 anchor month + 4 quarters.
+      p2State.lengthMonths = [1, 3, 3, 3, 3];
       // Only refresh the editable values when we haven't initialized yet,
-      // when the calendar has rolled into a new quarter, or when the user
-      // explicitly requested a refresh.
-      if (!force && p2State.tillerInitialized && p2State.lastInitQKey === qKey) return;
-      var anchor = p2GetActualQuarter(last.year, last.q);
+      // the calendar has rolled into a new month, or the user explicitly
+      // requested a refresh.
+      if (!force && p2State.tillerInitialized && p2State.lastInitMKey === mKey) return;
+      var anchor = p2GetActualMonth(last.year, last.month);
       if (anchor && (anchor.adSpend > 0 || anchor.revenue > 0)) {
-        // Per-month ad spend (Tiller stores totals per month, so /3 for monthly avg)
-        var monthlyAdSpend = Math.round(anchor.adSpend / 3);
+        // Anchor's "monthly ad spend" is the actual May spend itself (already
+        // a monthly figure, no need to divide by 3 like before).
+        var monthlyAdSpend = Math.round(anchor.adSpend);
         for (var i = 0; i < 5; i++) p2State.spends[i] = monthlyAdSpend;
         p2State.manRev[0] = Math.round(anchor.revenue);
-        p2State.useProj[0] = false;        // Q1 uses actuals
+        p2State.useProj[0] = false;        // anchor uses actuals
         for (var j = 1; j < 5; j++) {
-          p2State.useProj[j] = true;       // Q2-Q5 use ROAS projections
+          p2State.useProj[j] = true;       // forward quarters use ROAS projection
           p2State.manRev[j] = 0;
         }
         p2State.historical = [true, false, false, false, false];
       } else {
-        // No Tiller data for the anchor quarter — render Q1 as a normal
-        // editable row so the user isn't shown $0 "actuals."
+        // No Tiller data for the anchor month — render the anchor row as a
+        // normal editable row so the user isn't shown $0 "actuals."
         p2State.historical = [false, false, false, false, false];
       }
       p2State.tillerInitialized = true;
-      p2State.lastInitQKey = qKey;
+      p2State.lastInitMKey = mKey;
     }
 
     function p2Fmt(n) {
@@ -11028,20 +11073,25 @@
       var monthlyBurn = p2GetMonthlyBurn();
       var rows = [];
       for (var i = 0; i < 5; i++) {
-        var sp = p2State.spends[i];
+        var months = p2State.lengthMonths[i] || 3;
+        var sp = p2State.spends[i];      // ad spend is always PER MONTH
         var b = monthlyBurn;             // monthly burn = user's single input
-        var res = b * p2State.RES;       // 5-month reserve floor
-        var mrev = p2State.useProj[i] ? sp * p2Roas() : p2State.manRev[i] / 3;
-        var qrev = mrev * 3;
-        var qb = b * 3;
-        var end = bal + qrev - qb;
+        var res = b * p2State.RES;       // 5-month reserve floor (constant)
+        // Monthly revenue: ROAS projection multiplies per-month ad spend by
+        // ROAS; Manual Input is the FULL period revenue, so divide by months.
+        var mrev = p2State.useProj[i] ? sp * p2Roas() : p2State.manRev[i] / months;
+        var periodRev = mrev * months;
+        var periodBurn = b * months;
+        var end = bal + periodRev - periodBurn;
         var draw = Math.max(0, end - res);
         var pp = draw / 3;
         var after = end - draw;
         rows.push({
           l: p2State.QS[i].l, n: p2State.QS[i].n,
+          kind: p2State.QS[i].kind || 'quarter',
+          months: months,
           startBal: bal,
-          sp: sp, b: b, res: res, qrev: qrev, end: end, draw: draw, pp: pp, after: after
+          sp: sp, b: b, res: res, qrev: periodRev, end: end, draw: draw, pp: pp, after: after
         });
         bal = after;
       }
@@ -11061,17 +11111,19 @@
     function p2RowHTML(i) {
       var isHist = !!p2State.historical[i];
       if (isHist) {
+        var rowMonths = p2State.lengthMonths[i] || 3;
+        var unitLabel = rowMonths === 1 ? 'this month' : 'this quarter';
         return '<div class="p2-qrow historical" data-row="' + i + '">'
           + '<div>'
           + '<div class="p2-qname">' + p2State.QS[i].l
           +   '<span class="p2-historical-badge">Actuals</span>'
           + '</div>'
-          + '<div class="p2-qnote">' + p2State.QS[i].n + ' · last completed</div>'
+          + '<div class="p2-qnote">' + p2State.QS[i].n + '</div>'
           + '</div>'
           + '<div>'
-          + '<div class="p2-qlbl">Google Ad Spend (per mo)</div>'
+          + '<div class="p2-qlbl">Ad Spend (per mo)</div>'
           + '<div class="p2-actual-value">' + p2Fmt(p2State.spends[i]) + '</div>'
-          + '<div class="p2-actual-note">From Tiller · ' + p2Fmt(p2State.spends[i] * 3) + ' for the quarter</div>'
+          + '<div class="p2-actual-note">SM3 + FB + Google + IL · from Tiller</div>'
           + '</div>'
           + '<div>'
           + '<div class="p2-qlbl">Revenue Source</div>'
@@ -11079,9 +11131,9 @@
           + '<div class="p2-actual-note">Locked — historical record</div>'
           + '</div>'
           + '<div>'
-          + '<div class="p2-qlbl">Actual Qtr Revenue</div>'
+          + '<div class="p2-qlbl">Actual Revenue</div>'
           + '<div class="p2-actual-value" style="color:#548235;">' + p2Fmt(p2State.manRev[i]) + '</div>'
-          + '<div class="p2-actual-note">Closed deals · pulled from Tiller</div>'
+          + '<div class="p2-actual-note">' + unitLabel + ' · pulled from Tiller</div>'
           + '</div>'
           + '</div>';
       }
@@ -11105,7 +11157,7 @@
         + '<div class="p2-qnote">' + p2State.QS[i].n + '</div>'
         + '</div>'
         + '<div>'
-        + '<div class="p2-qlbl">Google Ad Spend (per mo)</div>'
+        + '<div class="p2-qlbl">Ad Spend per Month <span style="color:#aaa;font-weight:500;text-transform:none;letter-spacing:normal;">(SM3 + FB + Google + IL)</span></div>'
         + '<div class="p2-slider-wrap">'
         +   '<div class="p2-slider-top">'
         +     '<span class="p2-slider-value" data-spend-display="' + i + '">' + p2Fmt(p2State.spends[i]) + '</span>'
@@ -11211,7 +11263,7 @@
     function p2RenderTable() {
       var r = p2Roas();
       var hdr = document.getElementById('p2-tbl-hdr');
-      if (hdr) hdr.textContent = 'Quarterly Breakdown — ROAS ' + r + 'x · Monthly Burn ' + p2Fmt(p2GetMonthlyBurn());
+      if (hdr) hdr.textContent = 'Forward Breakdown — ROAS ' + r + 'x · Monthly Burn ' + p2Fmt(p2GetMonthlyBurn());
       var rows = p2Compute();
       var tb = '';
       rows.forEach(function(row) {
@@ -11305,7 +11357,10 @@
         });
       }
 
-      // 2) Revenue vs Burn per quarter — grouped bars.
+      // 2) Period revenue vs period burn — grouped bars. The anchor row is
+      // a single month so its bars are smaller than the quarter rows; the
+      // chart visually conveys the time-window difference without needing
+      // extra annotations.
       var rbCtx = document.getElementById('p2-revburn-chart');
       if (rbCtx) {
         destroyChart('p2-revburn-chart');
@@ -11314,8 +11369,8 @@
           data: {
             labels: labels,
             datasets: [
-              { label: 'Quarterly Revenue', data: rows.map(function(r) { return r.qrev; }), backgroundColor: '#548235', borderRadius: 3 },
-              { label: 'Quarterly Burn (3× Monthly)', data: rows.map(function(r) { return r.b * 3; }), backgroundColor: '#C00000', borderRadius: 3 }
+              { label: 'Period Revenue', data: rows.map(function(r) { return r.qrev; }), backgroundColor: '#548235', borderRadius: 3 },
+              { label: 'Period Burn', data: rows.map(function(r) { return r.b * (r.months || 3); }), backgroundColor: '#C00000', borderRadius: 3 }
             ]
           },
           options: {
