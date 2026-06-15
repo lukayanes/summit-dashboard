@@ -892,25 +892,42 @@
         }
       </style>
 
-      <h2 style="font-size:22px;font-weight:700;color:#1B2A4A;margin:0 0 4px;">Quarterly Growth Projections</h2>
-      <p style="font-size:13px;color:#666;margin:0 0 20px;">5-month reserve floor · 3-partner draw · Google PPC model</p>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+        <div>
+          <h2 style="font-size:22px;font-weight:700;color:#1B2A4A;margin:0 0 4px;">Quarterly Growth Projections</h2>
+          <p style="font-size:13px;color:#666;margin:0;">5-month reserve floor · 3-partner draw · Live from Tiller financials</p>
+        </div>
+        <div id="p2-data-status" style="font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;"></div>
+      </div>
 
-      <!-- ROAS scenario toggle -->
-      <div style="background:white;border-radius:8px;padding:14px 18px;box-shadow:0 2px 8px rgba(0,0,0,0.08);margin-bottom:16px;display:flex;flex-wrap:wrap;gap:20px;align-items:center;">
+      <!-- Top controls: editable starting balance + monthly burn + ROAS toggle -->
+      <div style="background:white;border-radius:8px;padding:16px 20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:20px;align-items:start;">
+        <div>
+          <div class="p2-qlbl">Starting Balance</div>
+          <div class="p2-iw" style="margin-top:4px;">
+            <span class="p2-prefix">$</span>
+            <input type="number" id="p2-start-input" class="p2-num" placeholder="148000">
+          </div>
+          <div id="p2-start-note" class="p2-pct" style="margin-top:4px;">Default $148,000</div>
+        </div>
+        <div>
+          <div class="p2-qlbl">Monthly Burn (all expenses)</div>
+          <div class="p2-iw" style="margin-top:4px;">
+            <span class="p2-prefix">$</span>
+            <input type="number" id="p2-burn-input" class="p2-num">
+          </div>
+          <div id="p2-burn-note" class="p2-pct" style="margin-top:4px;">—</div>
+        </div>
         <div>
           <div class="p2-qlbl">ROAS Scenario</div>
-          <div class="p2-controls" id="p2-roas-toggle">
+          <div class="p2-controls" id="p2-roas-toggle" style="margin-top:4px;">
             <button class="p2-toggle-btn active" data-mode="low">Current (3.46x)</button>
             <button class="p2-toggle-btn" data-mode="high">Optimistic (5.0x)</button>
           </div>
         </div>
-        <div style="flex:1;min-width:160px;border-left:1px solid #eee;padding-left:20px;">
-          <div class="p2-qlbl">Starting Balance</div>
-          <div style="font-size:22px;font-weight:800;color:#548235;">$148,000</div>
-        </div>
-        <div style="border-left:1px solid #eee;padding-left:20px;">
-          <div class="p2-qlbl">Monthly Burn (current)</div>
-          <div id="p2-burn-display" style="font-size:22px;font-weight:800;color:#C00000;">—</div>
+        <div>
+          <div class="p2-qlbl">Action</div>
+          <button id="p2-refresh-btn" type="button" class="p2-num" style="width:auto;cursor:pointer;background:#1B2A4A;color:white;border:none;font-weight:700;margin-top:4px;padding:7px 16px;">↻ Refresh from Tiller</button>
         </div>
       </div>
 
@@ -919,6 +936,29 @@
         <div class="section-title" style="background-color:#1B2A4A;">Configure Each Quarter</div>
         <div class="section-body">
           <div id="p2-qconfig"></div>
+        </div>
+      </div>
+
+      <!-- Charts: balance trajectory + revenue vs burn + draw distribution -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+        <div>
+          <div class="section-title" style="background-color:#548235;">Balance Trajectory</div>
+          <div class="section-body">
+            <div class="chart-container" style="height:280px;"><canvas id="p2-balance-chart"></canvas></div>
+          </div>
+        </div>
+        <div>
+          <div class="section-title" style="background-color:#ED7D31;">Quarterly Revenue vs Burn</div>
+          <div class="section-body">
+            <div class="chart-container" style="height:280px;"><canvas id="p2-revburn-chart"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom:20px;">
+        <div class="section-title" style="background-color:#7030A0;">Draw Pool & Per-Partner Distribution</div>
+        <div class="section-body">
+          <div class="chart-container" style="height:280px;"><canvas id="p2-draw-chart"></canvas></div>
         </div>
       </div>
 
@@ -950,7 +990,7 @@
       <div id="p2-sumgrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:20px;"></div>
 
       <!-- Hint -->
-      <div class="p2-hint">💡 <strong>How to use:</strong> Adjust ad spend per quarter to model growth scenarios. Toggle between ROAS scenarios at the top. Q2 uses your actual $20K revenue — switch to Manual Input and enter it, or use ROAS projection. Values in red indicate balance falls below the reserve floor.</div>
+      <div class="p2-hint">💡 <strong>How to use:</strong> <strong>Starting Balance</strong> and <strong>Monthly Burn</strong> default to live numbers from your Tiller financials — override either by typing a new value. Monthly Burn covers <em>all</em> expenses (including ads), so if you significantly change quarterly ad spend you may want to update Monthly Burn too. Adjust ad spend per quarter to model growth scenarios, toggle ROAS scenarios at the top, and switch any quarter to Manual Input to lock in actual revenue. Values in red indicate balance falls below the 5-month reserve floor.</div>
     </div>
 
     <!-- CALL LEDGER TAB -->
@@ -10765,22 +10805,25 @@
 
     // ==================== PROJECTIONS 2 TAB ====================
     // Quarterly growth model with configurable ROAS scenarios, 5-month
-    // reserve floor, and 3-partner draw split. All state lives in p2State
-    // so it persists across tab switches.
+    // reserve floor, and 3-partner draw split. State persists across tab
+    // switches and pulls live financial defaults from Tiller (EXPENSE_DATA).
     //
     // Implementation notes:
+    // - Monthly Burn is a single editable number that defaults to the avg
+    //   monthly total expense from Tiller. It's used directly as the burn
+    //   per quarter (no ad-spend formula on top) — adjust the input if you
+    //   significantly change ad spend.
+    // - Starting Balance defaults to $148K but is editable so it can be
+    //   updated as actual cash position changes.
     // - We do NOT rebuild the entire config block when a spend input
     //   changes — that's what was killing input focus mid-keystroke. Only
-    //   the pct indicator + the breakdown table re-render on number edits.
-    // - The config block is only fully rebuilt when the Revenue Source
-    //   toggle changes (because that adds/removes the manual revenue input).
+    //   the pct indicator + the breakdown table + charts re-render on
+    //   number edits.
 
     var p2State = {
-      FACEBOOK: 600,
-      SOFTWARE: 500,
-      SM3: 0.15,
+      DEFAULT_START: 148000,
+      DEFAULT_BURN_FALLBACK: 25000,  // used when Tiller data is unavailable
       RES: 5,
-      START: 148000,
       ROAS_LOW: 3.46,
       ROAS_HIGH: 5.0,
       QS: [
@@ -10791,15 +10834,45 @@
         { l: 'Q2 2027', n: 'End of June' }
       ],
       roasMode: 'low',
+      // null = use Tiller default; number = user override
+      startOverride: null,
+      burnOverride: null,
       spends: [22500, 22500, 22500, 22500, 22500],
       manRev: [20000, 0, 0, 0, 0],
       useProj: [false, true, true, true, true],
       wired: false
     };
 
-    function p2Burn(s) {
-      return s + s * p2State.SM3 + p2State.FACEBOOK + p2State.SOFTWARE;
+    /**
+     * Pull avg monthly totals from EXPENSE_DATA (Tiller). Returns null when
+     * Tiller hasn't loaded yet so callers can fall back to constants.
+     */
+    function p2TillerDefaults() {
+      if (!EXPENSE_DATA || !EXPENSE_DATA.monthlyTotals) return null;
+      var totals = Object.values(EXPENSE_DATA.monthlyTotals);
+      var active = totals.filter(function(m) {
+        return Math.abs(m.totalExpense) > 100 || m.totalIncome > 100;
+      });
+      if (active.length === 0) return null;
+      var avgExp = active.reduce(function(s, m) { return s + Math.abs(m.totalExpense); }, 0) / active.length;
+      var avgInc = active.reduce(function(s, m) { return s + m.totalIncome; }, 0) / active.length;
+      var avgAds = active.reduce(function(s, m) { return s + Math.abs(m.adSpend || 0); }, 0) / active.length;
+      return {
+        avgMonthlyExpense: Math.round(avgExp),
+        avgMonthlyIncome: Math.round(avgInc),
+        avgMonthlyAdSpend: Math.round(avgAds),
+        monthsAnalyzed: active.length
+      };
     }
+    function p2GetStarting() {
+      return p2State.startOverride != null ? p2State.startOverride : p2State.DEFAULT_START;
+    }
+    function p2GetMonthlyBurn() {
+      if (p2State.burnOverride != null) return p2State.burnOverride;
+      var t = p2TillerDefaults();
+      return t ? t.avgMonthlyExpense : p2State.DEFAULT_BURN_FALLBACK;
+    }
+
     function p2Fmt(n) {
       var a = Math.abs(Math.round(n)).toLocaleString();
       return n < 0 ? '-$' + a : '$' + a;
@@ -10817,12 +10890,13 @@
     }
 
     function p2Compute() {
-      var bal = p2State.START;
+      var bal = p2GetStarting();
+      var monthlyBurn = p2GetMonthlyBurn();
       var rows = [];
       for (var i = 0; i < 5; i++) {
         var sp = p2State.spends[i];
-        var b = p2Burn(sp);
-        var res = b * p2State.RES;
+        var b = monthlyBurn;             // monthly burn = user's single input
+        var res = b * p2State.RES;       // 5-month reserve floor
         var mrev = p2State.useProj[i] ? sp * p2Roas() : p2State.manRev[i] / 3;
         var qrev = mrev * 3;
         var qb = b * 3;
@@ -10832,7 +10906,8 @@
         var after = end - draw;
         rows.push({
           l: p2State.QS[i].l, n: p2State.QS[i].n,
-          sp: sp, b: b, res: res, qrev: qrev, end: end, draw: draw, pp: pp
+          startBal: bal,
+          sp: sp, b: b, res: res, qrev: qrev, end: end, draw: draw, pp: pp, after: after
         });
         bal = after;
       }
@@ -10961,9 +11036,7 @@
     function p2RenderTable() {
       var r = p2Roas();
       var hdr = document.getElementById('p2-tbl-hdr');
-      if (hdr) hdr.textContent = 'Quarterly Breakdown — ROAS ' + r + 'x';
-      var burnEl = document.getElementById('p2-burn-display');
-      if (burnEl) burnEl.textContent = p2Fmt(p2Burn(p2State.spends[0]));
+      if (hdr) hdr.textContent = 'Quarterly Breakdown — ROAS ' + r + 'x · Monthly Burn ' + p2Fmt(p2GetMonthlyBurn());
       var rows = p2Compute();
       var tb = '';
       rows.forEach(function(row) {
@@ -10997,11 +11070,162 @@
           + '<div class="kpi-card" style="border-left:4px solid #7030A0;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Per Partner (all qtrs)</div><div style="font-size:24px;font-weight:800;color:#7030A0;">' + p2Fmt(tp) + '</div></div>'
           + '<div class="kpi-card" style="border-left:4px solid #ED7D31;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">ROAS Used</div><div style="font-size:24px;font-weight:800;color:#ED7D31;">' + p2Roas() + 'x</div></div>';
       }
+      // Charts re-render every time numbers change so they stay in sync.
+      p2RenderCharts(rows);
+    }
+
+    /**
+     * Render the three charts. Uses Chart.js (already loaded globally) and the
+     * dashboard's destroyChart / chartsCache helpers so chart instances are
+     * cleanly disposed between renders.
+     */
+    function p2RenderCharts(rows) {
+      if (typeof Chart === 'undefined') return;
+      var labels = rows.map(function(r) { return r.l; });
+
+      // 1) Balance trajectory — start balance + end balance per quarter.
+      // Reserve floor is overlaid as a dashed horizontal line so it's obvious
+      // when a quarter dips below it.
+      var balCtx = document.getElementById('p2-balance-chart');
+      if (balCtx) {
+        destroyChart('p2-balance-chart');
+        var balPoints = [p2GetStarting()].concat(rows.map(function(r) { return r.end; }));
+        var balLabels = ['Start'].concat(labels);
+        var reserveLine = rows[0] ? rows[0].res : 0;
+        chartsCache['p2-balance-chart'] = new Chart(balCtx.getContext('2d'), {
+          type: 'line',
+          data: {
+            labels: balLabels,
+            datasets: [
+              {
+                label: 'End Balance',
+                data: balPoints,
+                borderColor: '#548235',
+                backgroundColor: 'rgba(84,130,53,0.12)',
+                borderWidth: 3,
+                tension: 0.25,
+                fill: true,
+                pointRadius: 5,
+                pointBackgroundColor: '#548235'
+              },
+              {
+                label: '5-Mo Reserve Floor',
+                data: balLabels.map(function() { return reserveLine; }),
+                borderColor: '#ED7D31',
+                borderWidth: 2,
+                borderDash: [6, 4],
+                pointRadius: 0,
+                fill: false
+              }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+              tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + p2Fmt(ctx.parsed.y); } } }
+            },
+            scales: { y: { ticks: { callback: function(v) { return '$' + (v / 1000).toFixed(0) + 'k'; } } } }
+          }
+        });
+      }
+
+      // 2) Revenue vs Burn per quarter — grouped bars.
+      var rbCtx = document.getElementById('p2-revburn-chart');
+      if (rbCtx) {
+        destroyChart('p2-revburn-chart');
+        chartsCache['p2-revburn-chart'] = new Chart(rbCtx.getContext('2d'), {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [
+              { label: 'Quarterly Revenue', data: rows.map(function(r) { return r.qrev; }), backgroundColor: '#548235', borderRadius: 3 },
+              { label: 'Quarterly Burn (3× Monthly)', data: rows.map(function(r) { return r.b * 3; }), backgroundColor: '#C00000', borderRadius: 3 }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+              tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + p2Fmt(ctx.parsed.y); } } }
+            },
+            scales: { y: { ticks: { callback: function(v) { return '$' + (v / 1000).toFixed(0) + 'k'; } } } }
+          }
+        });
+      }
+
+      // 3) Draw pool and per-partner distribution per quarter.
+      var drCtx = document.getElementById('p2-draw-chart');
+      if (drCtx) {
+        destroyChart('p2-draw-chart');
+        chartsCache['p2-draw-chart'] = new Chart(drCtx.getContext('2d'), {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [
+              { label: 'Total Draw Pool', data: rows.map(function(r) { return r.draw; }), backgroundColor: '#2E75B6', borderRadius: 3 },
+              { label: 'Per Partner', data: rows.map(function(r) { return r.pp; }), backgroundColor: '#7030A0', borderRadius: 3 }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+              tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + p2Fmt(ctx.parsed.y); } } }
+            },
+            scales: { y: { ticks: { callback: function(v) { return '$' + (v / 1000).toFixed(0) + 'k'; } } } }
+          }
+        });
+      }
+    }
+
+    /**
+     * Push current Tiller-derived defaults into the Starting Balance + Monthly
+     * Burn inputs (unless the user has overridden them) and update the small
+     * captions under those inputs. Also updates the top-right data status pill.
+     */
+    function p2RefreshDataPanel() {
+      var t = p2TillerDefaults();
+      var statusEl = document.getElementById('p2-data-status');
+      if (statusEl) {
+        if (t) {
+          statusEl.style.color = '#548235';
+          statusEl.textContent = '● Live · ' + t.monthsAnalyzed + ' months from Tiller';
+        } else {
+          statusEl.style.color = '#888';
+          statusEl.textContent = '○ Defaults — connect Tiller for live data';
+        }
+      }
+      var startInput = document.getElementById('p2-start-input');
+      var startNote = document.getElementById('p2-start-note');
+      if (startInput && document.activeElement !== startInput) {
+        startInput.value = p2GetStarting();
+      }
+      if (startNote) {
+        startNote.textContent = p2State.startOverride != null
+          ? 'Manual override'
+          : 'Default $148,000 — update with current cash on hand';
+      }
+      var burnInput = document.getElementById('p2-burn-input');
+      var burnNote = document.getElementById('p2-burn-note');
+      if (burnInput && document.activeElement !== burnInput) {
+        burnInput.value = p2GetMonthlyBurn();
+      }
+      if (burnNote) {
+        if (p2State.burnOverride != null) {
+          burnNote.textContent = 'Manual override';
+        } else if (t) {
+          burnNote.textContent = 'Tiller avg over ' + t.monthsAnalyzed + ' months';
+        } else {
+          burnNote.textContent = 'No Tiller data — using fallback';
+        }
+      }
     }
 
     function renderProjections2Tab() {
-      // Wire up the ROAS toggle buttons only the first time the tab is opened.
+      // Wire up one-time event handlers on first tab open.
       if (!p2State.wired) {
+        // ROAS scenario toggle (Current 3.46x / Optimistic 5.0x)
         var toggleEl = document.getElementById('p2-roas-toggle');
         if (toggleEl) {
           toggleEl.querySelectorAll('.p2-toggle-btn').forEach(function(btn) {
@@ -11014,10 +11238,51 @@
             });
           });
         }
+        // Editable Starting Balance — empty input falls back to Tiller default.
+        var startInput = document.getElementById('p2-start-input');
+        if (startInput) {
+          startInput.addEventListener('input', function() {
+            var v = startInput.value.trim();
+            if (v === '' || isNaN(Number(v))) {
+              p2State.startOverride = null;
+            } else {
+              p2State.startOverride = Number(v);
+            }
+            p2RefreshDataPanel();
+            p2RenderTable();
+          });
+        }
+        // Editable Monthly Burn — empty input falls back to Tiller avg.
+        var burnInput = document.getElementById('p2-burn-input');
+        if (burnInput) {
+          burnInput.addEventListener('input', function() {
+            var v = burnInput.value.trim();
+            if (v === '' || isNaN(Number(v))) {
+              p2State.burnOverride = null;
+            } else {
+              p2State.burnOverride = Number(v);
+            }
+            p2RefreshDataPanel();
+            p2RenderTable();
+          });
+        }
+        // Refresh button — clears overrides so inputs snap back to live Tiller
+        // values. Useful if Tiller data was loaded after the tab was opened.
+        var refreshBtn = document.getElementById('p2-refresh-btn');
+        if (refreshBtn) {
+          refreshBtn.addEventListener('click', function() {
+            p2State.startOverride = null;
+            p2State.burnOverride = null;
+            p2RefreshDataPanel();
+            p2RenderTable();
+          });
+        }
         p2State.wired = true;
       }
-      // Full build on tab open. Subsequent number edits only update what
-      // changed (pct indicators + the breakdown table).
+      // Full build on every tab open so the breakdown reflects the latest
+      // Tiller-derived defaults. Subsequent number edits only update what
+      // changed (pct indicators + the breakdown table + charts).
+      p2RefreshDataPanel();
       p2BuildConfig();
       p2RenderTable();
     }
