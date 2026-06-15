@@ -887,6 +887,26 @@
         .p2-cell-partner { color: #7030A0; font-weight: 700; }
         .p2-hint { padding: 14px 16px; background: #FFF8E1; border-left: 4px solid #ED7D31; border-radius: 4px; font-size: 12px; color: #5D4037; line-height: 1.6; }
         .p2-hint strong { color: #1B2A4A; }
+        /* Slider styling — matches dashboard color palette. Sliders are paired
+           with a small money readout so the user can see the exact value. */
+        .p2-slider-wrap { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+        .p2-slider-top { display: flex; justify-content: space-between; align-items: baseline; font-size: 13px; }
+        .p2-slider-value { font-weight: 700; color: #1B2A4A; font-size: 15px; }
+        .p2-slider-range { font-size: 10px; color: #999; }
+        .p2-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; background: #e0e0e0; border-radius: 3px; outline: none; cursor: pointer; }
+        .p2-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; background: #2E75B6; border-radius: 50%; cursor: pointer; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        .p2-slider::-moz-range-thumb { width: 18px; height: 18px; background: #2E75B6; border-radius: 50%; cursor: pointer; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+        .p2-slider.burn::-webkit-slider-thumb { background: #C00000; }
+        .p2-slider.burn::-moz-range-thumb { background: #C00000; }
+        .p2-slider.start::-webkit-slider-thumb { background: #548235; }
+        .p2-slider.start::-moz-range-thumb { background: #548235; }
+        /* Historical row styling — Q1 is the anchor from actual Tiller data
+           and is rendered read-only with a green tint so it's visually distinct
+           from the future-projection rows. */
+        .p2-qrow.historical { background: linear-gradient(90deg, rgba(84,130,53,0.06), transparent); border-left: 3px solid #548235; padding-left: 10px; margin-left: -10px; border-radius: 0 4px 4px 0; }
+        .p2-historical-badge { display: inline-block; background: #548235; color: white; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 6px; vertical-align: middle; }
+        .p2-actual-value { font-size: 15px; font-weight: 700; color: #1B2A4A; padding: 7px 0; }
+        .p2-actual-note { font-size: 10px; color: #888; }
         @media (max-width: 768px) {
           .p2-qrow { grid-template-columns: 1fr; gap: 8px; }
         }
@@ -900,23 +920,29 @@
         <div id="p2-data-status" style="font-size:11px;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;"></div>
       </div>
 
-      <!-- Top controls: editable starting balance + monthly burn + ROAS toggle -->
-      <div style="background:white;border-radius:8px;padding:16px 20px;box-shadow:0 2px 8px rgba(0,0,0,0.08);margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:20px;align-items:start;">
+      <!-- Top controls: starting balance slider + monthly burn slider + ROAS toggle -->
+      <div style="background:white;border-radius:8px;padding:18px 22px;box-shadow:0 2px 8px rgba(0,0,0,0.08);margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:24px;align-items:start;">
         <div>
-          <div class="p2-qlbl">Starting Balance</div>
-          <div class="p2-iw" style="margin-top:4px;">
-            <span class="p2-prefix">$</span>
-            <input type="number" id="p2-start-input" class="p2-num" placeholder="148000">
+          <div class="p2-qlbl">Starting Balance · current in acct</div>
+          <div class="p2-slider-wrap">
+            <div class="p2-slider-top">
+              <span id="p2-start-value" class="p2-slider-value">$148,000</span>
+              <span class="p2-slider-range">$0 – $1M</span>
+            </div>
+            <input type="range" id="p2-start-slider" class="p2-slider start" min="0" max="1000000" step="5000" value="148000">
           </div>
-          <div id="p2-start-note" class="p2-pct" style="margin-top:4px;">Default $148,000</div>
+          <div id="p2-start-note" class="p2-pct" style="margin-top:6px;">—</div>
         </div>
         <div>
-          <div class="p2-qlbl">Monthly Burn (all expenses)</div>
-          <div class="p2-iw" style="margin-top:4px;">
-            <span class="p2-prefix">$</span>
-            <input type="number" id="p2-burn-input" class="p2-num">
+          <div class="p2-qlbl">Monthly Burn · all expenses</div>
+          <div class="p2-slider-wrap">
+            <div class="p2-slider-top">
+              <span id="p2-burn-value" class="p2-slider-value">—</span>
+              <span class="p2-slider-range">$0 – $150K</span>
+            </div>
+            <input type="range" id="p2-burn-slider" class="p2-slider burn" min="0" max="150000" step="500" value="25000">
           </div>
-          <div id="p2-burn-note" class="p2-pct" style="margin-top:4px;">—</div>
+          <div id="p2-burn-note" class="p2-pct" style="margin-top:6px;">—</div>
         </div>
         <div>
           <div class="p2-qlbl">ROAS Scenario</div>
@@ -924,10 +950,9 @@
             <button class="p2-toggle-btn active" data-mode="low">Current (3.46x)</button>
             <button class="p2-toggle-btn" data-mode="high">Optimistic (5.0x)</button>
           </div>
-        </div>
-        <div>
-          <div class="p2-qlbl">Action</div>
-          <button id="p2-refresh-btn" type="button" class="p2-num" style="width:auto;cursor:pointer;background:#1B2A4A;color:white;border:none;font-weight:700;margin-top:4px;padding:7px 16px;">↻ Refresh from Tiller</button>
+          <div style="margin-top:10px;">
+            <button id="p2-refresh-btn" type="button" style="width:100%;cursor:pointer;background:#1B2A4A;color:white;border:none;font-weight:700;padding:8px 16px;border-radius:4px;font-size:12px;font-family:inherit;">↻ Refresh from Tiller</button>
+          </div>
         </div>
       </div>
 
@@ -10826,13 +10851,12 @@
       RES: 5,
       ROAS_LOW: 3.46,
       ROAS_HIGH: 5.0,
-      QS: [
-        { l: 'Q2 2026', n: 'End of June' },
-        { l: 'Q3 2026', n: 'End of Sept' },
-        { l: 'Q4 2026', n: 'End of Dec' },
-        { l: 'Q1 2027', n: 'End of March' },
-        { l: 'Q2 2027', n: 'End of June' }
-      ],
+      // QS is now generated dynamically — first entry is the last completed
+      // calendar quarter, followed by 4 forward-looking quarters.
+      QS: [],
+      // Marks which quarters are anchored to actual Tiller data (read-only)
+      // vs editable projections. Q1 (index 0) is the historical anchor.
+      historical: [true, false, false, false, false],
       roasMode: 'low',
       // null = use Tiller default; number = user override
       startOverride: null,
@@ -10840,37 +10864,147 @@
       spends: [22500, 22500, 22500, 22500, 22500],
       manRev: [20000, 0, 0, 0, 0],
       useProj: [false, true, true, true, true],
+      tillerInitialized: false,  // whether we've populated state from Tiller
+      lastInitQKey: null,         // detect when calendar quarter has rolled over
       wired: false
     };
 
+    var P2_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var P2_Q_NOTES = ['End of March', 'End of June', 'End of Sept', 'End of Dec'];
+
     /**
-     * Pull avg monthly totals from EXPENSE_DATA (Tiller). Returns null when
-     * Tiller hasn't loaded yet so callers can fall back to constants.
+     * Return { year, q } for the calendar quarter that has fully passed
+     * (q is 0-indexed: 0=Q1, 1=Q2, 2=Q3, 3=Q4).
      */
-    function p2TillerDefaults() {
+    function p2GetLastCompletedQuarter() {
+      var now = new Date();
+      var y = now.getFullYear();
+      var qNow = Math.floor(now.getMonth() / 3);
+      var qLast = qNow - 1;
+      if (qLast < 0) { qLast = 3; y -= 1; }
+      return { year: y, q: qLast };
+    }
+
+    /**
+     * Generate 5 sequential quarters starting from `start` (inclusive).
+     * Returns an array of { l: 'Q1 2026', n: 'End of March' } objects.
+     */
+    function p2GenerateQuarters(start) {
+      var out = [];
+      var y = start.year;
+      var qi = start.q;
+      for (var i = 0; i < 5; i++) {
+        out.push({ l: 'Q' + (qi + 1) + ' ' + y, n: P2_Q_NOTES[qi] });
+        qi++;
+        if (qi > 3) { qi = 0; y += 1; }
+      }
+      return out;
+    }
+
+    /**
+     * Sum up ad-spend and revenue for one specific quarter from Tiller's
+     * monthlyTotals (which is keyed by labels like "Jan 2026"). Returns null
+     * if no data is available.
+     */
+    function p2GetActualQuarter(year, qIdx) {
+      if (!EXPENSE_DATA || !EXPENSE_DATA.monthlyTotals) return null;
+      var startMonth = qIdx * 3;
+      var totalAds = 0, totalRev = 0, totalExpense = 0, found = false;
+      for (var i = 0; i < 3; i++) {
+        var label = P2_MONTHS[startMonth + i] + ' ' + year;
+        var m = EXPENSE_DATA.monthlyTotals[label];
+        if (m) {
+          totalAds += Math.abs(m.adSpend || 0);
+          totalRev += m.totalIncome || 0;
+          totalExpense += Math.abs(m.totalExpense || 0);
+          found = true;
+        }
+      }
+      return found ? { adSpend: totalAds, revenue: totalRev, expense: totalExpense } : null;
+    }
+
+    /**
+     * Cumulative net (income − expense) across every Tiller month. Used as a
+     * rough proxy for "what's currently in the account" — accurate if you
+     * started tracking from a $0 baseline. User can still adjust the slider.
+     */
+    function p2ComputeCurrentBalance() {
       if (!EXPENSE_DATA || !EXPENSE_DATA.monthlyTotals) return null;
       var totals = Object.values(EXPENSE_DATA.monthlyTotals);
-      var active = totals.filter(function(m) {
-        return Math.abs(m.totalExpense) > 100 || m.totalIncome > 100;
-      });
-      if (active.length === 0) return null;
-      var avgExp = active.reduce(function(s, m) { return s + Math.abs(m.totalExpense); }, 0) / active.length;
-      var avgInc = active.reduce(function(s, m) { return s + m.totalIncome; }, 0) / active.length;
-      var avgAds = active.reduce(function(s, m) { return s + Math.abs(m.adSpend || 0); }, 0) / active.length;
-      return {
-        avgMonthlyExpense: Math.round(avgExp),
-        avgMonthlyIncome: Math.round(avgInc),
-        avgMonthlyAdSpend: Math.round(avgAds),
-        monthsAnalyzed: active.length
-      };
+      var net = totals.reduce(function(s, m) {
+        return s + (m.totalIncome || 0) - Math.abs(m.totalExpense || 0);
+      }, 0);
+      return Math.round(net);
     }
+
+    /**
+     * Average monthly burn over the last N months that have meaningful data.
+     * Defaults to 3 months — the user's stated preference.
+     */
+    function p2ComputeRecentBurn(monthsBack) {
+      if (!EXPENSE_DATA || !EXPENSE_DATA.monthlyTotals || !EXPENSE_DATA.monthLabels) return null;
+      monthsBack = monthsBack || 3;
+      // Walk monthLabels in their natural order (already sorted), pick
+      // last N with activity.
+      var labels = EXPENSE_DATA.monthLabels.slice();
+      labels.sort(function(a, b) {
+        var pa = a.split(' '), pb = b.split(' ');
+        return (parseInt(pa[1]) * 100 + P2_MONTHS.indexOf(pa[0])) - (parseInt(pb[1]) * 100 + P2_MONTHS.indexOf(pb[0]));
+      });
+      var withData = labels.filter(function(l) {
+        var m = EXPENSE_DATA.monthlyTotals[l];
+        return m && (Math.abs(m.totalExpense) > 100 || m.totalIncome > 100);
+      });
+      var picked = withData.slice(-monthsBack);
+      if (picked.length === 0) return null;
+      var avg = picked.reduce(function(s, l) { return s + Math.abs(EXPENSE_DATA.monthlyTotals[l].totalExpense || 0); }, 0) / picked.length;
+      return { avg: Math.round(avg), months: picked.length };
+    }
+
     function p2GetStarting() {
-      return p2State.startOverride != null ? p2State.startOverride : p2State.DEFAULT_START;
+      if (p2State.startOverride != null) return p2State.startOverride;
+      var net = p2ComputeCurrentBalance();
+      return net != null && net > 0 ? net : p2State.DEFAULT_START;
     }
     function p2GetMonthlyBurn() {
       if (p2State.burnOverride != null) return p2State.burnOverride;
-      var t = p2TillerDefaults();
-      return t ? t.avgMonthlyExpense : p2State.DEFAULT_BURN_FALLBACK;
+      var r = p2ComputeRecentBurn(3);
+      return r ? r.avg : p2State.DEFAULT_BURN_FALLBACK;
+    }
+
+    /**
+     * On first tab open (or after the user clicks Refresh), generate the
+     * quarter labels from today's date and pre-fill Q1 with actual ad spend
+     * and revenue from Tiller. Idempotent: safe to call repeatedly.
+     */
+    function p2InitFromTiller(force) {
+      var last = p2GetLastCompletedQuarter();
+      var qKey = last.year + '-Q' + last.q;
+      // Regenerate quarter labels every time so the tab reflects today's date.
+      p2State.QS = p2GenerateQuarters(last);
+      // Only refresh the editable values when we haven't initialized yet,
+      // when the calendar has rolled into a new quarter, or when the user
+      // explicitly requested a refresh.
+      if (!force && p2State.tillerInitialized && p2State.lastInitQKey === qKey) return;
+      var anchor = p2GetActualQuarter(last.year, last.q);
+      if (anchor && (anchor.adSpend > 0 || anchor.revenue > 0)) {
+        // Per-month ad spend (Tiller stores totals per month, so /3 for monthly avg)
+        var monthlyAdSpend = Math.round(anchor.adSpend / 3);
+        for (var i = 0; i < 5; i++) p2State.spends[i] = monthlyAdSpend;
+        p2State.manRev[0] = Math.round(anchor.revenue);
+        p2State.useProj[0] = false;        // Q1 uses actuals
+        for (var j = 1; j < 5; j++) {
+          p2State.useProj[j] = true;       // Q2-Q5 use ROAS projections
+          p2State.manRev[j] = 0;
+        }
+        p2State.historical = [true, false, false, false, false];
+      } else {
+        // No Tiller data for the anchor quarter — render Q1 as a normal
+        // editable row so the user isn't shown $0 "actuals."
+        p2State.historical = [false, false, false, false, false];
+      }
+      p2State.tillerInitialized = true;
+      p2State.lastInitQKey = qKey;
     }
 
     function p2Fmt(n) {
@@ -10916,39 +11050,74 @@
 
     /**
      * Build one quarter row's HTML. Caller (p2BuildConfig) wires the events.
+     *
+     * Two layouts:
+     * - Historical (i === 0): Q1 is the anchor from actual Tiller data.
+     *   Ad spend + revenue are read-only displays so the user can't accidentally
+     *   change a "ground truth" number while modeling scenarios.
+     * - Future (i > 0): Ad spend is a slider with a money readout. Revenue
+     *   source toggles between ROAS Projected and Manual Input.
      */
     function p2RowHTML(i) {
-      var pctHtml = '';
-      if (i > 0) {
-        var p = p2PctDiff(p2State.spends[i], p2State.spends[i - 1]);
-        var cls = p.dir === 'up' ? 'up' : p.dir === 'down' ? 'down' : '';
-        pctHtml = '<div class="p2-pct ' + cls + '" data-pct-for="' + i + '">' + p.text + ' vs prev</div>';
-      } else {
-        pctHtml = '<div class="p2-pct" data-pct-for="' + i + '">baseline</div>';
+      var isHist = !!p2State.historical[i];
+      if (isHist) {
+        return '<div class="p2-qrow historical" data-row="' + i + '">'
+          + '<div>'
+          + '<div class="p2-qname">' + p2State.QS[i].l
+          +   '<span class="p2-historical-badge">Actuals</span>'
+          + '</div>'
+          + '<div class="p2-qnote">' + p2State.QS[i].n + ' · last completed</div>'
+          + '</div>'
+          + '<div>'
+          + '<div class="p2-qlbl">Google Ad Spend (per mo)</div>'
+          + '<div class="p2-actual-value">' + p2Fmt(p2State.spends[i]) + '</div>'
+          + '<div class="p2-actual-note">From Tiller · ' + p2Fmt(p2State.spends[i] * 3) + ' for the quarter</div>'
+          + '</div>'
+          + '<div>'
+          + '<div class="p2-qlbl">Revenue Source</div>'
+          + '<div class="p2-actual-value">Tiller Actuals</div>'
+          + '<div class="p2-actual-note">Locked — historical record</div>'
+          + '</div>'
+          + '<div>'
+          + '<div class="p2-qlbl">Actual Qtr Revenue</div>'
+          + '<div class="p2-actual-value" style="color:#548235;">' + p2Fmt(p2State.manRev[i]) + '</div>'
+          + '<div class="p2-actual-note">Closed deals · pulled from Tiller</div>'
+          + '</div>'
+          + '</div>';
       }
+      var pctHtml = '';
+      var p = p2PctDiff(p2State.spends[i], p2State.spends[i - 1]);
+      var cls = p.dir === 'up' ? 'up' : p.dir === 'down' ? 'down' : '';
+      pctHtml = '<div class="p2-pct ' + cls + '" data-pct-for="' + i + '">' + p.text + ' vs prev qtr</div>';
+
       var manInputHtml = !p2State.useProj[i]
         ? '<div>'
           + '<div class="p2-qlbl">Manual Qtr Revenue</div>'
-          + '<div class="p2-iw"><span class="p2-prefix">$</span>'
+          + '<div class="p2-iw" style="margin-top:4px;"><span class="p2-prefix">$</span>'
           + '<input type="number" class="p2-num p2-rev-input" data-i="' + i + '" value="' + p2State.manRev[i] + '" placeholder="Quarterly revenue">'
           + '</div>'
           + '</div>'
         : '<div></div>'; // empty cell to preserve grid alignment
+
       return '<div class="p2-qrow" data-row="' + i + '">'
         + '<div>'
         + '<div class="p2-qname">' + p2State.QS[i].l + '</div>'
         + '<div class="p2-qnote">' + p2State.QS[i].n + '</div>'
         + '</div>'
         + '<div>'
-        + '<div class="p2-qlbl">Google Ad Spend</div>'
-        + '<div class="p2-iw"><span class="p2-prefix">$</span>'
-        + '<input type="number" class="p2-num p2-spend-input" data-i="' + i + '" value="' + p2State.spends[i] + '">'
+        + '<div class="p2-qlbl">Google Ad Spend (per mo)</div>'
+        + '<div class="p2-slider-wrap">'
+        +   '<div class="p2-slider-top">'
+        +     '<span class="p2-slider-value" data-spend-display="' + i + '">' + p2Fmt(p2State.spends[i]) + '</span>'
+        +     '<span class="p2-slider-range">$0 – $100K</span>'
+        +   '</div>'
+        +   '<input type="range" class="p2-slider p2-spend-slider" data-i="' + i + '" min="0" max="100000" step="500" value="' + p2State.spends[i] + '">'
         + '</div>'
         + pctHtml
         + '</div>'
         + '<div>'
         + '<div class="p2-qlbl">Revenue Source</div>'
-        + '<div class="p2-src-btns">'
+        + '<div class="p2-src-btns" style="margin-top:4px;">'
         + '<button type="button" class="p2-src-btn' + (p2State.useProj[i] ? ' active' : '') + '" data-i="' + i + '" data-proj="1">ROAS Projected</button>'
         + '<button type="button" class="p2-src-btn' + (!p2State.useProj[i] ? ' active' : '') + '" data-i="' + i + '" data-proj="0">Manual Input</button>'
         + '</div>'
@@ -10960,19 +11129,16 @@
     /**
      * Surgically refresh the pct indicators below each spend input.
      * Cheap — no DOM rebuild, so doesn't disturb the focused input.
+     * Historical rows have no pct indicator (they're locked actuals).
      */
     function p2RefreshPctIndicators() {
-      for (var i = 0; i < 5; i++) {
+      for (var i = 1; i < 5; i++) {  // start at 1 — Q1 is historical/anchor
         var el = document.querySelector('[data-pct-for="' + i + '"]');
         if (!el) continue;
-        if (i === 0) {
-          el.className = 'p2-pct';
-          el.textContent = 'baseline';
-          continue;
-        }
-        var p = p2PctDiff(p2State.spends[i], p2State.spends[i - 1]);
+        var prev = p2State.spends[i - 1];
+        var p = p2PctDiff(p2State.spends[i], prev);
         el.className = 'p2-pct ' + (p.dir === 'up' ? 'up' : p.dir === 'down' ? 'down' : '');
-        el.textContent = p.text + ' vs prev';
+        el.textContent = p.text + ' vs prev qtr';
       }
     }
 
@@ -10982,16 +11148,24 @@
      * row prevents duplicate handlers from stacking on rows we left alone.
      */
     function p2WireRow(rowEl) {
-      rowEl.querySelectorAll('.p2-spend-input').forEach(function(el) {
+      // Ad-spend slider (future quarters only — historical rows have no slider).
+      rowEl.querySelectorAll('.p2-spend-slider').forEach(function(el) {
         el.addEventListener('input', function() {
+          var i = parseInt(el.dataset.i);
           var v = Number(el.value);
-          p2State.spends[parseInt(el.dataset.i)] = isNaN(v) ? 0 : v;
-          // Surgical updates — do NOT call p2BuildConfig() here, otherwise the
-          // input gets recreated and the user loses focus while typing.
+          p2State.spends[i] = isNaN(v) ? 0 : v;
+          // Update the money readout next to this slider without touching
+          // anything else in the row.
+          var display = rowEl.querySelector('[data-spend-display="' + i + '"]');
+          if (display) display.textContent = p2Fmt(p2State.spends[i]);
+          // Surgical downstream updates — pct indicators on neighboring rows,
+          // table, charts. Sliders never lose focus on rebuild so no special
+          // handling needed.
           p2RefreshPctIndicators();
           p2RenderTable();
         });
       });
+      // Manual quarterly revenue input.
       rowEl.querySelectorAll('.p2-rev-input').forEach(function(el) {
         el.addEventListener('input', function() {
           var v = Number(el.value);
@@ -10999,6 +11173,7 @@
           p2RenderTable();
         });
       });
+      // Revenue Source toggle (ROAS Projected / Manual Input).
       rowEl.querySelectorAll('.p2-src-btn').forEach(function(el) {
         el.addEventListener('click', function() {
           var i = parseInt(el.dataset.i);
@@ -11181,43 +11356,62 @@
 
     /**
      * Push current Tiller-derived defaults into the Starting Balance + Monthly
-     * Burn inputs (unless the user has overridden them) and update the small
-     * captions under those inputs. Also updates the top-right data status pill.
+     * Burn sliders (unless the user is currently dragging) and update the
+     * money readouts and captions. Also updates the top-right data status pill.
      */
     function p2RefreshDataPanel() {
-      var t = p2TillerDefaults();
+      var hasTiller = !!(EXPENSE_DATA && EXPENSE_DATA.monthlyTotals);
       var statusEl = document.getElementById('p2-data-status');
       if (statusEl) {
-        if (t) {
+        if (hasTiller) {
+          var net = p2ComputeCurrentBalance();
           statusEl.style.color = '#548235';
-          statusEl.textContent = '● Live · ' + t.monthsAnalyzed + ' months from Tiller';
+          statusEl.textContent = '● Live from Tiller · ' + Object.keys(EXPENSE_DATA.monthlyTotals).length + ' months tracked';
         } else {
           statusEl.style.color = '#888';
           statusEl.textContent = '○ Defaults — connect Tiller for live data';
         }
       }
-      var startInput = document.getElementById('p2-start-input');
+      // Starting balance — slider + display + note
+      var startSlider = document.getElementById('p2-start-slider');
+      var startValue = document.getElementById('p2-start-value');
       var startNote = document.getElementById('p2-start-note');
-      if (startInput && document.activeElement !== startInput) {
-        startInput.value = p2GetStarting();
+      var currentStart = p2GetStarting();
+      if (startSlider && document.activeElement !== startSlider) {
+        // Slider max is $1M — clamp display value for the slider thumb but
+        // still let the displayed number show the override exactly.
+        startSlider.value = Math.min(currentStart, parseInt(startSlider.max));
       }
+      if (startValue) startValue.textContent = p2Fmt(currentStart);
       if (startNote) {
-        startNote.textContent = p2State.startOverride != null
-          ? 'Manual override'
-          : 'Default $148,000 — update with current cash on hand';
+        if (p2State.startOverride != null) {
+          startNote.textContent = 'Manual override — drag to adjust';
+        } else {
+          var net = p2ComputeCurrentBalance();
+          if (net != null && net > 0) {
+            startNote.textContent = 'Tiller cumulative net (income − expenses)';
+          } else {
+            startNote.textContent = 'Default $148,000 — drag to set actual balance';
+          }
+        }
       }
-      var burnInput = document.getElementById('p2-burn-input');
+      // Monthly burn — slider + display + note
+      var burnSlider = document.getElementById('p2-burn-slider');
+      var burnValue = document.getElementById('p2-burn-value');
       var burnNote = document.getElementById('p2-burn-note');
-      if (burnInput && document.activeElement !== burnInput) {
-        burnInput.value = p2GetMonthlyBurn();
+      var currentBurn = p2GetMonthlyBurn();
+      if (burnSlider && document.activeElement !== burnSlider) {
+        burnSlider.value = Math.min(currentBurn, parseInt(burnSlider.max));
       }
+      if (burnValue) burnValue.textContent = p2Fmt(currentBurn);
       if (burnNote) {
         if (p2State.burnOverride != null) {
-          burnNote.textContent = 'Manual override';
-        } else if (t) {
-          burnNote.textContent = 'Tiller avg over ' + t.monthsAnalyzed + ' months';
+          burnNote.textContent = 'Manual override — drag to adjust';
         } else {
-          burnNote.textContent = 'No Tiller data — using fallback';
+          var r = p2ComputeRecentBurn(3);
+          burnNote.textContent = r
+            ? 'Avg of last ' + r.months + ' month' + (r.months !== 1 ? 's' : '') + ' from Tiller'
+            : 'No Tiller data — using $25K fallback';
         }
       }
     }
@@ -11238,50 +11432,46 @@
             });
           });
         }
-        // Editable Starting Balance — empty input falls back to Tiller default.
-        var startInput = document.getElementById('p2-start-input');
-        if (startInput) {
-          startInput.addEventListener('input', function() {
-            var v = startInput.value.trim();
-            if (v === '' || isNaN(Number(v))) {
-              p2State.startOverride = null;
-            } else {
-              p2State.startOverride = Number(v);
-            }
+        // Starting Balance slider — drag to adjust current cash position.
+        var startSlider = document.getElementById('p2-start-slider');
+        if (startSlider) {
+          startSlider.addEventListener('input', function() {
+            p2State.startOverride = Number(startSlider.value);
             p2RefreshDataPanel();
             p2RenderTable();
           });
         }
-        // Editable Monthly Burn — empty input falls back to Tiller avg.
-        var burnInput = document.getElementById('p2-burn-input');
-        if (burnInput) {
-          burnInput.addEventListener('input', function() {
-            var v = burnInput.value.trim();
-            if (v === '' || isNaN(Number(v))) {
-              p2State.burnOverride = null;
-            } else {
-              p2State.burnOverride = Number(v);
-            }
+        // Monthly Burn slider — drag to model different burn scenarios.
+        var burnSlider = document.getElementById('p2-burn-slider');
+        if (burnSlider) {
+          burnSlider.addEventListener('input', function() {
+            p2State.burnOverride = Number(burnSlider.value);
             p2RefreshDataPanel();
             p2RenderTable();
           });
         }
-        // Refresh button — clears overrides so inputs snap back to live Tiller
-        // values. Useful if Tiller data was loaded after the tab was opened.
+        // Refresh button — clears all overrides AND re-pulls Q1 from Tiller.
+        // Useful if Tiller data was loaded after the tab was opened, or the
+        // user wants to discard their tweaks and start over.
         var refreshBtn = document.getElementById('p2-refresh-btn');
         if (refreshBtn) {
           refreshBtn.addEventListener('click', function() {
             p2State.startOverride = null;
             p2State.burnOverride = null;
+            p2InitFromTiller(true);
             p2RefreshDataPanel();
+            p2BuildConfig();
             p2RenderTable();
           });
         }
         p2State.wired = true;
       }
+      // Detect / generate quarter labels and (on first open or after a
+      // calendar rollover) pull Q1 actuals from Tiller.
+      p2InitFromTiller(false);
       // Full build on every tab open so the breakdown reflects the latest
-      // Tiller-derived defaults. Subsequent number edits only update what
-      // changed (pct indicators + the breakdown table + charts).
+      // Tiller-derived defaults. Subsequent edits only update what changed
+      // (pct indicators + the breakdown table + charts).
       p2RefreshDataPanel();
       p2BuildConfig();
       p2RenderTable();
