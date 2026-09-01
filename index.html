@@ -2681,6 +2681,27 @@
       return new Date(d.getFullYear(), endMonth + 1, 0, 23, 59, 59); // day 0 of next month = last day
     }
 
+    // Whole months remaining in the current quarter, inclusive of the current
+    // month (you still spend this month's ad budget). e.g. Sept → 1 (Q3 ends Sept).
+    function monthsLeftInQuarter() {
+      var m = new Date().getMonth();              // 0-11
+      var endMonth = Math.floor(m / 3) * 3 + 2;   // last month of the quarter
+      return (endMonth - m) + 1;
+    }
+
+    // Calendar-date comparison as a plain YYYYMMDD integer — avoids the timezone
+    // drift where new Date('2026-10-01') can read as Sept 30 in a negative UTC
+    // offset and leak next-quarter deals into this quarter.
+    function ymdNum(dateObj) {
+      return dateObj.getFullYear() * 10000 + (dateObj.getMonth() + 1) * 100 + dateObj.getDate();
+    }
+    function closeDateNum(s) {
+      var m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) return (+m[1]) * 10000 + (+m[2]) * 100 + (+m[3]);
+      var d = new Date(s);
+      return isNaN(d) ? 99999999 : ymdNum(d);
+    }
+
     // Auto business-account balance. Prefers the LIVE bank balance from the
     // Tiller Balances tab (BANK_BALANCE); falls back to cumulative net
     // (income − expenses) from the categories tab if the balance isn't available.
@@ -2719,8 +2740,8 @@
     }
 
     function ownersDrawSectionHTML() {
-      var burnMo = localStorage.getItem('od_burnMonthly') || '25000';
-      var burnMos = localStorage.getItem('od_burnMonths') || '5';
+      var burnMo = localStorage.getItem('od_burnMonthly') || '28000'; // $25k ads + $3k SM3
+      var monthsLeft = monthsLeftInQuarter();
 
       // Business account balance: auto from Tiller unless the user manually overrode it.
       var manualBal = localStorage.getItem('od_bizBalance_manual') === '1';
@@ -2763,15 +2784,14 @@
         '</div>' +
         '<input id="odBizBalance" type="number" value="' + bal + '" oninput="odBalanceEdited()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:18px;font-weight:700;color:#1B2A4A;">' +
         '<div style="font-size:11px;color:#999;margin-top:4px;">' + balHint + '</div></div>';
-      h += inputCard('Ad Spend Burn / Month', 'odBurnMonthly', burnMo, 'Monthly marketing burn');
-      h += inputCard('Months of Burn', 'odBurnMonths', burnMos, 'Months to reserve');
+      h += inputCard('Ad Spend + SM3 / Month', 'odBurnMonthly', burnMo, '$25k ads + $3k SM3 &middot; ' + monthsLeft + ' month' + (monthsLeft === 1 ? '' : 's') + ' left in ' + qLabel);
       h += '</div>';
       h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:28px;">';
       h += calcCard('Total in Escrow', 'odTotalEscrow', '#2E75B6', 'All deals in Escrow status');
       h += calcCard('Escrow Closing This Quarter', 'odEscrowThisQ', '#2E75B6', 'Escrow closing by ' + qDateStr);
-      h += calcCard('End of Quarter Projected', 'odEOQ', '#1B2A4A', 'Balance + escrow closing this Q');
-      h += calcCard('Burn Reserve (Total)', 'odBurn', '#C00000', 'Monthly burn × months');
-      h += calcCard('Potential Owners Draw', 'odDraw', '#548235', 'EOQ projected − burn reserve');
+      h += calcCard('Remaining Ad Spend This Q', 'odRemainingAd', '#C00000', '$/mo × ' + monthsLeft + ' month' + (monthsLeft === 1 ? '' : 's') + ' left');
+      h += calcCard('End of Quarter Projected', 'odEOQ', '#1B2A4A', 'Balance + escrow − remaining ad spend');
+      h += calcCard('Potential Owners Draw', 'odDraw', '#548235', 'Same as EOQ projected');
       h += calcCard('Per Owner (÷3)', 'odPerOwner', '#548235', 'Split three ways');
       h += '</div>';
       return h;
@@ -2781,36 +2801,36 @@
       var balEl = document.getElementById('odBizBalance');
       if (!balEl) return; // section not currently rendered
       var monthlyEl = document.getElementById('odBurnMonthly');
-      var monthsEl = document.getElementById('odBurnMonths');
 
       var bal = parseFloat(balEl.value) || 0;
       var burnMonthly = parseFloat(monthlyEl.value) || 0;
-      var burnMonths = parseFloat(monthsEl.value) || 0;
 
-      // Persist burn inputs (balance is persisted separately via odBalanceEdited)
+      // Persist burn input (balance is persisted separately via odBalanceEdited)
       localStorage.setItem('od_burnMonthly', monthlyEl.value);
-      localStorage.setItem('od_burnMonths', monthsEl.value);
 
-      var qEnd = currentQuarterEnd();
+      var qEndNum = ymdNum(currentQuarterEnd());
       var escrowDeals = (DEALS || []).filter(function (d) {
         return (d.status || '').trim().toLowerCase() === 'escrow';
       });
       var totalEscrow = escrowDeals.reduce(function (s, d) { return s + (d.escrow || 0); }, 0);
+      // Escrow closing on/before the quarter end (exact calendar-date compare).
       var escrowThisQ = escrowDeals.reduce(function (s, d) {
         if (!d.closeDate) return s;
-        return (new Date(d.closeDate) <= qEnd) ? s + (d.escrow || 0) : s;
+        return (closeDateNum(d.closeDate) <= qEndNum) ? s + (d.escrow || 0) : s;
       }, 0);
 
-      var eoq = bal + escrowThisQ;
-      var burn = burnMonthly * burnMonths;
-      var draw = eoq - burn;
+      // Remaining ad spend still to be spent this quarter (auto months left).
+      var remainingAdSpend = burnMonthly * monthsLeftInQuarter();
+      // End of Quarter projected balance = cash + escrow closing this Q − remaining ad spend.
+      var eoq = bal + escrowThisQ - remainingAdSpend;
+      var draw = eoq;            // Owners draw = projected EOQ balance
       var perOwner = draw / 3;
 
       function setText(id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; }
       setText('odTotalEscrow', fmt(totalEscrow));
       setText('odEscrowThisQ', fmt(escrowThisQ));
+      setText('odRemainingAd', fmt(remainingAdSpend));
       setText('odEOQ', fmt(eoq));
-      setText('odBurn', fmt(burn));
       setText('odDraw', fmt(draw));
       setText('odPerOwner', fmt(perOwner));
     }
