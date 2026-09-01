@@ -2252,13 +2252,11 @@
 
       kpis2.appendChild(createKpiCard('Avg Fee', fmt(metrics.avgFee), '#2E75B6'));
 
-      // Potential Profit — only Under Contract or Listed/Posted deals with a potential profit value
-      const potentialDeals = DEALS.filter(d => ['Under Contract', 'Listed/Posted'].includes(d.status) && d.potential && d.potential > 0);
-      const potentialProfit = potentialDeals.reduce((s, d) => s + d.potential, 0);
-      kpis2.appendChild(createKpiCard('Potential Profit', fmt(potentialProfit), '#ED7D31',
-        () => showDrillDown('exec', 'POTENTIAL PROFIT', potentialDeals)));
-
-      kpis2.appendChild(createKpiCard('Pipeline Value', fmt(metrics.pipelineValue), '#FFC000'));
+      // Escrow Amount — total sitting in escrow (all Escrow-status deals)
+      const escrowDealsExec = DEALS.filter(d => (d.status || '').trim().toLowerCase() === 'escrow');
+      const escrowAmountExec = escrowDealsExec.reduce((s, d) => s + (d.escrow || 0), 0);
+      kpis2.appendChild(createKpiCard('Escrow Amount', fmt(escrowAmountExec), '#ED7D31',
+        () => showDrillDown('exec', 'ESCROW', escrowDealsExec)));
       kpis2.appendChild(createKpiCard('Avg Days Cash/SF', metrics.avgCloseTrad ? metrics.avgCloseTrad + ' days' : '—', '#7030A0',
         metrics.wonTraditional.length > 0 ? () => showDrillDown('exec', 'CASH / SUB-TO / SELLER FINANCE CLOSES', metrics.wonTraditional) : null));
       kpis2.appendChild(createKpiCard('Avg Days Novation', metrics.avgCloseNov ? metrics.avgCloseNov + ' days' : '—', '#5B2C6F',
@@ -3516,7 +3514,7 @@
         const chartColors = ['#2E75B6','#ED7D31','#E74C3C','#7030A0','#2F9599','#548235'];
         const channelNames = Object.keys(channelTotals);
 
-        // Ad Spend by Month — stacked bar by channel
+        // Ad Spend by Month — stacked bar by channel, with a total label per month.
         const adSpendCtx = document.getElementById('roiAdSpendChart');
         if (adSpendCtx) {
           destroyChart('roiAdSpendChart');
@@ -3526,10 +3524,39 @@
             backgroundColor: chartColors[ci % chartColors.length],
             borderRadius: 2,
           }));
+          // Inline plugin: draw the total spend above each month's stacked bar.
+          const monthTotalLabels = {
+            id: 'monthTotalLabels',
+            afterDatasetsDraw(chart) {
+              const ctx = chart.ctx;
+              const xScale = chart.scales.x, yScale = chart.scales.y;
+              if (!xScale || !yScale) return;
+              ctx.save();
+              ctx.font = 'bold 11px sans-serif';
+              ctx.fillStyle = '#1B2A4A';
+              ctx.textAlign = 'center';
+              for (let i = 0; i < chart.data.labels.length; i++) {
+                let total = 0;
+                chart.data.datasets.forEach(ds => { total += (ds.data[i] || 0); });
+                if (total <= 0) continue;
+                ctx.fillText('$' + Math.round(total / 1000) + 'k', xScale.getPixelForValue(i), yScale.getPixelForValue(total) - 6);
+              }
+              ctx.restore();
+            }
+          };
           chartsCache['roiAdSpendChart'] = new Chart(adSpendCtx.getContext('2d'), {
             type: 'bar',
             data: { labels: sortedMonths, datasets },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { x: { stacked: true }, y: { stacked: true, ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } } } }
+            options: {
+              responsive: true, maintainAspectRatio: false,
+              layout: { padding: { top: 22 } },
+              plugins: {
+                legend: { position: 'bottom' },
+                tooltip: { callbacks: { footer: (items) => 'Total: $' + Math.round(items.reduce((s, it) => s + (it.parsed.y || 0), 0)).toLocaleString() } }
+              },
+              scales: { x: { stacked: true }, y: { stacked: true, ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } } }
+            },
+            plugins: [monthTotalLabels]
           });
         }
 
