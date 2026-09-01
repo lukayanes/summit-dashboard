@@ -3505,6 +3505,7 @@
       var fb  = buildChannelStats('Facebook', channelSpend(CHANNEL_SPEND_CATS.facebook, r), leadVolume(FB_LEADS, r), sourceDealMetrics(CHANNEL_SOURCE_MATCHERS.facebook, r));
       var ppl = buildChannelStats('PPL', channelSpend(CHANNEL_SPEND_CATS.ppl, r), null, sourceDealMetrics(CHANNEL_SOURCE_MATCHERS.ppl, r));
       var channels = [sm3, fb, ppl];
+      window._channelStats = channels; // consumed by the comparison chart in the setTimeout render
 
       function num(n) { return (n === null || n === undefined) ? '—' : Math.round(n).toLocaleString(); }
       function money(n) { return (n === null || n === undefined) ? '—' : fmt(n); }
@@ -3541,7 +3542,13 @@
       channels.forEach(function (c) { html += channelBlock(c); });
 
       html += '<div class="section-title" style="background-color:#1B2A4A;">Channel Comparison (' + r + ')</div>';
-      html += '<div class="section-body"><div class="table-container"><table><thead><tr><th>Metric</th><th>SM3 / Google</th><th>Facebook</th><th>PPL</th></tr></thead><tbody>';
+      html += '<div class="section-body">';
+      // Comparison charts: Spend vs Revenue (bars) + ROAS (line), and Contracts vs Closed
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">';
+      html += '<div class="chart-container" style="height:280px;"><canvas id="channelCompareChart"></canvas></div>';
+      html += '<div class="chart-container" style="height:280px;"><canvas id="channelFunnelChart"></canvas></div>';
+      html += '</div>';
+      html += '<div class="table-container"><table><thead><tr><th>Metric</th><th>SM3 / Google</th><th>Facebook</th><th>PPL</th></tr></thead><tbody>';
       function crow(label, fn) { return '<tr><td style="font-weight:600;">' + label + '</td><td>' + fn(sm3) + '</td><td>' + fn(fb) + '</td><td>' + fn(ppl) + '</td></tr>'; }
       html += crow('Total Ad Spend', c => money(c.spend));
       html += crow('Leads', c => num(c.totalLeads));
@@ -3790,6 +3797,51 @@
 
         // ROI/ROAS Trend — default monthly
         renderRoiTrendChart('monthly', sortedMonths, monthlyData, quarters);
+
+        // ── Channel comparison charts ──
+        var cs = window._channelStats || [];
+        if (cs.length) {
+          var cLabels = cs.map(c => c.name);
+          // Spend vs Revenue (bars) + ROAS (line, secondary axis)
+          var compCtx = document.getElementById('channelCompareChart');
+          if (compCtx) {
+            destroyChart('channelCompareChart');
+            chartsCache['channelCompareChart'] = new Chart(compCtx.getContext('2d'), {
+              data: {
+                labels: cLabels,
+                datasets: [
+                  { type: 'bar', label: 'Ad Spend', data: cs.map(c => Math.round(c.spend || 0)), backgroundColor: '#ED7D31', borderRadius: 3, yAxisID: 'y' },
+                  { type: 'bar', label: 'Revenue', data: cs.map(c => Math.round(c.revenue || 0)), backgroundColor: '#548235', borderRadius: 3, yAxisID: 'y' },
+                  { type: 'line', label: 'ROAS', data: cs.map(c => c.roas == null ? null : +c.roas.toFixed(2)), borderColor: '#2E75B6', backgroundColor: '#2E75B6', tension: 0.3, yAxisID: 'y1' }
+                ]
+              },
+              options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { position: 'bottom' }, title: { display: true, text: 'Spend vs Revenue & ROAS' } },
+                scales: {
+                  y: { position: 'left', ticks: { callback: v => '$' + (v / 1000).toFixed(0) + 'k' } },
+                  y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { callback: v => v + 'x' } }
+                }
+              }
+            });
+          }
+          // Contracts vs Closed (grouped bars)
+          var funnelCtx = document.getElementById('channelFunnelChart');
+          if (funnelCtx) {
+            destroyChart('channelFunnelChart');
+            chartsCache['channelFunnelChart'] = new Chart(funnelCtx.getContext('2d'), {
+              type: 'bar',
+              data: {
+                labels: cLabels,
+                datasets: [
+                  { label: 'Contracts', data: cs.map(c => c.contracts || 0), backgroundColor: '#2E75B6', borderRadius: 3 },
+                  { label: 'Closed', data: cs.map(c => c.closed || 0), backgroundColor: '#7030A0', borderRadius: 3 }
+                ]
+              },
+              options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' }, title: { display: true, text: 'Contracts vs Closed' } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+            });
+          }
+        }
       }, 10);
     };
 
