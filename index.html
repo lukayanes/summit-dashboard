@@ -1606,6 +1606,39 @@
       return Object.values(months).sort((a, b) => monthSortKey(a.month) - monthSortKey(b.month));
     };
 
+    // Revenue-by-month drill-down: lists the Closed-Won deals that made up a
+    // month's revenue (name / address / amount). Click the same month to close.
+    let _revDrillMonth = null;
+    function showRevenueDrill(month) {
+      const panel = document.getElementById('mtRevenueDrill');
+      if (!panel) return;
+      if (_revDrillMonth === month) { _revDrillMonth = null; panel.innerHTML = ''; return; }
+      _revDrillMonth = month;
+
+      const revAmt = (d) => (d.final !== null && d.final !== undefined ? d.final : (d.potential || 0));
+      const deals = (DEALS || [])
+        .filter(d => d.month === month && d.status === 'Closed - Won')
+        .map(d => ({ id: d.id, address: d.address, amt: revAmt(d) }))
+        .sort((a, b) => b.amt - a.amt);
+      const total = deals.reduce((s, d) => s + (d.amt || 0), 0);
+
+      let h = '<div class="section-title" style="background-color:#548235;display:flex;justify-content:space-between;align-items:center;">';
+      h += '<span>Revenue Breakdown — ' + month + ' &middot; ' + fmt(total) + '</span>';
+      h += '<span style="cursor:pointer;font-weight:700;" onclick="showRevenueDrill(\'' + month + '\')">×</span></div>';
+      h += '<div class="section-body"><div class="table-container"><table><thead><tr><th>Name</th><th>Address</th><th style="text-align:right;">Revenue</th></tr></thead><tbody>';
+      if (deals.length === 0) {
+        h += '<tr><td colspan="3" style="text-align:center;padding:20px;color:#888;">No closed-won revenue recorded for ' + month + '</td></tr>';
+      } else {
+        deals.forEach(d => {
+          h += '<tr><td style="font-weight:500;">' + d.id + '</td><td style="font-size:12px;color:#666;">' + (d.address || '') + '</td><td style="text-align:right;font-weight:600;color:#548235;">' + fmt(d.amt) + '</td></tr>';
+        });
+        h += '<tr style="background:#f0f0f0;font-weight:700;"><td colspan="2">TOTAL</td><td style="text-align:right;color:#548235;">' + fmt(total) + '</td></tr>';
+      }
+      h += '</tbody></table></div></div>';
+      panel.innerHTML = h;
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
     // Calculate quarterly metrics (3-month rolling)
     const calculateQuarterlyMetrics = () => {
       const monthly = calculateMonthlyMetrics();
@@ -2491,8 +2524,10 @@
       // ── Charts Row 1: Deal Volume + Revenue ──
       html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">`;
       html += `<div><div class="section-title" style="background-color:#2E75B6;">Deal Volume by Month</div><div class="section-body"><div class="chart-container"><canvas id="mtDealsChart"></canvas></div></div></div>`;
-      html += `<div><div class="section-title" style="background-color:#548235;">Revenue by Month</div><div class="section-body"><div class="chart-container"><canvas id="mtRevenueChart"></canvas></div></div></div>`;
+      html += `<div><div class="section-title" style="background-color:#548235;">Revenue by Month</div><div class="section-body"><div style="font-size:11px;color:#888;margin-bottom:6px;">Click a bar to see the deals behind that month's revenue</div><div class="chart-container"><canvas id="mtRevenueChart"></canvas></div></div></div>`;
       html += `</div>`;
+      // Drill-down panel for Revenue by Month (populated on bar click)
+      html += `<div id="mtRevenueDrill" style="margin-bottom:24px;"></div>`;
 
       // ── Charts Row 2: Cumulative Revenue + Win Rate Trend ──
       html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">`;
@@ -2560,7 +2595,13 @@
               label: 'Revenue', data: monthly.map(m => m.revenue),
               backgroundColor: 'rgba(84,130,53,0.7)', borderColor: '#548235', borderWidth: 1, borderRadius: 4,
             }]},
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } } } }
+            options: {
+              responsive: true, maintainAspectRatio: false,
+              onClick: (evt, els) => { if (els && els.length) showRevenueDrill(mLabels[els[0].index]); },
+              onHover: (evt, els) => { evt.native.target.style.cursor = (els && els.length) ? 'pointer' : 'default'; },
+              plugins: { legend: { display: false } },
+              scales: { y: { ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } } }
+            }
           });
         }
 
@@ -2741,7 +2782,7 @@
 
     function ownersDrawSectionHTML() {
       var burnMo = localStorage.getItem('od_burnMonthly') || '28000'; // $25k ads + $3k SM3
-      var monthsLeft = monthsLeftInQuarter();
+      var burnMonths = localStorage.getItem('od_burnMonths') || '5';   // customizable 4–6 (0.5 steps)
 
       // Business account balance: auto from Tiller unless the user manually overrode it.
       var manualBal = localStorage.getItem('od_bizBalance_manual') === '1';
@@ -2784,14 +2825,19 @@
         '</div>' +
         '<input id="odBizBalance" type="number" value="' + bal + '" oninput="odBalanceEdited()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:18px;font-weight:700;color:#1B2A4A;">' +
         '<div style="font-size:11px;color:#999;margin-top:4px;">' + balHint + '</div></div>';
-      h += inputCard('Ad Spend + SM3 / Month', 'odBurnMonthly', burnMo, '$25k ads + $3k SM3 &middot; ' + monthsLeft + ' month' + (monthsLeft === 1 ? '' : 's') + ' left in ' + qLabel);
+      h += inputCard('Ad Spend + SM3 / Month', 'odBurnMonthly', burnMo, '$25k ads + $3k SM3');
+      // Burn Rate Months — customizable 4 to 6 in 0.5 steps.
+      h += '<div class="kpi-card" style="border-left:4px solid #548235;">' +
+        '<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Burn Rate Months</div>' +
+        '<input id="odBurnMonths" type="number" min="4" max="6" step="0.5" value="' + burnMonths + '" oninput="computeOwnersDraw()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:18px;font-weight:700;color:#1B2A4A;">' +
+        '<div style="font-size:11px;color:#999;margin-top:4px;">Reserve horizon (4–6 months)</div></div>';
       h += '</div>';
       h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:28px;">';
       h += calcCard('Total in Escrow', 'odTotalEscrow', '#2E75B6', 'All deals in Escrow status');
       h += calcCard('Escrow Closing This Quarter', 'odEscrowThisQ', '#2E75B6', 'Escrow closing by ' + qDateStr);
-      h += calcCard('Remaining Ad Spend This Q', 'odRemainingAd', '#C00000', '$/mo × ' + monthsLeft + ' month' + (monthsLeft === 1 ? '' : 's') + ' left');
-      h += calcCard('End of Quarter Projected', 'odEOQ', '#1B2A4A', 'Balance + escrow − remaining ad spend');
-      h += calcCard('Potential Owners Draw', 'odDraw', '#548235', 'Same as EOQ projected');
+      h += calcCard('End of Quarter Projected', 'odEOQ', '#1B2A4A', 'Balance + escrow closing this Q');
+      h += calcCard('Burn Rate Total', 'odBurnTotal', '#C00000', 'Ad spend/mo × burn months');
+      h += calcCard('Potential Owners Draw', 'odDraw', '#548235', 'EOQ projected − burn rate total');
       h += calcCard('Per Owner (÷3)', 'odPerOwner', '#548235', 'Split three ways');
       h += '</div>';
       return h;
@@ -2801,12 +2847,18 @@
       var balEl = document.getElementById('odBizBalance');
       if (!balEl) return; // section not currently rendered
       var monthlyEl = document.getElementById('odBurnMonthly');
+      var monthsEl = document.getElementById('odBurnMonths');
 
       var bal = parseFloat(balEl.value) || 0;
       var burnMonthly = parseFloat(monthlyEl.value) || 0;
+      // Burn rate months, clamped to the 4–6 range (0.5 steps come from the input).
+      var burnMonths = parseFloat(monthsEl.value);
+      if (isNaN(burnMonths)) burnMonths = 5;
+      burnMonths = Math.min(6, Math.max(4, burnMonths));
 
-      // Persist burn input (balance is persisted separately via odBalanceEdited)
+      // Persist burn inputs (balance is persisted separately via odBalanceEdited)
       localStorage.setItem('od_burnMonthly', monthlyEl.value);
+      localStorage.setItem('od_burnMonths', monthsEl.value);
 
       var qEndNum = ymdNum(currentQuarterEnd());
       var escrowDeals = (DEALS || []).filter(function (d) {
@@ -2819,18 +2871,16 @@
         return (closeDateNum(d.closeDate) <= qEndNum) ? s + (d.escrow || 0) : s;
       }, 0);
 
-      // Remaining ad spend still to be spent this quarter (auto months left).
-      var remainingAdSpend = burnMonthly * monthsLeftInQuarter();
-      // End of Quarter projected balance = cash + escrow closing this Q − remaining ad spend.
-      var eoq = bal + escrowThisQ - remainingAdSpend;
-      var draw = eoq;            // Owners draw = projected EOQ balance
+      var eoq = bal + escrowThisQ;                 // End of Quarter projected balance
+      var burnTotal = burnMonthly * burnMonths;    // Ad spend + SM3 per month × burn months
+      var draw = eoq - burnTotal;                  // Owners draw = EOQ − burn reserve
       var perOwner = draw / 3;
 
       function setText(id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; }
       setText('odTotalEscrow', fmt(totalEscrow));
       setText('odEscrowThisQ', fmt(escrowThisQ));
-      setText('odRemainingAd', fmt(remainingAdSpend));
       setText('odEOQ', fmt(eoq));
+      setText('odBurnTotal', fmt(burnTotal));
       setText('odDraw', fmt(draw));
       setText('odPerOwner', fmt(perOwner));
     }
