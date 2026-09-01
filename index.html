@@ -560,19 +560,12 @@
     <button class="tab-button" onclick="switchTab('dealmap')">Deal Map</button>
     <button class="tab-button" onclick="switchTab('executive')">Executive Dashboard</button>
     <button class="tab-button" onclick="switchTab('pipeline')">Pipeline Analytics</button>
-    <button class="tab-button" onclick="switchTab('team')">Team Scorecard</button>
     <button class="tab-button" onclick="switchTab('monthly')">Monthly Trends</button>
     <button class="tab-button" onclick="switchTab('roi')">Marketing ROI</button>
     <button class="tab-button" onclick="switchTab('financials')">Financials</button>
     <button class="tab-button" onclick="switchTab('projections')">Projections</button>
     <button class="tab-button" onclick="switchTab('projections2')">Projections 2</button>
-    <button class="tab-button" onclick="switchTab('pipelineflow')">Pipeline Flow</button>
-    <button class="tab-button" onclick="switchTab('callledger')">Call Ledger</button>
-    <button class="tab-button" onclick="switchTab('arvcalc')">Acq Calculator</button>
     <button class="tab-button" onclick="switchTab('dispo')">Dispo</button>
-    <button class="tab-button" onclick="switchTab('buyers')">Buyers</button>
-    <button class="tab-button" onclick="switchTab('agents')">Listing Agents</button>
-    <button class="tab-button" onclick="switchTab('sellerphotos')">Seller Photos</button>
   </div>
 
   <!-- Main Content Area -->
@@ -594,6 +587,7 @@
               <option value="">All</option>
               <option value="Under Contract">Under Contract</option>
               <option value="Listed/Posted">Listed/Posted</option>
+              <option value="Escrow">Escrow</option>
               <option value="Closed - Won">Closed - Won</option>
               <option value="Closed - Lost">Closed - Lost</option>
             </select>
@@ -615,24 +609,6 @@
               <option value="">All</option>
             </select>
           </div>
-          <div>
-            <label style="font-size: 12px; font-weight: 600; color: #666;">Disposition</label>
-            <select id="filterDispo" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
-              <option value="">All</option>
-              <option value="Aubrey">Aubrey</option>
-              <option value="Luka">Luka</option>
-              <option value="Brennen">Brennen</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size: 12px; font-weight: 600; color: #666;">Acquisition</label>
-            <select id="filterAcq" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
-              <option value="">All</option>
-              <option value="Aubrey">Aubrey</option>
-              <option value="Luka">Luka</option>
-              <option value="Brennen">Brennen</option>
-            </select>
-          </div>
         </div>
       </div>
 
@@ -648,20 +624,12 @@
                 <th style="cursor: pointer;" onclick="sortLedgerTable('id')">Name <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('address')">Address <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('market')">Market <span class="sort-arrow"></span></th>
-                <th style="cursor: pointer;" onclick="sortLedgerTable('acq')">Acquisition <span class="sort-arrow"></span></th>
-                <th style="cursor: pointer;" onclick="sortLedgerTable('dispo')">Disposition <span class="sort-arrow"></span></th>
-                <th style="cursor: pointer;" onclick="sortLedgerTable('buyerName')">Buyer</th>
-                <th style="cursor: pointer;" onclick="sortLedgerTable('agentName')">Listing Agent</th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('status')">Status <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('strategy')">Strategy <span class="sort-arrow"></span></th>
-                <th style="cursor: pointer;" onclick="sortLedgerTable('exit')">Exit <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('ucDate')">UC Date <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('closeDate')">Close Date <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('contract')">Contract Price <span class="sort-arrow"></span></th>
-                <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('listed')">Listed Price <span class="sort-arrow"></span></th>
-                <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('buyer')">Buyer Price <span class="sort-arrow"></span></th>
-                <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('repairs')">Repairs <span class="sort-arrow"></span></th>
-                <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('potential')">Potential Profit <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('escrow')">Amount in Escrow <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('final')">Final Profit <span class="sort-arrow"></span></th>
               </tr>
             </thead>
@@ -793,22 +761,6 @@
       </div>
     </div>
 
-    <!-- TEAM SCORECARD TAB -->
-    <div id="team" class="tab-content">
-      <div id="teamCards" class="grid gap-6 mb-6" style="grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));"></div>
-
-      <!-- Drill-down table for team -->
-      <div id="teamDrillDown" style="display: none;">
-        <div class="section-title" style="background-color: #1B2A4A;">
-          <span id="teamDrillDownTitle"></span>
-          <span class="close-btn" onclick="closeDrillDown('team')">×</span>
-        </div>
-        <div class="section-body">
-          <div id="teamDrillDownTable" class="table-container"></div>
-        </div>
-      </div>
-    </div>
-
     <!-- MONTHLY TRENDS TAB -->
     <div id="monthly" class="tab-content">
       <div id="monthlyTrendsContent"></div>
@@ -822,25 +774,6 @@
     <!-- FINANCIALS TAB -->
     <div id="financials" class="tab-content">
       <div id="financialsContent"></div>
-    </div>
-
-    <!-- PIPELINE FLOW TAB (NEW) -->
-    <div id="pipelineflow" class="tab-content">
-      <div class="mb-6 bg-white rounded-lg shadow-md p-4">
-        <div style="display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: flex-end;">
-          <div>
-            <label style="font-size: 12px; font-weight: 600; color: #666; display: block; margin-bottom: 6px;">GHL Pipeline Worker URL</label>
-            <input type="text" id="pipelineWorkerUrl" value="https://summit-ghl-dashboard-api.aubrey.workers.dev" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-          </div>
-          <button onclick="connectPipelineWorker()" style="padding: 10px 20px; background-color: #2E75B6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">Connect</button>
-        </div>
-      </div>
-
-      <div id="pipelineFlowContent">
-        <div style="text-align: center; padding: 40px; color: #666;">
-          <p>Connect your GHL pipeline by entering your Worker API URL above</p>
-        </div>
-      </div>
     </div>
 
     <!-- PROJECTIONS TAB -->
@@ -1018,99 +951,9 @@
       <div class="p2-hint">💡 <strong>How to use:</strong> <strong>Starting Balance</strong> and <strong>Monthly Burn</strong> default to live numbers from your Tiller financials — override either by typing a new value. Monthly Burn covers <em>all</em> expenses (including ads), so if you significantly change quarterly ad spend you may want to update Monthly Burn too. Adjust ad spend per quarter to model growth scenarios, toggle ROAS scenarios at the top, and switch any quarter to Manual Input to lock in actual revenue. Values in red indicate balance falls below the 5-month reserve floor.</div>
     </div>
 
-    <!-- CALL LEDGER TAB -->
-    <div id="callledger" class="tab-content">
-      <div class="mb-4 flex gap-3 flex-wrap items-center">
-        <input type="text" id="callLedgerSearch" placeholder="Search calls..." oninput="filterCallLedger()" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; width: 300px;">
-        <select id="filterMotivation" onchange="filterCallLedger()" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
-          <option value="">All Motivation</option>
-        </select>
-        <select id="filterPropertyType" onchange="filterCallLedger()" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
-          <option value="">All Property Types</option>
-        </select>
-      </div>
-      <div id="callLedgerSummary" style="margin-bottom: 12px; font-size: 13px; color: #666;"></div>
-      <div class="table-container" style="max-height: 70vh; overflow: auto;">
-        <table id="callLedgerTable">
-          <thead>
-            <tr>
-              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('num')"># <span class="sort-arrow" id="callSort_num"></span></th>
-              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('date')">Date <span class="sort-arrow" id="callSort_date"></span></th>
-              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('seller')">Seller Name <span class="sort-arrow" id="callSort_seller"></span></th>
-              <th style="position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;">Phone</th>
-              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('address')">Property Address <span class="sort-arrow" id="callSort_address"></span></th>
-              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('city')">City / State <span class="sort-arrow" id="callSort_city"></span></th>
-              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('price')">Asking Price <span class="sort-arrow" id="callSort_price"></span></th>
-              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('type')">Property Type <span class="sort-arrow" id="callSort_type"></span></th>
-              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('motivation')">Motivation <span class="sort-arrow" id="callSort_motivation"></span></th>
-              <th style="position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;min-width:300px;">Call Summary</th>
-              <th style="position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;min-width:250px;">Next Steps</th>
-              <th style="cursor:pointer;position:sticky;top:0;background:#1B2A4A;color:white;z-index:2;" onclick="sortCallLedger('callback')">Callback Date <span class="sort-arrow" id="callSort_callback"></span></th>
-            </tr>
-          </thead>
-          <tbody id="callLedgerBody">
-            <tr><td colspan="12" style="text-align:center;padding:40px;color:#666;">Loading call ledger...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- ARV CALCULATOR TAB -->
-    <div id="arvcalc" class="tab-content">
-      <div id="arvcalcContent"></div>
-    </div>
-
     <!-- DISPO TAB -->
     <div id="dispo" class="tab-content">
       <div id="dispoContent"></div>
-    </div>
-
-    <!-- BUYERS TAB -->
-    <div id="buyers" class="tab-content">
-      <div class="mb-4 bg-white rounded-lg shadow-md p-4">
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
-          <input type="text" id="buyerSearch" placeholder="Search buyers..." oninput="renderBuyersTab()" style="padding:8px 12px;border:1px solid #ddd;border-radius:4px;font-size:14px;width:280px;">
-          <select id="buyerMarketFilter" onchange="renderBuyersTab()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
-            <option value="">All Markets</option>
-          </select>
-          <select id="buyerStrategyFilter" onchange="renderBuyersTab()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
-            <option value="">All Strategies</option>
-          </select>
-          <select id="buyerStatusFilter" onchange="renderBuyersTab()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
-            <option value="">All Statuses</option>
-          </select>
-          <div id="buyerStats" style="margin-left:auto;font-size:13px;color:#666;"></div>
-        </div>
-      </div>
-      <div id="buyersContent"></div>
-    </div>
-
-    <!-- LISTING AGENTS TAB -->
-    <div id="agents" class="tab-content">
-      <div class="mb-4 bg-white rounded-lg shadow-md p-4">
-        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
-          <input type="text" id="agentSearch" placeholder="Search agents..." oninput="renderAgentsTab()" style="padding:8px 12px;border:1px solid #ddd;border-radius:4px;font-size:14px;width:280px;">
-          <select id="agentMarketFilter" onchange="renderAgentsTab()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
-            <option value="">All Markets</option>
-          </select>
-          <select id="agentInvestorFilter" onchange="renderAgentsTab()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
-            <option value="">All</option>
-            <option value="Yes">Investor Friendly</option>
-            <option value="No">Not Investor Friendly</option>
-            <option value="Maybe">Maybe</option>
-          </select>
-          <select id="agentStatusFilter" onchange="renderAgentsTab()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
-            <option value="">All Statuses</option>
-          </select>
-          <div id="agentStats" style="margin-left:auto;font-size:13px;color:#666;"></div>
-        </div>
-      </div>
-      <div id="agentsContent"></div>
-    </div>
-
-    <!-- SELLER PHOTOS TAB -->
-    <div id="sellerphotos" class="tab-content">
-      <div id="sellerPhotosTabContent"></div>
     </div>
 
   </div>
@@ -1187,6 +1030,10 @@
 
     function deriveMonth(dateStr) {
       if (!dateStr) return '';
+      // Parse YYYY-MM-DD directly to avoid timezone shifts (e.g. new Date()
+      // treating a date on the 1st as the prior month in negative UTC offsets).
+      const iso = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (iso) return iso[2] + '-' + iso[1].slice(-2);
       const d = new Date(dateStr);
       if (isNaN(d)) return '';
       const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -1211,25 +1058,18 @@
         const headers = rows[headerIdx].map(h => h.toLowerCase().trim());
         const colIdx = (name) => headers.findIndex(h => h.includes(name));
 
-        // Map columns
+        // Map columns — schema: Deal ID, Property Address, Market, Deal Status,
+        // Strategy, Under Contract Date, Close Date, Contract Price,
+        // Amount in Escrow, Final Profit, Notes
         const iId = colIdx('deal id');
         const iAddr = colIdx('property address');
         const iMarket = colIdx('market');
-        const iAcq = colIdx('acq owner');
-        const iDispo = colIdx('disposition owner');
         const iStatus = colIdx('deal status');
         const iStrategy = colIdx('strategy');
-        const iExit = colIdx('exit type');
         const iUcDate = colIdx('under contract');
         const iCloseDate = colIdx('close date');
-        const iMonth = colIdx('month');
         const iContract = colIdx('contract price');
-        const iListed = colIdx('listed');
-        const iBuyer = colIdx('buyer price');
-        const iRepairs = colIdx('repairs');
-        const iPotential = colIdx('potential profit');
-        const iBuyerName = headers.findIndex(h => h.includes('buyer name'));
-        const iAgentName = headers.findIndex(h => h.includes('listing agent'));
+        const iEscrow = colIdx('amount in escrow') >= 0 ? colIdx('amount in escrow') : colIdx('escrow');
         const iFinal = colIdx('final profit');
         const iNotes = colIdx('notes');
 
@@ -1242,7 +1082,10 @@
 
           const ucDate = parseDate(r[iUcDate]);
           const closeDate = parseDate(r[iCloseDate]);
-          const month = (iMonth >= 0 && r[iMonth]) ? r[iMonth] : deriveMonth(closeDate || ucDate);
+          // Month is always derived from the close date (falls back to UC date
+          // only when a deal has no close date yet). The sheet's "Month" column
+          // is intentionally ignored so this value auto-updates with close date.
+          const month = deriveMonth(closeDate || ucDate);
 
           // Parse notes field for structured GHL webhook data
           // Format: "Auto-added from GHL webhook. | Monthly Payment: $2,500 | EMD: $500 | Existing Mortgage: $326,971"
@@ -1260,26 +1103,23 @@
             });
           }
 
+          const escrowAmt = parseNum(r[iEscrow]);
           deals.push({
             id: name,
             address: r[iAddr] || '',
             market: r[iMarket] || '',
-            acq: r[iAcq] || '',
-            dispo: r[iDispo] || '',
             status: r[iStatus] || '',
             strategy: r[iStrategy] || '',
-            exit: r[iExit] || '',
             ucDate: ucDate,
             closeDate: closeDate,
             month: month,
             contract: parseNum(r[iContract]),
-            listed: parseNum(r[iListed]),
-            buyer: parseNum(r[iBuyer]),
-            repairs: parseNum(r[iRepairs]),
-            potential: parseNum(r[iPotential]),
+            escrow: escrowAmt,
+            // `potential` (expected profit) is aliased to Amount in Escrow — the
+            // escrow column replaced the old Potential Profit column, so all the
+            // existing expected-profit logic keeps working off this alias.
+            potential: escrowAmt,
             final: parseNum(r[iFinal]),
-            buyerName: (iBuyerName >= 0 ? (r[iBuyerName] || '').trim() : ''),
-            agentName: (iAgentName >= 0 ? (r[iAgentName] || '').trim() : ''),
             notes: rawNotes,
             // Parsed GHL webhook data from notes column
             meta: parsedMeta,
@@ -1344,7 +1184,7 @@
         // a recurring marketing expense, so it counts toward total marketing
         // spend for ROAS purposes. We accept several common spellings so the
         // dashboard doesn't break if the Tiller label is tweaked.
-        const marketingCats = ['ad spend', 'google ad spend', 'facebook ad spend', 'tik tok ad spend', 'sms marketing', 'investor lift', 'sm3 marketing', 'sm3 management', 'sm3', 'sm3 fee', 'sm3 management fee'];
+        const marketingCats = ['ad spend', 'google ad spend', 'facebook ad spend', 'tik tok ad spend', 'sms marketing', 'investor lift', 'sm3 marketing', 'sm3 management', 'sm3', 'sm3 fee', 'sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing'];
 
         for (let i = headerIdx + 1; i < rows.length; i++) {
           const r = rows[i];
@@ -1508,7 +1348,6 @@
               <th>Market</th>
               <th>Strategy</th>
               <th>Status</th>
-              <th>Dispo</th>
               <th>Contract</th>
               <th>Days</th>
               <th>Profit</th>
@@ -1536,7 +1375,6 @@
             <td style="font-weight: 500;">${deal.market}</td>
             <td>${deal.strategy}</td>
             <td><span class="${statusClass}">${deal.status}</span></td>
-            <td>${deal.dispo}</td>
             <td style="font-weight: 500;">${fmt(deal.contract)}</td>
             <td style="text-align: right;">${days}d</td>
             <td style="font-weight: 500; color: #10b981;">${profit ? fmt(profit) : '-'}</td>
@@ -1556,7 +1394,7 @@
       const won = DEALS.filter(d => d.status === 'Closed - Won');
       const lost = DEALS.filter(d => d.status === 'Closed - Lost');
 
-      const wonValue = won.reduce((s, d) => s + (d.buyer || 0), 0);
+      const wonValue = won.reduce((s, d) => s + (d.final || 0), 0);
       const allFees = won.filter(d => d.final !== null).map(d => d.final);
       const avgFee = allFees.length > 0 ? allFees.reduce((s, f) => s + f, 0) / allFees.length : 0;
 
@@ -1938,29 +1776,23 @@
       const statusFilter = document.getElementById('filterStatus').value;
       const strategyFilter = document.getElementById('filterStrategy').value;
       const marketFilter = document.getElementById('filterMarket').value;
-      const dispoFilter = document.getElementById('filterDispo').value;
-      const acqFilter = document.getElementById('filterAcq').value;
 
       ledgerFilteredDeals = DEALS.filter(d => {
         const matchSearch = !searchTerm ||
           d.id.toLowerCase().includes(searchTerm) ||
           d.address.toLowerCase().includes(searchTerm) ||
           d.market.toLowerCase().includes(searchTerm) ||
-          d.acq.toLowerCase().includes(searchTerm) ||
-          d.dispo.toLowerCase().includes(searchTerm) ||
           d.status.toLowerCase().includes(searchTerm) ||
           d.strategy.toLowerCase().includes(searchTerm) ||
           (d.contract && d.contract.toString().includes(searchTerm)) ||
-          (d.listed && d.listed.toString().includes(searchTerm)) ||
-          (d.buyer && d.buyer.toString().includes(searchTerm));
+          (d.escrow && d.escrow.toString().includes(searchTerm)) ||
+          (d.final && d.final.toString().includes(searchTerm));
 
         const matchStatus = !statusFilter || (d.status || '').trim().toLowerCase() === statusFilter.trim().toLowerCase();
         const matchStrategy = !strategyFilter || (d.strategy || '').trim().toLowerCase() === strategyFilter.trim().toLowerCase();
         const matchMarket = !marketFilter || (d.market || '').trim().toLowerCase() === marketFilter.trim().toLowerCase();
-        const matchDispo = !dispoFilter || (d.dispo || '').trim().toLowerCase() === dispoFilter.trim().toLowerCase();
-        const matchAcq = !acqFilter || (d.acq || '').trim().toLowerCase() === acqFilter.trim().toLowerCase();
 
-        return matchSearch && matchStatus && matchStrategy && matchMarket && matchDispo && matchAcq;
+        return matchSearch && matchStatus && matchStrategy && matchMarket;
       });
 
       renderLedgerTable();
@@ -1981,7 +1813,7 @@
         if (column === 'ucDate' || column === 'closeDate') {
           aVal = new Date(aVal || '1900-01-01');
           bVal = new Date(bVal || '1900-01-01');
-        } else if (['contract', 'listed', 'buyer', 'repairs', 'potential', 'final'].includes(column)) {
+        } else if (['contract', 'escrow', 'potential', 'final'].includes(column)) {
           aVal = aVal || 0;
           bVal = bVal || 0;
         }
@@ -2005,18 +1837,12 @@
         column === 'id' ? 'Name' :
         column === 'address' ? 'Address' :
         column === 'market' ? 'Market' :
-        column === 'acq' ? 'Acquisition' :
-        column === 'dispo' ? 'Disposition' :
         column === 'status' ? 'Status' :
         column === 'strategy' ? 'Strategy' :
-        column === 'exit' ? 'Exit' :
         column === 'ucDate' ? 'UC Date' :
         column === 'closeDate' ? 'Close Date' :
         column === 'contract' ? 'Contract Price' :
-        column === 'listed' ? 'Listed Price' :
-        column === 'buyer' ? 'Buyer Price' :
-        column === 'repairs' ? 'Repairs' :
-        column === 'potential' ? 'Potential Profit' :
+        column === 'escrow' ? 'Amount in Escrow' :
         column === 'final' ? 'Final Profit' : ''
       ));
       if (th) {
@@ -2033,19 +1859,13 @@
       let summaryHtml = '';
       const totalDeals = ledgerFilteredDeals.length;
       const totalContract = ledgerFilteredDeals.reduce((s, d) => s + (d.contract || 0), 0);
-      const totalListed = ledgerFilteredDeals.reduce((s, d) => s + (d.listed || 0), 0);
-      const totalBuyer = ledgerFilteredDeals.reduce((s, d) => s + (d.buyer || 0), 0);
-      const totalRepairs = ledgerFilteredDeals.reduce((s, d) => s + (d.repairs || 0), 0);
-      const totalPotential = ledgerFilteredDeals.reduce((s, d) => s + (d.potential || 0), 0);
+      const totalEscrow = ledgerFilteredDeals.reduce((s, d) => s + (d.escrow || 0), 0);
       const totalFinal = ledgerFilteredDeals.reduce((s, d) => s + (d.final || 0), 0);
 
       summaryHtml += `
         <div>${totalDeals} deals</div>
         <div>Contract: ${fmt(totalContract)}</div>
-        <div>Listed: ${fmt(totalListed)}</div>
-        <div>Buyer: ${fmt(totalBuyer)}</div>
-        <div>Repairs: ${fmt(totalRepairs)}</div>
-        <div>Potential Profit: ${fmt(totalPotential)}</div>
+        <div>Amount in Escrow: ${fmt(totalEscrow)}</div>
         <div>Final Profit: ${fmt(totalFinal)}</div>
       `;
       document.getElementById('ledgerSummaryRow').innerHTML = summaryHtml;
@@ -2071,20 +1891,12 @@
             <td style="font-weight: 500;">${deal.id}</td>
             <td style="font-size: 12px; color: #666;">${deal.address}</td>
             <td style="font-weight: 500;">${deal.market}</td>
-            <td>${deal.acq}</td>
-            <td>${deal.dispo}</td>
-            <td>${renderContactCell('buyer', deal.buyerName)}</td>
-            <td>${renderContactCell('agent', deal.agentName)}</td>
             <td><span class="${statusClass}">${deal.status}</span></td>
             <td>${deal.strategy}</td>
-            <td>${deal.exit}</td>
             <td>${formatDate(deal.ucDate)}</td>
             <td>${formatDate(deal.closeDate)}</td>
             <td style="font-weight: 500; text-align: right;">${fmt(deal.contract)}</td>
-            <td style="font-weight: 500; text-align: right;">${deal.listed ? fmt(deal.listed) : '-'}</td>
-            <td style="font-weight: 500; text-align: right;">${deal.buyer ? fmt(deal.buyer) : '-'}</td>
-            <td style="font-weight: 500; text-align: right;">${deal.repairs ? fmt(deal.repairs) : '-'}</td>
-            <td style="font-weight: 500; text-align: right;">${deal.potential ? fmt(deal.potential) : '-'}</td>
+            <td style="font-weight: 500; text-align: right;">${deal.escrow ? fmt(deal.escrow) : '-'}</td>
             <td style="font-weight: 500; text-align: right; color: #10b981;">${deal.final ? fmt(deal.final) : '-'}</td>
           </tr>
         `;
@@ -2384,7 +2196,7 @@
       // ROAS from Tiller (matches Financials & Marketing ROI tabs)
       let tillerMarketing = 0;
       if (EXPENSE_DATA) {
-        const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee'];
+        const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing'];
         Object.entries(EXPENSE_DATA.categories).forEach(([catName, monthlyVals]) => {
           if (mktCats.includes(catName.toLowerCase())) {
             Object.entries(monthlyVals).forEach(([month, value]) => {
@@ -2820,11 +2632,103 @@
       }, 10);
     };
 
+    // ==================== OWNERS DRAW ====================
+    // Returns the Date for the last day of the current calendar quarter.
+    function currentQuarterEnd() {
+      var d = new Date();
+      var q = Math.floor(d.getMonth() / 3);       // 0-3
+      var endMonth = q * 3 + 2;                    // last month of quarter (0-indexed)
+      return new Date(d.getFullYear(), endMonth + 1, 0, 23, 59, 59); // day 0 of next month = last day
+    }
+
+    function ownersDrawSectionHTML() {
+      var bal = localStorage.getItem('od_bizBalance') || '';
+      var burnMo = localStorage.getItem('od_burnMonthly') || '25000';
+      var burnMos = localStorage.getItem('od_burnMonths') || '5';
+      var qEnd = currentQuarterEnd();
+      var qLabel = 'Q' + (Math.floor(qEnd.getMonth() / 3) + 1) + ' ' + qEnd.getFullYear();
+      var qDateStr = (qEnd.getMonth() + 1) + '/' + qEnd.getDate() + '/' + qEnd.getFullYear();
+
+      function inputCard(label, id, val, hint) {
+        return '<div class="kpi-card" style="border-left:4px solid #548235;">' +
+          '<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div>' +
+          '<input id="' + id + '" type="number" value="' + val + '" oninput="computeOwnersDraw()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:18px;font-weight:700;color:#1B2A4A;">' +
+          '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div></div>';
+      }
+      function calcCard(label, id, color, hint) {
+        return '<div class="kpi-card" style="border-left:4px solid ' + color + ';">' +
+          '<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">' + label + '</div>' +
+          '<div id="' + id + '" style="font-size:26px;font-weight:800;color:' + color + ';">$0</div>' +
+          '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div></div>';
+      }
+
+      var h = '';
+      h += '<div style="background:linear-gradient(135deg,#548235,#70AD47);border-radius:12px;padding:20px;margin-bottom:20px;color:white;">';
+      h += '<h2 style="margin:0 0 4px 0;font-size:22px;font-weight:700;letter-spacing:0.5px;">Owners Draw</h2>';
+      h += '<p style="margin:0;font-size:13px;opacity:0.85;">' + qLabel + ' projected distribution &middot; quarter ends ' + qDateStr + '</p>';
+      h += '</div>';
+      h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:16px;">';
+      h += inputCard('Business Account Balance', 'odBizBalance', bal, 'Cash in the business account today');
+      h += inputCard('Ad Spend Burn / Month', 'odBurnMonthly', burnMo, 'Monthly marketing burn');
+      h += inputCard('Months of Burn', 'odBurnMonths', burnMos, 'Months to reserve');
+      h += '</div>';
+      h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:28px;">';
+      h += calcCard('Total in Escrow', 'odTotalEscrow', '#2E75B6', 'All deals in Escrow status');
+      h += calcCard('Escrow Closing This Quarter', 'odEscrowThisQ', '#2E75B6', 'Escrow closing by ' + qDateStr);
+      h += calcCard('End of Quarter Projected', 'odEOQ', '#1B2A4A', 'Balance + escrow closing this Q');
+      h += calcCard('Burn Reserve (Total)', 'odBurn', '#C00000', 'Monthly burn × months');
+      h += calcCard('Potential Owners Draw', 'odDraw', '#548235', 'EOQ projected − burn reserve');
+      h += calcCard('Per Owner (÷3)', 'odPerOwner', '#548235', 'Split three ways');
+      h += '</div>';
+      return h;
+    }
+
+    function computeOwnersDraw() {
+      var balEl = document.getElementById('odBizBalance');
+      if (!balEl) return; // section not currently rendered
+      var monthlyEl = document.getElementById('odBurnMonthly');
+      var monthsEl = document.getElementById('odBurnMonths');
+
+      var bal = parseFloat(balEl.value) || 0;
+      var burnMonthly = parseFloat(monthlyEl.value) || 0;
+      var burnMonths = parseFloat(monthsEl.value) || 0;
+
+      // Persist editable inputs
+      localStorage.setItem('od_bizBalance', balEl.value);
+      localStorage.setItem('od_burnMonthly', monthlyEl.value);
+      localStorage.setItem('od_burnMonths', monthsEl.value);
+
+      var qEnd = currentQuarterEnd();
+      var escrowDeals = (DEALS || []).filter(function (d) {
+        return (d.status || '').trim().toLowerCase() === 'escrow';
+      });
+      var totalEscrow = escrowDeals.reduce(function (s, d) { return s + (d.escrow || 0); }, 0);
+      var escrowThisQ = escrowDeals.reduce(function (s, d) {
+        if (!d.closeDate) return s;
+        return (new Date(d.closeDate) <= qEnd) ? s + (d.escrow || 0) : s;
+      }, 0);
+
+      var eoq = bal + escrowThisQ;
+      var burn = burnMonthly * burnMonths;
+      var draw = eoq - burn;
+      var perOwner = draw / 3;
+
+      function setText(id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; }
+      setText('odTotalEscrow', fmt(totalEscrow));
+      setText('odEscrowThisQ', fmt(escrowThisQ));
+      setText('odEOQ', fmt(eoq));
+      setText('odBurn', fmt(burn));
+      setText('odDraw', fmt(draw));
+      setText('odPerOwner', fmt(perOwner));
+    }
+
     const renderFinancialsTab = () => {
       const container = document.getElementById('financialsContent');
 
       if (!EXPENSE_DATA) {
-        container.innerHTML = '<div style="text-align:center;padding:40px;background:white;border-radius:8px;margin:16px 0;"><p style="color:#666;font-size:14px;">Connect your Tiller expense sheet to see financial KPIs.</p></div>';
+        container.innerHTML = ownersDrawSectionHTML() +
+          '<div style="text-align:center;padding:40px;background:white;border-radius:8px;margin:16px 0;"><p style="color:#666;font-size:14px;">Connect your Tiller expense sheet to see financial KPIs.</p></div>';
+        computeOwnersDraw();
         return;
       }
 
@@ -2846,7 +2750,7 @@
         monthlyIncomeExpense[m] = { income: 0, expense: 0, marketing: 0, commission: 0, opex: 0 };
       });
 
-      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee'];
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing'];
 
       Object.entries(categories).forEach(([catName, monthlyData]) => {
         const isIncome = (monthlyData._type || '').toLowerCase() === 'income';
@@ -2906,6 +2810,9 @@
       // ROI CALCULATOR — MAIN FOCUS
       // ═══════════════════════════════════════════
       let html = '';
+
+      // Owners Draw section (top of Financials)
+      html += ownersDrawSectionHTML();
 
       // ROI Calculator Header
       html += `<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:24px;margin-bottom:24px;color:white;">`;
@@ -3058,6 +2965,7 @@
       html += `</tbody></table></div></div></div>`;
 
       container.innerHTML = html;
+      computeOwnersDraw();
 
       // ═══════════════════════════════════════════
       // RENDER ALL CHARTS
@@ -3199,7 +3107,7 @@
       const monthLabels = EXPENSE_DATA.monthLabels;
       // SM3 runs our Google Ads — their management fee counts as marketing spend.
       // We accept several common Tiller labels so the dashboard is robust.
-      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee'];
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing'];
 
       // ── Build monthly data from Tiller ──
       let totalIncome = 0, totalMarketing = 0;
@@ -3891,7 +3799,7 @@
       const categories = EXPENSE_DATA.categories;
       const monthLabels = EXPENSE_DATA.monthLabels;
       const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee'];
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing'];
 
       // ── Build monthly actuals from Tiller ──
       const monthlyActuals = {};
@@ -4329,7 +4237,6 @@
       // Close drill-downs
       closeDrillDown('exec');
       closeDrillDown('pipeline');
-      closeDrillDown('team');
 
       // Render content
       if (tab === 'ledger') {
@@ -4338,8 +4245,6 @@
         renderExecutiveTab();
       } else if (tab === 'pipeline') {
         renderPipelineTab();
-      } else if (tab === 'team') {
-        renderTeamTab();
       } else if (tab === 'monthly') {
         renderMonthlyTab();
       } else if (tab === 'roi') {
@@ -4350,22 +4255,10 @@
         renderProjectionsTab();
       } else if (tab === 'projections2') {
         renderProjections2Tab();
-      } else if (tab === 'pipelineflow') {
-        // Pipeline flow already has its controls, no additional render needed
-      } else if (tab === 'callledger') {
-        renderCallLedgerTab();
-      } else if (tab === 'arvcalc') {
-        renderARVCalcTab();
       } else if (tab === 'dealmap') {
         renderDealMapTab();
       } else if (tab === 'dispo') {
         renderDispoTab();
-      } else if (tab === 'buyers') {
-        renderBuyersTab();
-      } else if (tab === 'agents') {
-        renderAgentsTab();
-      } else if (tab === 'sellerphotos') {
-        renderSellerPhotosTab();
       }
 
       // Give charts time to render
@@ -4383,8 +4276,6 @@
       document.getElementById('filterStatus').addEventListener('change', applyLedgerFilters);
       document.getElementById('filterStrategy').addEventListener('change', applyLedgerFilters);
       document.getElementById('filterMarket').addEventListener('change', applyLedgerFilters);
-      document.getElementById('filterDispo').addEventListener('change', applyLedgerFilters);
-      document.getElementById('filterAcq').addEventListener('change', applyLedgerFilters);
     };
 
     // ==================== CALL LEDGER ====================
@@ -4585,13 +4476,10 @@
       const ledgerBody = document.getElementById('ledgerTableBody');
       if (ledgerBody) ledgerBody.innerHTML = '<tr><td colspan="20" style="text-align:center;padding:40px;color:#666;font-size:16px;">Loading deals from Google Sheets...</td></tr>';
 
-      // Fetch live data from Google Sheet + Categories + Contacts + Photos in parallel
-      const [sheetDeals, categoriesData, buyersData, agentsData] = await Promise.all([
+      // Fetch live data from Google Sheet + Categories in parallel
+      const [sheetDeals, categoriesData] = await Promise.all([
         fetchDealsFromSheet(),
-        fetchCategoriesFromSheet(),
-        fetchBuyersFromSheet(),
-        fetchAgentsFromSheet(),
-        loadAllSellerPhotos()
+        fetchCategoriesFromSheet()
       ]);
 
       if (sheetDeals && sheetDeals.length > 0) {
@@ -4607,20 +4495,10 @@
         console.log('Loaded expense categories from Tiller');
       }
 
-      if (buyersData && buyersData.length > 0) {
-        BUYERS = buyersData;
-        console.log('Loaded ' + BUYERS.length + ' buyers from Contacts sheet');
-      }
-      if (agentsData && agentsData.length > 0) {
-        LISTING_AGENTS = agentsData;
-        console.log('Loaded ' + LISTING_AGENTS.length + ' listing agents from Contacts sheet');
-      }
-
       const now = new Date();
       const expenseStatus = EXPENSE_DATA ? ' | Tiller connected' : '';
-      const contactsStatus = (BUYERS.length > 0 || LISTING_AGENTS.length > 0) ? ' | ' + BUYERS.length + ' buyers, ' + LISTING_AGENTS.length + ' agents' : '';
       document.getElementById('dataSource').textContent =
-        (sheetDeals ? 'Live' : 'Offline') + ' | ' + DEALS.length + ' deals' + expenseStatus + contactsStatus + ' | ' + now.toLocaleTimeString();
+        (sheetDeals ? 'Live' : 'Offline') + ' | ' + DEALS.length + ' deals' + expenseStatus + ' | ' + now.toLocaleTimeString();
 
       ledgerFilteredDeals = [...DEALS];
       renderLedgerTab();
@@ -4767,17 +4645,15 @@
       html += '</div></div>';
 
       // Summary cards row
-      html += '<div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:12px;margin-bottom:20px;">';
+      html += '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;margin-bottom:20px;">';
 
       const totalValue = deals.reduce((sum, d) => sum + (d.contract || 0), 0);
-      const listedValue = deals.reduce((sum, d) => sum + (d.listed || 0), 0);
-      const potentialProfit = deals.reduce((sum, d) => sum + (d.potential || 0), 0);
+      const escrowValue = deals.reduce((sum, d) => sum + (d.escrow || 0), 0);
 
       const summaryCards = [
         { label: 'Active Deals', value: deals.length, color: '#1B2A4A' },
         { label: 'Total UC Value', value: fmt(totalValue), color: '#2E75B6' },
-        { label: 'Total Listed Value', value: fmt(listedValue), color: '#7030A0' },
-        { label: 'Est. Potential Profit', value: fmt(potentialProfit), color: '#2E7D32' },
+        { label: 'Amount in Escrow', value: fmt(escrowValue), color: '#2E7D32' },
       ];
 
       summaryCards.forEach(card => {
@@ -4816,7 +4692,7 @@
           var zillowSearchUrl = 'https://www.zillow.com/homes/' + encodeURIComponent(deal.address) + '_rb/';
           html += '<div>';
           html += '<div style="font-size:15px;font-weight:700;color:#1B2A4A;">' + deal.address + ' <a href="' + zillowSearchUrl + '" target="_blank" style="color:#2E75B6;font-size:11px;text-decoration:none;" title="View on Zillow" onclick="event.stopPropagation();">🏠 Zillow</a></div>';
-          html += '<div style="font-size:12px;color:#999;margin-top:2px;">' + deal.id + ' &middot; ' + deal.market + ' &middot; Dispo: ' + deal.dispo + (deal.meta && Object.keys(deal.meta).length > 0 ? ' &middot; <span style="color:#2E75B6;font-weight:600;">GHL DATA ✓</span>' : '') + '</div>';
+          html += '<div style="font-size:12px;color:#999;margin-top:2px;">' + deal.id + ' &middot; ' + deal.market + (deal.meta && Object.keys(deal.meta).length > 0 ? ' &middot; <span style="color:#2E75B6;font-weight:600;">GHL DATA ✓</span>' : '') + '</div>';
           html += '</div>';
 
           // Strategy badge
@@ -4936,20 +4812,9 @@
             }
             html += '</div>';
 
-            // RIGHT: Facebook Post Generator (or Novation profit summary)
+            // RIGHT: Facebook Post Generator
             html += '<div>';
-            if (type === 'novation') {
-              html += '<div style="background:#F8F9FA;border-radius:8px;padding:16px;">';
-              html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
-              html += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;">🏡 Active Listing Agents</div>';
-              html += '<button onclick="fetchListingAgents(\'' + safeAddr + '\', \'' + deal.address.replace(/'/g, "\\'") + '\')" id="agentBtn_' + safeAddr + '" style="padding:6px 16px;background:#1B2A4A;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Find Agents</button>';
-              html += '</div>';
-              html += '<div style="font-size:11px;color:#666;margin-bottom:8px;">Investor-friendly agents listing lower-priced properties near this deal</div>';
-              html += '<div id="agentResults_' + safeAddr + '"></div>';
-              html += '</div>';
-            } else {
-              html += buildFacebookPostGenerator(deal, type);
-            }
+            html += buildFacebookPostGenerator(deal, type);
             html += '</div>';
 
             html += '</div>'; // end grid
@@ -4976,14 +4841,6 @@
             html += '</div>';
             html += '</div>';
             html += '<div id="sellerPhotos_' + safeAddr + '"></div>';
-            html += '</div>';
-
-            // Zillow data placeholder
-            html += '<div style="margin-top:16px;background:#F0F4FF;border:1px solid #2E75B6;border-radius:8px;padding:16px;text-align:center;">';
-            html += '<div style="font-size:14px;font-weight:600;color:#2E75B6;">🏠 Zillow Property Data</div>';
-            html += '<div style="font-size:12px;color:#666;margin-top:4px;">Pull photos, comps, Zestimate, and property details from Zillow. Auto-fills FB post fields.</div>';
-            html += '<button onclick="fetchZillowForDispo(\'' + safeAddr + '\')" style="margin-top:10px;padding:8px 20px;background:#2E75B6;color:white;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;" id="zillowBtn_' + safeAddr + '">Fetch Zillow Data</button>';
-            html += '<div id="zillowData_' + safeAddr + '" style="margin-top:12px;display:none;"></div>';
             html += '</div>';
 
             // Rentometer rent estimate section
@@ -5017,17 +4874,6 @@
         var sa = deal.address.replace(/[^a-zA-Z0-9]/g, '_');
         restoreDispoCardFields(sa);
         hookDispoCardAutoSave(sa);
-        // Auto-render cached Zillow data if available
-        var zData = zillowDataCache[deal.address];
-        if (zData && zData.found) {
-          var dataDiv = document.getElementById('zillowData_' + sa);
-          var btn = document.getElementById('zillowBtn_' + sa);
-          if (dataDiv) {
-            dataDiv.style.display = 'block';
-            renderZillowData(dataDiv, zData, deal.address);
-          }
-          if (btn) { btn.textContent = '✅ Data Loaded — Click to Refresh'; }
-        }
         // Auto-render cached Rentometer data if available
         var beds = (document.getElementById('fb_beds_' + sa) || {}).value || (deal.meta && deal.meta['bedrooms']) || 3;
         var rentoKey = deal.address + '_' + beds;
@@ -5199,7 +5045,7 @@
       var rentoLow = rentoData.percentile_25 || rentoData.min || '';
       var rentoHigh = rentoData.percentile_75 || rentoData.max || '';
       // Determine contact based on dispo
-      var defaultContact = (deal.dispo && deal.dispo.toLowerCase().indexOf('luka') !== -1) ? 'luka' : 'aubrey';
+      var defaultContact = 'aubrey';
 
       // Existing overlay?
       var existing = document.getElementById('listingPdfModal');
@@ -5368,7 +5214,7 @@
 
       // === SECTION 5: Photo Selector ===
       h += '<div style="margin-bottom:20px;">';
-      h += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-bottom:10px;border-bottom:2px solid #eee;padding-bottom:6px;display:flex;align-items:center;justify-content:space-between;">📸 Select Photos for PDF <button onclick="fetchZillowPhotosForPDF(\'' + safeAddr + '\')" style="padding:5px 14px;background:#2E75B6;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Fetch Zillow Photos</button></div>';
+      h += '<div style="font-size:14px;font-weight:700;color:#1B2A4A;margin-bottom:10px;border-bottom:2px solid #eee;padding-bottom:6px;">📸 Select Photos for PDF</div>';
       h += '<div id="pdfPhotoSelector" style="color:#999;font-size:13px;">Loading photos...</div>';
       h += '</div>';
 
@@ -11859,9 +11705,6 @@
       // Deal info grid
       popup += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12px;">';
       popup += '<div><span style="color:#999;">Seller:</span> <strong>' + deal.id + '</strong></div>';
-      popup += '<div><span style="color:#999;">Acq:</span> <strong>' + deal.acq + '</strong></div>';
-      popup += '<div><span style="color:#999;">Dispo:</span> <strong>' + deal.dispo + '</strong></div>';
-      popup += '<div><span style="color:#999;">Exit:</span> <strong>' + deal.exit + '</strong></div>';
       popup += '<div><span style="color:#999;">UC Date:</span> <strong>' + formatDate(deal.ucDate) + '</strong></div>';
       popup += '<div><span style="color:#999;">Close Date:</span> <strong>' + formatDate(deal.closeDate) + '</strong></div>';
       popup += '<div><span style="color:#999;">Days:</span> <strong>' + days + 'd</strong></div>';
@@ -11871,12 +11714,10 @@
       // Financial info
       popup += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12px;">';
       popup += '<div><span style="color:#999;">Contract:</span> <strong>' + fmt(deal.contract) + '</strong></div>';
-      popup += '<div><span style="color:#999;">Listed:</span> <strong>' + (deal.listed ? fmt(deal.listed) : '-') + '</strong></div>';
-      popup += '<div><span style="color:#999;">Buyer Price:</span> <strong>' + (deal.buyer ? fmt(deal.buyer) : '-') + '</strong></div>';
-      popup += '<div><span style="color:#999;">Repairs:</span> <strong>' + (deal.repairs ? fmt(deal.repairs) : '-') + '</strong></div>';
+      popup += '<div><span style="color:#999;">Amount in Escrow:</span> <strong>' + (deal.escrow ? fmt(deal.escrow) : '-') + '</strong></div>';
       if (profit) {
         var profitColor = profit >= 10000 ? '#10b981' : (profit > 0 ? '#F57F17' : '#C62828');
-        popup += '<div style="grid-column:span 2;"><span style="color:#999;">Profit:</span> <strong style="color:' + profitColor + ';font-size:14px;">' + fmt(profit) + (deal.final ? ' (final)' : ' (potential)') + '</strong></div>';
+        popup += '<div style="grid-column:span 2;"><span style="color:#999;">Profit:</span> <strong style="color:' + profitColor + ';font-size:14px;">' + fmt(profit) + (deal.final ? ' (final)' : ' (in escrow)') + '</strong></div>';
       }
       popup += '</div>';
 
@@ -11894,38 +11735,9 @@
         popup += '</div></div>';
       }
 
-      // Buyer/Agent contacts from deal ledger sheet + enriched from Contacts sheet
-      var dealBuyer = deal.buyerName ? findBuyer(deal.buyerName) : null;
-      var dealAgent = deal.agentName ? findAgent(deal.agentName) : null;
-
-      if (deal.buyerName || deal.agentName) {
-        popup += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">';
-        popup += '<div style="font-size:10px;font-weight:600;color:#10b981;text-transform:uppercase;margin-bottom:4px;">Contacts</div>';
-        if (deal.buyerName) {
-          popup += '<div style="font-size:12px;margin-bottom:4px;"><strong>Buyer:</strong> ' + deal.buyerName;
-          if (dealBuyer) {
-            if (dealBuyer.company) popup += ' <span style="color:#999;">(' + dealBuyer.company + ')</span>';
-            if (dealBuyer.phone) popup += ' · <a href="tel:' + dealBuyer.phone + '" style="color:#2E75B6;">' + dealBuyer.phone + '</a>';
-            if (dealBuyer.email) popup += ' · <a href="mailto:' + dealBuyer.email + '" style="color:#2E75B6;">' + dealBuyer.email + '</a>';
-          }
-          popup += '</div>';
-        }
-        if (deal.agentName) {
-          popup += '<div style="font-size:12px;margin-bottom:4px;"><strong>Listing Agent:</strong> ' + deal.agentName;
-          if (dealAgent) {
-            if (dealAgent.brokerage) popup += ' <span style="color:#999;">(' + dealAgent.brokerage + ')</span>';
-            if (dealAgent.phone) popup += ' · <a href="tel:' + dealAgent.phone + '" style="color:#2E75B6;">' + dealAgent.phone + '</a>';
-            if (dealAgent.email) popup += ' · <a href="mailto:' + dealAgent.email + '" style="color:#2E75B6;">' + dealAgent.email + '</a>';
-          }
-          popup += '</div>';
-        }
-        popup += '</div>';
-      }
-
       // Zillow link button
       popup += '<div style="margin-top:10px;text-align:center;">';
       popup += '<a href="https://www.zillow.com/homes/' + encodeURIComponent(deal.address) + '_rb/" target="_blank" style="display:inline-block;padding:6px 16px;background:#1B2A4A;color:white;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;">View on Zillow</a>';
-      popup += ' <button onclick="loadDealMapZillowPhotos(\'' + safeAddr + '\',\'' + deal.address.replace(/'/g, "\\'") + '\',this)" style="padding:6px 16px;background:#2E75B6;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Load Zillow Photos</button>';
       popup += '</div>';
 
       // Photo container for Zillow photos
