@@ -2783,6 +2783,8 @@
     function ownersDrawSectionHTML() {
       var burnMo = localStorage.getItem('od_burnMonthly') || '28000'; // $25k ads + $3k SM3
       var burnMonths = localStorage.getItem('od_burnMonths') || '5';   // customizable 4–6 (0.5 steps)
+      var commPct = localStorage.getItem('od_commPct') || '5';         // commission % per owner
+      var monthsLeft = monthsLeftInQuarter();                          // for remaining-quarter spend
 
       // Business account balance: auto from Tiller unless the user manually overrode it.
       var manualBal = localStorage.getItem('od_bizBalance_manual') === '1';
@@ -2825,17 +2827,25 @@
         '</div>' +
         '<input id="odBizBalance" type="number" value="' + bal + '" oninput="odBalanceEdited()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:18px;font-weight:700;color:#1B2A4A;">' +
         '<div style="font-size:11px;color:#999;margin-top:4px;">' + balHint + '</div></div>';
-      h += inputCard('Ad Spend + SM3 / Month', 'odBurnMonthly', burnMo, '$25k ads + $3k SM3');
+      h += inputCard('Ad Spend + SM3 + Expenses / Month', 'odBurnMonthly', burnMo, '$25k ads + $3k SM3 + expenses');
       // Burn Rate Months — customizable 4 to 6 in 0.5 steps.
       h += '<div class="kpi-card" style="border-left:4px solid #548235;">' +
         '<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Burn Rate Months</div>' +
         '<input id="odBurnMonths" type="number" min="4" max="6" step="0.5" value="' + burnMonths + '" oninput="computeOwnersDraw()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:18px;font-weight:700;color:#1B2A4A;">' +
         '<div style="font-size:11px;color:#999;margin-top:4px;">Reserve horizon (4–6 months)</div></div>';
+      // Commission per owner (%) — 3 owners, so total taken = 3 × this.
+      h += '<div class="kpi-card" style="border-left:4px solid #7030A0;">' +
+        '<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Commission / Owner (%)</div>' +
+        '<input id="odCommPct" type="number" min="0" step="0.5" value="' + commPct + '" oninput="computeOwnersDraw()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:18px;font-weight:700;color:#1B2A4A;">' +
+        '<div style="font-size:11px;color:#999;margin-top:4px;">3 owners &rarr; ' + (parseFloat(commPct) * 3 || 0) + '% of escrow</div></div>';
       h += '</div>';
       h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:28px;">';
       h += calcCard('Total in Escrow', 'odTotalEscrow', '#2E75B6', 'All deals in Escrow status');
       h += calcCard('Escrow Closing This Quarter', 'odEscrowThisQ', '#2E75B6', 'Escrow closing by ' + qDateStr);
-      h += calcCard('End of Quarter Projected', 'odEOQ', '#1B2A4A', 'Balance + escrow closing this Q');
+      h += calcCard('Owner Commissions', 'odCommission', '#7030A0', '3 owners × commission %');
+      h += calcCard('Escrow Closing − Commissions', 'odEscrowNet', '#2E75B6', 'Net escrow after commissions paid out');
+      h += calcCard('Remaining Spend This Q', 'odRemainingAd', '#ED7D31', '$/mo × ' + monthsLeft + ' month' + (monthsLeft === 1 ? '' : 's') + ' left in ' + qLabel);
+      h += calcCard('End of Quarter Projected', 'odEOQ', '#1B2A4A', 'Balance + net escrow − remaining spend');
       h += calcCard('Burn Rate Total', 'odBurnTotal', '#C00000', 'Ad spend/mo × burn months');
       h += calcCard('Potential Owners Draw', 'odDraw', '#548235', 'EOQ projected − burn rate total');
       h += calcCard('Per Owner (÷3)', 'odPerOwner', '#548235', 'Split three ways');
@@ -2849,16 +2859,22 @@
       var monthlyEl = document.getElementById('odBurnMonthly');
       var monthsEl = document.getElementById('odBurnMonths');
 
+      var commEl = document.getElementById('odCommPct');
+
       var bal = parseFloat(balEl.value) || 0;
       var burnMonthly = parseFloat(monthlyEl.value) || 0;
       // Burn rate months, clamped to the 4–6 range (0.5 steps come from the input).
       var burnMonths = parseFloat(monthsEl.value);
       if (isNaN(burnMonths)) burnMonths = 5;
       burnMonths = Math.min(6, Math.max(4, burnMonths));
+      // Commission % per owner (×3 owners = total taken out of escrow).
+      var commPct = parseFloat(commEl && commEl.value);
+      if (isNaN(commPct)) commPct = 0;
 
-      // Persist burn inputs (balance is persisted separately via odBalanceEdited)
+      // Persist inputs (balance is persisted separately via odBalanceEdited)
       localStorage.setItem('od_burnMonthly', monthlyEl.value);
       localStorage.setItem('od_burnMonths', monthsEl.value);
+      if (commEl) localStorage.setItem('od_commPct', commEl.value);
 
       var qEndNum = ymdNum(currentQuarterEnd());
       var escrowDeals = (DEALS || []).filter(function (d) {
@@ -2871,14 +2887,23 @@
         return (closeDateNum(d.closeDate) <= qEndNum) ? s + (d.escrow || 0) : s;
       }, 0);
 
-      var eoq = bal + escrowThisQ;                 // End of Quarter projected balance
-      var burnTotal = burnMonthly * burnMonths;    // Ad spend + SM3 per month × burn months
+      // Commission taken out of escrow closing this quarter (3 owners × comm %).
+      var commission = escrowThisQ * (commPct * 3 / 100);
+      var escrowNet = escrowThisQ - commission;    // escrow left after commissions paid out
+      // Spend still going out before quarter end (e.g. Sept's remaining ad spend).
+      var remainingSpend = burnMonthly * monthsLeftInQuarter();
+      // End of Quarter projected balance = cash + net escrow − remaining spend this Q.
+      var eoq = bal + escrowNet - remainingSpend;
+      var burnTotal = burnMonthly * burnMonths;    // reserve held back (ad spend + SM3 × burn months)
       var draw = eoq - burnTotal;                  // Owners draw = EOQ − burn reserve
       var perOwner = draw / 3;
 
       function setText(id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; }
       setText('odTotalEscrow', fmt(totalEscrow));
       setText('odEscrowThisQ', fmt(escrowThisQ));
+      setText('odCommission', fmt(commission));
+      setText('odEscrowNet', fmt(escrowNet));
+      setText('odRemainingAd', fmt(remainingSpend));
       setText('odEOQ', fmt(eoq));
       setText('odBurnTotal', fmt(burnTotal));
       setText('odDraw', fmt(draw));
