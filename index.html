@@ -2722,12 +2722,20 @@
       return new Date(d.getFullYear(), endMonth + 1, 0, 23, 59, 59); // day 0 of next month = last day
     }
 
-    // Whole months remaining in the current quarter, inclusive of the current
-    // month (you still spend this month's ad budget). e.g. Sept → 1 (Q3 ends Sept).
-    function monthsLeftInQuarter() {
-      var m = new Date().getMonth();              // 0-11
-      var endMonth = Math.floor(m / 3) * 3 + 2;   // last month of the quarter
-      return (endMonth - m) + 1;
+    // Calendar days remaining in the current quarter, inclusive of today.
+    // e.g. Sept 1 → 30, Sept 15 → 16, Sept 30 → 1.
+    function daysLeftInQuarter() {
+      var d = new Date();
+      var qEnd = currentQuarterEnd();
+      var startOfToday = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      var endDay = new Date(qEnd.getFullYear(), qEnd.getMonth(), qEnd.getDate());
+      var diff = Math.round((endDay - startOfToday) / 86400000) + 1; // inclusive of today
+      return Math.max(0, diff);
+    }
+
+    // Remaining spend this quarter = daily burn (monthly ÷ 30.4375) × days left.
+    function remainingSpendThisQuarter(monthlyBurn) {
+      return (monthlyBurn / 30.4375) * daysLeftInQuarter();
     }
 
     // Calendar-date comparison as a plain YYYYMMDD integer — avoids the timezone
@@ -2761,42 +2769,18 @@
       return BANK_BALANCE !== null && BANK_BALANCE !== undefined;
     }
 
-    // User typed in the balance box → treat as a manual override and persist it.
-    function odBalanceEdited() {
-      var el = document.getElementById('odBizBalance');
-      if (!el) return;
-      localStorage.setItem('od_bizBalance', el.value);
-      localStorage.setItem('od_bizBalance_manual', '1');
-      computeOwnersDraw();
-    }
-
-    // Re-pull the balance from Tiller, clearing any manual override.
-    function pullTillerBalance() {
-      var autoBal = tillerBusinessBalance();
-      if (autoBal === null) return;
-      localStorage.removeItem('od_bizBalance');
-      localStorage.removeItem('od_bizBalance_manual');
-      var el = document.getElementById('odBizBalance');
-      if (el) { el.value = Math.round(autoBal); computeOwnersDraw(); }
-    }
-
     function ownersDrawSectionHTML() {
       var burnMo = localStorage.getItem('od_burnMonthly') || '28000'; // $25k ads + $3k SM3
       var burnMonths = localStorage.getItem('od_burnMonths') || '5';   // customizable 4–6 (0.5 steps)
       var commPct = localStorage.getItem('od_commPct') || '5';         // commission % per owner
-      var monthsLeft = monthsLeftInQuarter();                          // for remaining-quarter spend
+      var daysLeft = daysLeftInQuarter();                              // for remaining-quarter spend
 
-      // Business account balance: auto from Tiller unless the user manually overrode it.
-      var manualBal = localStorage.getItem('od_bizBalance_manual') === '1';
-      var savedBal = localStorage.getItem('od_bizBalance');
+      // Business account balance is READ-ONLY — only Tiller can change it.
       var autoBal = tillerBusinessBalance();
-      var bal = (manualBal && savedBal !== null && savedBal !== '')
-        ? savedBal
-        : (autoBal !== null ? String(Math.round(autoBal)) : (savedBal || ''));
-      var autoLabel = bankBalanceIsLive() ? 'Live bank balance from Tiller' : 'Auto from Tiller (net income − expenses)';
-      var balHint = manualBal
-        ? 'Manual override' + (autoBal !== null ? ' · ' + (bankBalanceIsLive() ? 'Bank' : 'Tiller net') + ': ' + fmt(autoBal) : '')
-        : (autoBal !== null ? autoLabel : 'Cash in the business account today');
+      var balDisplay = (autoBal !== null ? fmt(autoBal) : '—');
+      var balHint = (autoBal !== null)
+        ? (bankBalanceIsLive() ? 'Live bank balance from Tiller (read-only)' : 'Auto from Tiller net (read-only)')
+        : 'Waiting for Tiller balance…';
       var qEnd = currentQuarterEnd();
       var qLabel = 'Q' + (Math.floor(qEnd.getMonth() / 3) + 1) + ' ' + qEnd.getFullYear();
       var qDateStr = (qEnd.getMonth() + 1) + '/' + qEnd.getDate() + '/' + qEnd.getFullYear();
@@ -2820,12 +2804,10 @@
       h += '<p style="margin:0;font-size:13px;opacity:0.85;">' + qLabel + ' projected distribution &middot; quarter ends ' + qDateStr + '</p>';
       h += '</div>';
       h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:16px;">';
-      // Business Account Balance — auto from Tiller, with a re-pull button and editable override.
+      // Business Account Balance — READ-ONLY, driven only by Tiller auto-population.
       h += '<div class="kpi-card" style="border-left:4px solid #548235;">' +
-        '<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:6px;">Business Account Balance' +
-        (autoBal !== null ? '<button onclick="pullTillerBalance()" title="Re-pull from Tiller" style="font-size:9px;padding:2px 8px;background:#548235;color:white;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;">↻ Tiller</button>' : '') +
-        '</div>' +
-        '<input id="odBizBalance" type="number" value="' + bal + '" oninput="odBalanceEdited()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:18px;font-weight:700;color:#1B2A4A;">' +
+        '<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Business Account Balance</div>' +
+        '<div id="odBizBalance" style="font-size:26px;font-weight:800;color:#1B2A4A;">' + balDisplay + '</div>' +
         '<div style="font-size:11px;color:#999;margin-top:4px;">' + balHint + '</div></div>';
       h += inputCard('Ad Spend + SM3 + Expenses / Month', 'odBurnMonthly', burnMo, '$25k ads + $3k SM3 + expenses');
       // Burn Rate Months — customizable 4 to 6 in 0.5 steps.
@@ -2844,7 +2826,7 @@
       h += calcCard('Escrow Closing This Quarter', 'odEscrowThisQ', '#2E75B6', 'Escrow closing by ' + qDateStr);
       h += calcCard('Owner Commissions', 'odCommission', '#7030A0', '3 owners × commission %');
       h += calcCard('Escrow Closing − Commissions', 'odEscrowNet', '#2E75B6', 'Net escrow after commissions paid out');
-      h += calcCard('Remaining Spend This Q', 'odRemainingAd', '#ED7D31', '$/mo × ' + monthsLeft + ' month' + (monthsLeft === 1 ? '' : 's') + ' left in ' + qLabel);
+      h += calcCard('Remaining Spend This Q', 'odRemainingAd', '#ED7D31', daysLeft + ' day' + (daysLeft === 1 ? '' : 's') + ' left in ' + qLabel + ' (daily rate)');
       h += calcCard('End of Quarter Projected', 'odEOQ', '#1B2A4A', 'Balance + net escrow − remaining spend');
       h += calcCard('Burn Rate Total', 'odBurnTotal', '#C00000', 'Ad spend/mo × burn months');
       h += calcCard('Potential Owners Draw', 'odDraw', '#548235', 'EOQ projected − burn rate total');
@@ -2858,10 +2840,13 @@
       if (!balEl) return; // section not currently rendered
       var monthlyEl = document.getElementById('odBurnMonthly');
       var monthsEl = document.getElementById('odBurnMonths');
-
       var commEl = document.getElementById('odCommPct');
 
-      var bal = parseFloat(balEl.value) || 0;
+      // Balance is read-only: always the Tiller value (no manual entry).
+      var autoBal = tillerBusinessBalance();
+      var bal = autoBal || 0;
+      balEl.textContent = (autoBal !== null ? fmt(autoBal) : '—');
+
       var burnMonthly = parseFloat(monthlyEl.value) || 0;
       // Burn rate months, clamped to the 4–6 range (0.5 steps come from the input).
       var burnMonths = parseFloat(monthsEl.value);
@@ -2871,7 +2856,7 @@
       var commPct = parseFloat(commEl && commEl.value);
       if (isNaN(commPct)) commPct = 0;
 
-      // Persist inputs (balance is persisted separately via odBalanceEdited)
+      // Persist the editable inputs (balance is read-only, sourced from Tiller)
       localStorage.setItem('od_burnMonthly', monthlyEl.value);
       localStorage.setItem('od_burnMonths', monthsEl.value);
       if (commEl) localStorage.setItem('od_commPct', commEl.value);
@@ -2890,8 +2875,8 @@
       // Commission taken out of escrow closing this quarter (3 owners × comm %).
       var commission = escrowThisQ * (commPct * 3 / 100);
       var escrowNet = escrowThisQ - commission;    // escrow left after commissions paid out
-      // Spend still going out before quarter end (e.g. Sept's remaining ad spend).
-      var remainingSpend = burnMonthly * monthsLeftInQuarter();
+      // Spend still going out before quarter end, based on days left (daily rate).
+      var remainingSpend = remainingSpendThisQuarter(burnMonthly);
       // End of Quarter projected balance = cash + net escrow − remaining spend this Q.
       var eoq = bal + escrowNet - remainingSpend;
       var burnTotal = burnMonthly * burnMonths;    // reserve held back (ad spend + SM3 × burn months)
