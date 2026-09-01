@@ -967,8 +967,12 @@
     const BUYERS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSwypHrZcGSLGA0Ddb-a7GJwAOApyQGwqKW9xf7TNhaxfTnypAlM8W7KWyu9S3iN4JL2oYheTxvK_Kw/pub?gid=1640179038&single=true&output=csv';
     const AGENTS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSwypHrZcGSLGA0Ddb-a7GJwAOApyQGwqKW9xf7TNhaxfTnypAlM8W7KWyu9S3iN4JL2oYheTxvK_Kw/pub?gid=885805676&single=true&output=csv';
     const CATEGORIES_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOpsTuv9CuraF1lW8ZnDtN-EnMSEcnFOSYSa_5Ws3oaZ3z8_OoTmfNcoN1yWbqq8ag4tWLZw5SxhNY/pub?gid=1007913777&single=true&output=csv';
+    // Tiller "Balances" tab — live bank balance. Owners Draw pulls the business
+    // checking balance from the top (most recent) row of Sorted Assets.
+    const BALANCES_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOpsTuv9CuraF1lW8ZnDtN-EnMSEcnFOSYSa_5Ws3oaZ3z8_OoTmfNcoN1yWbqq8ag4tWLZw5SxhNY/pub?gid=907809191&single=true&output=csv';
 
     let EXPENSE_DATA = null; // Will hold parsed categories data
+    let BANK_BALANCE = null; // Live business-account balance from Tiller Balances tab
 
     let DEALS = []; // Will be populated from Google Sheet
     let BUYERS = []; // Will be populated from Contacts Google Sheet
@@ -1184,7 +1188,7 @@
         // a recurring marketing expense, so it counts toward total marketing
         // spend for ROAS purposes. We accept several common spellings so the
         // dashboard doesn't break if the Tiller label is tweaked.
-        const marketingCats = ['ad spend', 'google ad spend', 'facebook ad spend', 'tik tok ad spend', 'sms marketing', 'investor lift', 'sm3 marketing', 'sm3 management', 'sm3', 'sm3 fee', 'sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing'];
+        const marketingCats = ['ad spend', 'google ad spend', 'facebook ad spend', 'tik tok ad spend', 'sms marketing', 'investor lift', 'sm3 marketing', 'sm3 management', 'sm3', 'sm3 fee', 'sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
 
         for (let i = headerIdx + 1; i < rows.length; i++) {
           const r = rows[i];
@@ -1235,6 +1239,39 @@
       if (!EXPENSE_DATA || !EXPENSE_DATA.monthlyTotals[monthLabel]) return null;
       const m = EXPENSE_DATA.monthlyTotals[monthLabel];
       return Math.abs(m.totalMarketing);
+    }
+
+    // ==================== BANK BALANCE (Tiller Balances tab) ====================
+    // Pulls the current business-account balance from the Tiller "Balances" tab.
+    // The Sorted Assets table lists the checking account with a fresh row on top
+    // ("today") and older duplicate snapshots below — we take the top row only.
+    async function fetchBalancesFromSheet() {
+      try {
+        const resp = await fetch(BALANCES_CSV_URL);
+        if (!resp.ok) throw new Error('Failed to fetch balances: ' + resp.status);
+        const rows = parseCSV(await resp.text());
+
+        // Find the "Sorted Assets" header row: it has cells 'Account' and 'Balance'.
+        let hdr = -1, accCol = -1, balCol = -1;
+        for (let i = 0; i < rows.length; i++) {
+          const r = rows[i].map(c => (c || '').trim().toLowerCase());
+          const a = r.indexOf('account');
+          const b = r.indexOf('balance');
+          if (a !== -1 && b !== -1 && b > a) { hdr = i; accCol = a; balCol = b; break; }
+        }
+        if (hdr === -1) throw new Error('Could not find Sorted Assets header');
+
+        // Take the first data row below the header that has an account + balance.
+        for (let i = hdr + 1; i < rows.length; i++) {
+          const acct = (rows[i][accCol] || '').trim();
+          const bal = parseNum(rows[i][balCol]);
+          if (acct && bal !== null) return bal;
+        }
+        return null;
+      } catch (err) {
+        console.error('Error fetching bank balance:', err);
+        return null;
+      }
     }
 
     // ==================== FALLBACK DATA ====================
@@ -1391,6 +1428,7 @@
       const active = DEALS.filter(d => ['Under Contract', 'Listed/Posted'].includes(d.status));
       const uc = DEALS.filter(d => d.status === 'Under Contract');
       const listed = DEALS.filter(d => d.status === 'Listed/Posted');
+      const escrow = DEALS.filter(d => (d.status || '').trim().toLowerCase() === 'escrow');
       const won = DEALS.filter(d => d.status === 'Closed - Won');
       const lost = DEALS.filter(d => d.status === 'Closed - Lost');
 
@@ -1416,10 +1454,11 @@
       const over60 = active.filter(d => daysAgo(d.ucDate) > 60);
 
       return {
-        active, uc, listed, won, lost,
+        active, uc, listed, escrow, won, lost,
         activeCount: active.length,
         ucCount: uc.length,
         listedCount: listed.length,
+        escrowCount: escrow.length,
         totalCount: DEALS.length,
         wonCount: won.length,
         lostCount: lost.length,
@@ -2150,7 +2189,8 @@
       kpis.appendChild(createKpiCard('Active Deals', metrics.activeCount, '#2E75B6',
         () => showDrillDown('exec', 'ACTIVE', metrics.active)));
       kpis.appendChild(createKpiCard('Under Contract', metrics.ucCount, '#ED7D31'));
-      kpis.appendChild(createKpiCard('Listed/Posted', metrics.listedCount, '#FFC000'));
+      kpis.appendChild(createKpiCard('Escrow', metrics.escrowCount, '#FFC000',
+        () => showDrillDown('exec', 'ESCROW', metrics.escrow)));
       kpis.appendChild(createKpiCard('Total Deals', metrics.totalCount, '#1B2A4A'));
       kpis.appendChild(createKpiCard('Closed-Won', metrics.wonCount, '#548235',
         () => showDrillDown('exec', 'WON', metrics.won)));
@@ -2196,7 +2236,7 @@
       // ROAS from Tiller (matches Financials & Marketing ROI tabs)
       let tillerMarketing = 0;
       if (EXPENSE_DATA) {
-        const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing'];
+        const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
         Object.entries(EXPENSE_DATA.categories).forEach(([catName, monthlyVals]) => {
           if (mktCats.includes(catName.toLowerCase())) {
             Object.entries(monthlyVals).forEach(([month, value]) => {
@@ -2641,10 +2681,58 @@
       return new Date(d.getFullYear(), endMonth + 1, 0, 23, 59, 59); // day 0 of next month = last day
     }
 
+    // Auto business-account balance. Prefers the LIVE bank balance from the
+    // Tiller Balances tab (BANK_BALANCE); falls back to cumulative net
+    // (income − expenses) from the categories tab if the balance isn't available.
+    function tillerBusinessBalance() {
+      if (BANK_BALANCE !== null && BANK_BALANCE !== undefined) return BANK_BALANCE;
+      if (!EXPENSE_DATA || !EXPENSE_DATA.monthlyTotals) return null;
+      var total = 0;
+      Object.values(EXPENSE_DATA.monthlyTotals).forEach(function (m) {
+        total += (m.totalIncome || 0) + (m.totalExpense || 0); // totalExpense is negative
+      });
+      return total;
+    }
+
+    // True when the auto balance is the live bank balance (vs. the net fallback).
+    function bankBalanceIsLive() {
+      return BANK_BALANCE !== null && BANK_BALANCE !== undefined;
+    }
+
+    // User typed in the balance box → treat as a manual override and persist it.
+    function odBalanceEdited() {
+      var el = document.getElementById('odBizBalance');
+      if (!el) return;
+      localStorage.setItem('od_bizBalance', el.value);
+      localStorage.setItem('od_bizBalance_manual', '1');
+      computeOwnersDraw();
+    }
+
+    // Re-pull the balance from Tiller, clearing any manual override.
+    function pullTillerBalance() {
+      var autoBal = tillerBusinessBalance();
+      if (autoBal === null) return;
+      localStorage.removeItem('od_bizBalance');
+      localStorage.removeItem('od_bizBalance_manual');
+      var el = document.getElementById('odBizBalance');
+      if (el) { el.value = Math.round(autoBal); computeOwnersDraw(); }
+    }
+
     function ownersDrawSectionHTML() {
-      var bal = localStorage.getItem('od_bizBalance') || '';
       var burnMo = localStorage.getItem('od_burnMonthly') || '25000';
       var burnMos = localStorage.getItem('od_burnMonths') || '5';
+
+      // Business account balance: auto from Tiller unless the user manually overrode it.
+      var manualBal = localStorage.getItem('od_bizBalance_manual') === '1';
+      var savedBal = localStorage.getItem('od_bizBalance');
+      var autoBal = tillerBusinessBalance();
+      var bal = (manualBal && savedBal !== null && savedBal !== '')
+        ? savedBal
+        : (autoBal !== null ? String(Math.round(autoBal)) : (savedBal || ''));
+      var autoLabel = bankBalanceIsLive() ? 'Live bank balance from Tiller' : 'Auto from Tiller (net income − expenses)';
+      var balHint = manualBal
+        ? 'Manual override' + (autoBal !== null ? ' · ' + (bankBalanceIsLive() ? 'Bank' : 'Tiller net') + ': ' + fmt(autoBal) : '')
+        : (autoBal !== null ? autoLabel : 'Cash in the business account today');
       var qEnd = currentQuarterEnd();
       var qLabel = 'Q' + (Math.floor(qEnd.getMonth() / 3) + 1) + ' ' + qEnd.getFullYear();
       var qDateStr = (qEnd.getMonth() + 1) + '/' + qEnd.getDate() + '/' + qEnd.getFullYear();
@@ -2668,7 +2756,13 @@
       h += '<p style="margin:0;font-size:13px;opacity:0.85;">' + qLabel + ' projected distribution &middot; quarter ends ' + qDateStr + '</p>';
       h += '</div>';
       h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:16px;">';
-      h += inputCard('Business Account Balance', 'odBizBalance', bal, 'Cash in the business account today');
+      // Business Account Balance — auto from Tiller, with a re-pull button and editable override.
+      h += '<div class="kpi-card" style="border-left:4px solid #548235;">' +
+        '<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:6px;">Business Account Balance' +
+        (autoBal !== null ? '<button onclick="pullTillerBalance()" title="Re-pull from Tiller" style="font-size:9px;padding:2px 8px;background:#548235;color:white;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;">↻ Tiller</button>' : '') +
+        '</div>' +
+        '<input id="odBizBalance" type="number" value="' + bal + '" oninput="odBalanceEdited()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:18px;font-weight:700;color:#1B2A4A;">' +
+        '<div style="font-size:11px;color:#999;margin-top:4px;">' + balHint + '</div></div>';
       h += inputCard('Ad Spend Burn / Month', 'odBurnMonthly', burnMo, 'Monthly marketing burn');
       h += inputCard('Months of Burn', 'odBurnMonths', burnMos, 'Months to reserve');
       h += '</div>';
@@ -2693,8 +2787,7 @@
       var burnMonthly = parseFloat(monthlyEl.value) || 0;
       var burnMonths = parseFloat(monthsEl.value) || 0;
 
-      // Persist editable inputs
-      localStorage.setItem('od_bizBalance', balEl.value);
+      // Persist burn inputs (balance is persisted separately via odBalanceEdited)
       localStorage.setItem('od_burnMonthly', monthlyEl.value);
       localStorage.setItem('od_burnMonths', monthsEl.value);
 
@@ -2750,7 +2843,7 @@
         monthlyIncomeExpense[m] = { income: 0, expense: 0, marketing: 0, commission: 0, opex: 0 };
       });
 
-      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing'];
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
 
       Object.entries(categories).forEach(([catName, monthlyData]) => {
         const isIncome = (monthlyData._type || '').toLowerCase() === 'income';
@@ -3107,7 +3200,7 @@
       const monthLabels = EXPENSE_DATA.monthLabels;
       // SM3 runs our Google Ads — their management fee counts as marketing spend.
       // We accept several common Tiller labels so the dashboard is robust.
-      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing'];
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
 
       // ── Build monthly data from Tiller ──
       let totalIncome = 0, totalMarketing = 0;
@@ -3202,7 +3295,7 @@
 
       // ── Monthly Detail Table ──
       html += `<div style="margin-bottom:24px;"><div class="section-title" style="background-color:#1B2A4A;">Monthly Marketing Performance</div><div class="section-body"><div class="table-container">`;
-      html += `<table><thead><tr><th>Month</th><th>Ad Spend</th><th>Google Ads</th><th>SM3 (Google Ads Mgmt)</th><th>Facebook Ads</th><th>TikTok</th><th>SMS</th><th>Investor Lift</th><th>Revenue</th><th>ROAS</th><th>ROI %</th></tr></thead><tbody>`;
+      html += `<table><thead><tr><th>Month</th><th>Ad Spend</th><th>Google Ads</th><th>SM3 (Google Ads Mgmt)</th><th>Facebook Ads</th><th>TikTok</th><th>SMS</th><th>Investor Lift</th><th>Property Leads</th><th>Revenue</th><th>ROAS</th><th>ROI %</th></tr></thead><tbody>`;
 
       // Helper to pull a channel value out of d.channels by matching any of
       // several name variants (case-insensitive). SM3 in particular shows up
@@ -3215,6 +3308,7 @@
         return total;
       };
       const SM3_VARIANTS = ['sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee'];
+      const PPL_VARIANTS = ['property leads (ppl)','property leads','ppl','ppl leads','pay per lead','pay-per-lead','ppl lead gen','ppl marketing'];
 
       let tTotalMkt = 0, tTotalInc = 0;
       sortedMonths.forEach(month => {
@@ -3224,6 +3318,7 @@
         const mRoi = d.marketing > 0 ? ((d.income - d.marketing) / d.marketing * 100).toFixed(0) + '%' : '-';
         tTotalMkt += d.marketing; tTotalInc += d.income;
         const sm3Val = channelMatch(d.channels, SM3_VARIANTS);
+        const pplVal = channelMatch(d.channels, PPL_VARIANTS);
         html += `<tr>
           <td>${month}</td>
           <td style="font-weight:600;">${fmt(d.marketing)}</td>
@@ -3233,6 +3328,7 @@
           <td>${fmt(d.channels['Tik Tok Ad Spend'] || 0)}</td>
           <td>${fmt(d.channels['SMS Marketing'] || 0)}</td>
           <td>${fmt(d.channels['Investor Lift'] || 0)}</td>
+          <td style="color:#1565C0;">${fmt(pplVal)}</td>
           <td style="color:#548235;font-weight:600;">${fmt(d.income)}</td>
           <td>${mRoas}</td>
           <td>${mRoi}</td>
@@ -3243,7 +3339,7 @@
       const tRoi = tTotalMkt > 0 ? ((tTotalInc - tTotalMkt) / tTotalMkt * 100).toFixed(0) + '%' : '-';
       // Totals row — keep all channel cells empty to match the existing
       // styling; the channel columns roll up into the total Ad Spend cell.
-      html += `<tr style="background:#f0f0f0;font-weight:700;"><td>TOTAL</td><td>${fmt(tTotalMkt)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td style="color:#548235;">${fmt(tTotalInc)}</td><td>${tRoas}</td><td>${tRoi}</td></tr>`;
+      html += `<tr style="background:#f0f0f0;font-weight:700;"><td>TOTAL</td><td>${fmt(tTotalMkt)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td style="color:#548235;">${fmt(tTotalInc)}</td><td>${tRoas}</td><td>${tRoi}</td></tr>`;
       html += `</tbody></table></div></div></div>`;
 
       // ── Quarterly Table ──
@@ -3799,7 +3895,7 @@
       const categories = EXPENSE_DATA.categories;
       const monthLabels = EXPENSE_DATA.monthLabels;
       const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing'];
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
 
       // ── Build monthly actuals from Tiller ──
       const monthlyActuals = {};
@@ -4476,11 +4572,16 @@
       const ledgerBody = document.getElementById('ledgerTableBody');
       if (ledgerBody) ledgerBody.innerHTML = '<tr><td colspan="20" style="text-align:center;padding:40px;color:#666;font-size:16px;">Loading deals from Google Sheets...</td></tr>';
 
-      // Fetch live data from Google Sheet + Categories in parallel
-      const [sheetDeals, categoriesData] = await Promise.all([
+      // Fetch live data from Google Sheet + Categories + Bank balance in parallel
+      const [sheetDeals, categoriesData, bankBalance] = await Promise.all([
         fetchDealsFromSheet(),
-        fetchCategoriesFromSheet()
+        fetchCategoriesFromSheet(),
+        fetchBalancesFromSheet()
       ]);
+      if (bankBalance !== null && bankBalance !== undefined) {
+        BANK_BALANCE = bankBalance;
+        console.log('Loaded bank balance from Tiller: ' + BANK_BALANCE);
+      }
 
       if (sheetDeals && sheetDeals.length > 0) {
         DEALS = sheetDeals;
