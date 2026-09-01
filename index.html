@@ -624,6 +624,7 @@
                 <th style="cursor: pointer;" onclick="sortLedgerTable('id')">Name <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('address')">Address <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('market')">Market <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('source')">Source <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('status')">Status <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('strategy')">Strategy <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('ucDate')">UC Date <span class="sort-arrow"></span></th>
@@ -971,8 +972,15 @@
     // checking balance from the top (most recent) row of Sorted Assets.
     const BALANCES_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQOpsTuv9CuraF1lW8ZnDtN-EnMSEcnFOSYSa_5Ws3oaZ3z8_OoTmfNcoN1yWbqq8ag4tWLZw5SxhNY/pub?gid=907809191&single=true&output=csv';
 
+    // SM3 (Google) and Facebook lead trackers (per-lead rows: Date, Disposition, Deal Spread…)
+    const SM3_LEADS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTw5nqTaDB1bGIw-ZiBLvn3cP7QE-oApWaGjxGTdHlKOAjwLtBuf3da5xKEKtbyWFeiyHNqKfPB3uH-/pub?gid=0&single=true&output=csv';
+    const FB_LEADS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQqU4luclj7UY_dJ1GKArcvhxRkQ-4WBDGko-rXa6iw280sN24mRCUhoo_dw-nH5iHDaSXZJ93pg6RA/pub?gid=0&single=true&output=csv';
+
     let EXPENSE_DATA = null; // Will hold parsed categories data
     let BANK_BALANCE = null; // Live business-account balance from Tiller Balances tab
+    let SM3_LEADS = [];      // Parsed SM3/Google lead rows
+    let FB_LEADS = [];       // Parsed Facebook lead rows
+    let channelRange = '30D'; // Date window for the channel marketing sections
 
     let DEALS = []; // Will be populated from Google Sheet
     let BUYERS = []; // Will be populated from Contacts Google Sheet
@@ -1076,6 +1084,7 @@
         const iEscrow = colIdx('amount in escrow') >= 0 ? colIdx('amount in escrow') : colIdx('escrow');
         const iFinal = colIdx('final profit');
         const iNotes = colIdx('notes');
+        const iSource = colIdx('source'); // lead source (SM3/Google, Facebook, PPL, etc.)
 
         const deals = [];
         for (let i = headerIdx + 1; i < rows.length; i++) {
@@ -1114,6 +1123,7 @@
             market: r[iMarket] || '',
             status: r[iStatus] || '',
             strategy: r[iStrategy] || '',
+            source: (iSource >= 0 ? (r[iSource] || '').trim() : ''),
             ucDate: ucDate,
             closeDate: closeDate,
             month: month,
@@ -1271,6 +1281,56 @@
       } catch (err) {
         console.error('Error fetching bank balance:', err);
         return null;
+      }
+    }
+
+    // ==================== LEAD SHEETS (SM3 / Facebook) ====================
+    // Parse "MM-DD-YYYY HH:MM" (or M-D-YYYY) into a Date; fall back to Date().
+    function parseLeadDate(s) {
+      if (!s) return null;
+      s = String(s).trim();
+      var m = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+      if (m) return new Date(+m[3], +m[1] - 1, +m[2], +(m[4] || 0), +(m[5] || 0));
+      var d = new Date(s);
+      return isNaN(d) ? null : d;
+    }
+
+    // Fetch a per-lead tracker (SM3 or Facebook). Returns array of
+    // {date, disposition, dealSpread, contractDate, address}. Empty on failure.
+    async function fetchLeadsCsv(url) {
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('status ' + resp.status);
+        const rows = parseCSV(await resp.text());
+        // Header row = the one containing both 'Disposition' and 'Deal Spread'.
+        let hi = -1;
+        for (let i = 0; i < Math.min(rows.length, 12); i++) {
+          const low = rows[i].map(c => (c || '').toLowerCase().trim());
+          if (low.some(c => c === 'disposition') && low.some(c => c.includes('deal spread'))) { hi = i; break; }
+        }
+        if (hi === -1) throw new Error('no header row');
+        const H = rows[hi].map(c => (c || '').toLowerCase().trim());
+        const col = (name) => H.findIndex(h => h.includes(name));
+        const iDate = col('date'), iDisp = H.indexOf('disposition'), iSpread = col('deal spread'),
+              iContract = col('contract date'), iAddr = col('address');
+        const out = [];
+        for (let i = hi + 1; i < rows.length; i++) {
+          const r = rows[i]; if (!r) continue;
+          const disp = (iDisp >= 0 ? r[iDisp] : '') || '';
+          const dateRaw = (iDate >= 0 ? r[iDate] : '') || '';
+          if (!disp.trim() && !dateRaw.trim()) continue; // skip blank rows
+          out.push({
+            date: parseLeadDate(dateRaw),
+            disposition: disp.trim(),
+            dealSpread: parseNum(iSpread >= 0 ? r[iSpread] : null),
+            contractDate: parseLeadDate(iContract >= 0 ? r[iContract] : ''),
+            address: (iAddr >= 0 ? r[iAddr] : '') || ''
+          });
+        }
+        return out;
+      } catch (err) {
+        console.error('Error fetching lead sheet:', url, err);
+        return [];
       }
     }
 
@@ -1854,6 +1914,7 @@
           d.id.toLowerCase().includes(searchTerm) ||
           d.address.toLowerCase().includes(searchTerm) ||
           d.market.toLowerCase().includes(searchTerm) ||
+          (d.source || '').toLowerCase().includes(searchTerm) ||
           d.status.toLowerCase().includes(searchTerm) ||
           d.strategy.toLowerCase().includes(searchTerm) ||
           (d.contract && d.contract.toString().includes(searchTerm)) ||
@@ -1909,6 +1970,7 @@
         column === 'id' ? 'Name' :
         column === 'address' ? 'Address' :
         column === 'market' ? 'Market' :
+        column === 'source' ? 'Source' :
         column === 'status' ? 'Status' :
         column === 'strategy' ? 'Strategy' :
         column === 'ucDate' ? 'UC Date' :
@@ -1963,6 +2025,7 @@
             <td style="font-weight: 500;">${deal.id}</td>
             <td style="font-size: 12px; color: #666;">${deal.address}</td>
             <td style="font-weight: 500;">${deal.market}</td>
+            <td>${deal.source || '-'}</td>
             <td><span class="${statusClass}">${deal.status}</span></td>
             <td>${deal.strategy}</td>
             <td>${formatDate(deal.ucDate)}</td>
@@ -3345,6 +3408,157 @@
       }
     };
 
+    // ==================== MARKETING BY CHANNEL ====================
+    const CHANNEL_SPEND_CATS = {
+      sm3: ['google ad spend', 'sm3 marketing', 'sm3 management', 'sm3', 'sm3 fee', 'sm3 management fee'],
+      facebook: ['facebook ad spend'],
+      ppl: ['property leads (ppl)', 'property leads']
+    };
+
+    window.setChannelRange = function (r) { channelRange = r; renderROITab(); };
+
+    function channelRangeCutoff(rangeKey) {
+      var now = new Date();
+      if (rangeKey === 'All') return null;
+      if (rangeKey === 'YTD') return new Date(now.getFullYear(), 0, 1);
+      var days = rangeKey === '60D' ? 60 : rangeKey === '90D' ? 90 : 30;
+      return new Date(now.getTime() - days * 86400000);
+    }
+
+    function monthLabelToDate(label) {
+      var mn = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+      var p = String(label).toLowerCase().split(' ');
+      var mi = mn.indexOf((p[0] || '').slice(0, 3));
+      if (mi < 0 || !p[1]) return null;
+      return new Date(+p[1], mi, 1);
+    }
+
+    // Tiller spend for a channel over the selected window (month-level approximation).
+    function channelSpend(catList, rangeKey) {
+      if (!EXPENSE_DATA || !EXPENSE_DATA.categories) return 0;
+      var cats = EXPENSE_DATA.categories;
+      var labels = (EXPENSE_DATA.monthLabels || []).slice();
+      var now = new Date();
+      var curMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      var keep;
+      if (rangeKey === 'All') {
+        keep = labels;
+      } else if (rangeKey === 'YTD') {
+        keep = labels.filter(l => { var d = monthLabelToDate(l); return d && d.getFullYear() === now.getFullYear() && d <= curMonthStart; });
+      } else {
+        var months = rangeKey === '60D' ? 2 : rangeKey === '90D' ? 3 : 1;
+        var withD = labels.map(l => ({ l: l, d: monthLabelToDate(l) })).filter(x => x.d && x.d <= curMonthStart).sort((a, b) => a.d - b.d);
+        keep = withD.slice(-months).map(x => x.l);
+      }
+      var total = 0;
+      Object.keys(cats).forEach(cn => {
+        if (catList.includes(cn.toLowerCase())) keep.forEach(l => { total += Math.abs(cats[cn][l] || 0); });
+      });
+      return total;
+    }
+
+    // Lead VOLUME only (count of leads in window) from a lead sheet. Null if no sheet.
+    function leadVolume(leads, rangeKey) {
+      if (!leads) return null;
+      var cut = channelRangeCutoff(rangeKey);
+      return leads.filter(l => l.date && (!cut || l.date >= cut)).length;
+    }
+
+    // Contracts / closed / revenue from the DEAL LEDGER, filtered by Source.
+    // Contracts = every deal of that source that went under contract in the window;
+    // closed/revenue = Closed-Won deals (final profit).
+    function sourceDealMetrics(matchers, rangeKey) {
+      var cut = channelRangeCutoff(rangeKey);
+      var src = (DEALS || []).filter(d => {
+        var s = (d.source || '').toLowerCase();
+        return matchers.some(mt => s.includes(mt));
+      });
+      var inR = src.filter(d => !cut || (d.ucDate && new Date(d.ucDate) >= cut));
+      var closedRows = inR.filter(d => d.status === 'Closed - Won');
+      var revenue = closedRows.reduce((s, d) => s + (d.final || 0), 0);
+      return { contracts: inR.length, closed: closedRows.length, revenue: revenue };
+    }
+
+    function buildChannelStats(name, spend, totalLeads, dm) {
+      return {
+        name: name, spend: spend,
+        totalLeads: totalLeads, contracts: dm.contracts, closed: dm.closed, revenue: dm.revenue,
+        costPerLead: (totalLeads ? spend / totalLeads : null),
+        costPerContract: (dm.contracts ? spend / dm.contracts : null),
+        costPerClosed: (dm.closed ? spend / dm.closed : null),
+        closeRate: (dm.contracts ? dm.closed / dm.contracts : null),
+        avgDeal: (dm.closed ? dm.revenue / dm.closed : null),
+        roas: (spend > 0 ? dm.revenue / spend : null)
+      };
+    }
+
+    // Deal-ledger Source matchers per channel.
+    const CHANNEL_SOURCE_MATCHERS = {
+      sm3: ['sm3', 'google'],
+      facebook: ['facebook'],
+      ppl: ['property lead', 'ppl']
+    };
+
+    function renderChannelMarketingHTML() {
+      var r = channelRange;
+      var sm3 = buildChannelStats('SM3 / Google', channelSpend(CHANNEL_SPEND_CATS.sm3, r), leadVolume(SM3_LEADS, r), sourceDealMetrics(CHANNEL_SOURCE_MATCHERS.sm3, r));
+      var fb  = buildChannelStats('Facebook', channelSpend(CHANNEL_SPEND_CATS.facebook, r), leadVolume(FB_LEADS, r), sourceDealMetrics(CHANNEL_SOURCE_MATCHERS.facebook, r));
+      var ppl = buildChannelStats('PPL', channelSpend(CHANNEL_SPEND_CATS.ppl, r), null, sourceDealMetrics(CHANNEL_SOURCE_MATCHERS.ppl, r));
+      var channels = [sm3, fb, ppl];
+
+      function num(n) { return (n === null || n === undefined) ? '—' : Math.round(n).toLocaleString(); }
+      function money(n) { return (n === null || n === undefined) ? '—' : fmt(n); }
+      function pct(n) { return (n === null || n === undefined) ? '—' : (n * 100).toFixed(0) + '%'; }
+      function roasStr(n) { return (n === null || n === undefined) ? '—' : n.toFixed(2) + 'x'; }
+      function card(label, val, color) {
+        return '<div class="kpi-card" style="border-left:4px solid ' + color + ';"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><div style="font-size:22px;font-weight:800;color:' + color + ';">' + val + '</div></div>';
+      }
+      function sub(t, c) { return '<div style="font-size:11px;font-weight:700;color:' + c + ';text-transform:uppercase;letter-spacing:1px;margin:12px 0 6px;">' + t + '</div>'; }
+      function grid(cards) { return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;">' + cards.join('') + '</div>'; }
+
+      function channelBlock(c) {
+        var h = '<div style="background:white;border-radius:10px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">';
+        h += '<div style="font-size:16px;font-weight:800;color:#1B2A4A;margin-bottom:4px;">' + c.name + '</div>';
+        if (c.totalLeads === null) h += '<div style="font-size:11px;color:#999;margin-bottom:6px;">No lead sheet for PPL — lead volume &amp; cost-per-lead unavailable</div>';
+        h += sub('Ad Spend & Lead Volume', '#2E75B6');
+        h += grid([card('Total Ad Spend', money(c.spend), '#1B2A4A'), card('Leads', num(c.totalLeads), '#2E75B6'), card('Cost per Lead', money(c.costPerLead), '#2E75B6')]);
+        h += sub('Contracts', '#548235');
+        h += grid([card('Contracts', num(c.contracts), '#548235'), card('Cost per Contract', money(c.costPerContract), '#548235')]);
+        h += sub('Closed Deals & Revenue', '#7030A0');
+        h += grid([card('Closed Deals', num(c.closed), '#7030A0'), card('Revenue', money(c.revenue), '#548235'), card('Cost per Closed', money(c.costPerClosed), '#C00000'), card('Close Rate', pct(c.closeRate), '#2F9599'), card('Avg Deal Size', money(c.avgDeal), '#2E75B6'), card('ROAS', roasStr(c.roas), '#548235')]);
+        h += '</div>';
+        return h;
+      }
+
+      var ranges = ['30D', '60D', '90D', 'YTD', 'All'];
+      var html = '<div style="margin:8px 0 16px;">';
+      html += '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px;">';
+      html += '<div class="section-title" style="background-color:#1B2A4A;flex:1;min-width:220px;">Marketing by Channel</div>';
+      html += '<div style="display:flex;gap:4px;background:#e8edf3;border-radius:6px;padding:3px;">';
+      ranges.forEach(function (rk) { html += '<button onclick="setChannelRange(\'' + rk + '\')" style="padding:5px 12px;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;background:' + (rk === r ? '#2E75B6' : 'transparent') + ';color:' + (rk === r ? 'white' : '#666') + ';">' + rk + '</button>'; });
+      html += '</div></div>';
+      html += '<div style="font-size:11px;color:#999;margin-bottom:12px;">Lead volume &amp; cost-per-lead from the SM3 &amp; Facebook lead trackers. Contracts, closed deals &amp; revenue from the deal ledger by Source (Closed-Won final profit). Ad spend from Tiller (month-level for the selected window).</div>';
+      channels.forEach(function (c) { html += channelBlock(c); });
+
+      html += '<div class="section-title" style="background-color:#1B2A4A;">Channel Comparison (' + r + ')</div>';
+      html += '<div class="section-body"><div class="table-container"><table><thead><tr><th>Metric</th><th>SM3 / Google</th><th>Facebook</th><th>PPL</th></tr></thead><tbody>';
+      function crow(label, fn) { return '<tr><td style="font-weight:600;">' + label + '</td><td>' + fn(sm3) + '</td><td>' + fn(fb) + '</td><td>' + fn(ppl) + '</td></tr>'; }
+      html += crow('Total Ad Spend', c => money(c.spend));
+      html += crow('Leads', c => num(c.totalLeads));
+      html += crow('Cost per Lead', c => money(c.costPerLead));
+      html += crow('Contracts', c => num(c.contracts));
+      html += crow('Cost per Contract', c => money(c.costPerContract));
+      html += crow('Closed Deals', c => num(c.closed));
+      html += crow('Revenue', c => money(c.revenue));
+      html += crow('Cost per Closed', c => money(c.costPerClosed));
+      html += crow('Close Rate', c => pct(c.closeRate));
+      html += crow('Avg Deal Size', c => money(c.avgDeal));
+      html += crow('ROAS', c => roasStr(c.roas));
+      html += '</tbody></table></div></div>';
+      html += '</div>';
+      return html;
+    }
+
     const renderROITab = () => {
       const container = document.getElementById('roiContent');
 
@@ -3449,6 +3663,9 @@
       html += `</div></div>`;
       html += `<div class="section-body"><div class="chart-container" style="height:300px;"><canvas id="roiTrendChart"></canvas></div></div>`;
       html += `</div></div>`;
+
+      // ── Marketing by Channel (SM3 / Facebook / PPL) + comparison ──
+      html += renderChannelMarketingHTML();
 
       // ── Monthly Detail Table ──
       html += `<div style="margin-bottom:24px;"><div class="section-title" style="background-color:#1B2A4A;">Monthly Marketing Performance</div><div class="section-body"><div class="table-container">`;
@@ -4758,16 +4975,21 @@
       const ledgerBody = document.getElementById('ledgerTableBody');
       if (ledgerBody) ledgerBody.innerHTML = '<tr><td colspan="20" style="text-align:center;padding:40px;color:#666;font-size:16px;">Loading deals from Google Sheets...</td></tr>';
 
-      // Fetch live data from Google Sheet + Categories + Bank balance in parallel
-      const [sheetDeals, categoriesData, bankBalance] = await Promise.all([
+      // Fetch live data from Google Sheet + Categories + Bank balance + lead sheets in parallel
+      const [sheetDeals, categoriesData, bankBalance, sm3Leads, fbLeads] = await Promise.all([
         fetchDealsFromSheet(),
         fetchCategoriesFromSheet(),
-        fetchBalancesFromSheet()
+        fetchBalancesFromSheet(),
+        fetchLeadsCsv(SM3_LEADS_CSV_URL),
+        fetchLeadsCsv(FB_LEADS_CSV_URL)
       ]);
       if (bankBalance !== null && bankBalance !== undefined) {
         BANK_BALANCE = bankBalance;
         console.log('Loaded bank balance from Tiller: ' + BANK_BALANCE);
       }
+      SM3_LEADS = sm3Leads || [];
+      FB_LEADS = fbLeads || [];
+      console.log('Loaded leads — SM3: ' + SM3_LEADS.length + ', Facebook: ' + FB_LEADS.length);
 
       if (sheetDeals && sheetDeals.length > 0) {
         DEALS = sheetDeals;
