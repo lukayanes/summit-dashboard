@@ -1257,7 +1257,8 @@
     // ("today") and older duplicate snapshots below — we take the top row only.
     async function fetchBalancesFromSheet() {
       try {
-        const resp = await fetch(BALANCES_CSV_URL);
+        // Cache-buster + no-store so the manual "Update" button gets the freshest pull.
+        const resp = await fetch(BALANCES_CSV_URL + '&_ts=' + Date.now(), { cache: 'no-store' });
         if (!resp.ok) throw new Error('Failed to fetch balances: ' + resp.status);
         const rows = parseCSV(await resp.text());
 
@@ -2830,6 +2831,31 @@
       return BANK_BALANCE !== null && BANK_BALANCE !== undefined;
     }
 
+    let bankBalanceFetchedAt = null; // when the balance was last pulled from Tiller
+
+    function formatBalTime(d) {
+      if (!d) return '';
+      return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+    }
+
+    // Manual re-pull of the Tiller bank balance (Update button on the Owners Draw).
+    window.refreshBankBalance = async function () {
+      var btn = document.getElementById('odBalRefreshBtn');
+      var stamp = document.getElementById('odBalUpdated');
+      var prev = BANK_BALANCE;
+      if (btn) { btn.textContent = 'Updating…'; btn.disabled = true; }
+      try {
+        var bal = await fetchBalancesFromSheet();
+        if (bal !== null && bal !== undefined) { BANK_BALANCE = bal; bankBalanceFetchedAt = new Date(); }
+      } catch (e) { console.error('Balance refresh failed', e); }
+      computeOwnersDraw();
+      if (stamp) {
+        var changed = (prev !== BANK_BALANCE);
+        stamp.textContent = 'Updated ' + formatBalTime(bankBalanceFetchedAt) + (changed ? ' · new value' : ' · no change (Tiller/Google refresh ~5 min)');
+      }
+      if (btn) { btn.textContent = '↻ Update'; btn.disabled = false; }
+    };
+
     function ownersDrawSectionHTML() {
       var burnMo = localStorage.getItem('od_burnMonthly') || '28000'; // $25k ads + $3k SM3
       var burnMonths = localStorage.getItem('od_burnMonths') || '5';   // customizable 4–6 (0.5 steps)
@@ -2871,11 +2897,15 @@
       h += '<p style="margin:0;font-size:13px;opacity:0.85;">' + qLabel + ' projected distribution &middot; quarter ends ' + qDateStr + '</p>';
       h += '</div>';
       h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:16px;">';
-      // Business Account Balance — READ-ONLY, driven only by Tiller auto-population.
+      // Business Account Balance — READ-ONLY, driven only by Tiller; Update button re-pulls it.
       h += '<div class="kpi-card" style="border-left:4px solid #548235;">' +
-        '<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Business Account Balance</div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:8px;">' +
+        '<div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">Business Account Balance</div>' +
+        '<button id="odBalRefreshBtn" onclick="refreshBankBalance()" title="Re-pull the balance from Tiller" style="font-size:9px;padding:2px 8px;background:#548235;color:white;border:none;border-radius:4px;cursor:pointer;white-space:nowrap;">↻ Update</button>' +
+        '</div>' +
         '<div id="odBizBalance" style="font-size:26px;font-weight:800;color:#1B2A4A;">' + balDisplay + '</div>' +
-        '<div style="font-size:11px;color:#999;margin-top:4px;">' + balHint + '</div></div>';
+        '<div style="font-size:11px;color:#999;margin-top:4px;">' + balHint + '</div>' +
+        '<div id="odBalUpdated" style="font-size:10px;color:#bbb;margin-top:2px;">' + (bankBalanceFetchedAt ? 'Updated ' + formatBalTime(bankBalanceFetchedAt) : '') + '</div></div>';
       h += inputCard('Ad Spend + SM3 + Expenses / Month', 'odBurnMonthly', burnMo, '$25k ads + $3k SM3 + expenses');
       // Burn Rate Months — customizable 4 to 6 in 0.5 steps.
       h += '<div class="kpi-card" style="border-left:4px solid #548235;">' +
@@ -5037,6 +5067,7 @@
       ]);
       if (bankBalance !== null && bankBalance !== undefined) {
         BANK_BALANCE = bankBalance;
+        bankBalanceFetchedAt = new Date();
         console.log('Loaded bank balance from Tiller: ' + BANK_BALANCE);
       }
       SM3_LEADS = sm3Leads || [];
