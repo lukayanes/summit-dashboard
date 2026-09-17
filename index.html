@@ -565,6 +565,7 @@
     <button class="tab-button" onclick="switchTab('financials')">Financials</button>
     <button class="tab-button" onclick="switchTab('projections')">Projections</button>
     <button class="tab-button" onclick="switchTab('projections2')">Projections 2</button>
+    <button class="tab-button" onclick="switchTab('hiring')">Hiring Projections</button>
     <button class="tab-button" onclick="switchTab('dispo')">Dispo</button>
   </div>
 
@@ -950,6 +951,11 @@
 
       <!-- Hint -->
       <div class="p2-hint">💡 <strong>How to use:</strong> <strong>Starting Balance</strong> and <strong>Monthly Burn</strong> default to live numbers from your Tiller financials — override either by typing a new value. Monthly Burn covers <em>all</em> expenses (including ads), so if you significantly change quarterly ad spend you may want to update Monthly Burn too. Adjust ad spend per quarter to model growth scenarios, toggle ROAS scenarios at the top, and switch any quarter to Manual Input to lock in actual revenue. Values in red indicate balance falls below the 5-month reserve floor.</div>
+    </div>
+
+    <!-- HIRING PROJECTIONS TAB -->
+    <div id="hiring" class="tab-content">
+      <div id="hiringContent"></div>
     </div>
 
     <!-- DISPO TAB -->
@@ -3065,6 +3071,262 @@
       panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
+    // ==================== HIRING PROJECTIONS ====================
+    // Baseline run-rate from the trailing completed months of Tiller + closed deals.
+    function hiringBaseline(trailing) {
+      trailing = trailing || 3;
+      var base = { months: 0, labels: [], revenue: 0, adSpend: 0, opex: 0, roas: null, avgDealProfit: 0, dealsPerMonth: 0, costPerDeal: null };
+      if (EXPENSE_DATA && EXPENSE_DATA.monthlyTotals) {
+        var now = new Date();
+        var curStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        var mkt = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee','ppl','ppl leads','pay per lead','pay-per-lead','ppl lead gen','ppl marketing','property leads (ppl)','property leads'];
+        var labs = (EXPENSE_DATA.monthLabels || []).map(function (l) { return { l: l, d: monthLabelToDate(l) }; })
+          .filter(function (x) { return x.d && x.d < curStart; })
+          .filter(function (x) { var t = EXPENSE_DATA.monthlyTotals[x.l]; return t && ((t.totalIncome || 0) !== 0 || (t.totalExpense || 0) !== 0); })
+          .sort(function (a, b) { return a.d - b.d; }).slice(-trailing);
+        var inc = 0, exp = 0, adv = 0;
+        labs.forEach(function (x) {
+          var t = EXPENSE_DATA.monthlyTotals[x.l];
+          inc += (t.totalIncome || 0); exp += Math.abs(t.totalExpense || 0);
+          Object.keys(EXPENSE_DATA.categories).forEach(function (cn) { if (mkt.includes(cn.toLowerCase())) adv += Math.abs(EXPENSE_DATA.categories[cn][x.l] || 0); });
+        });
+        var n = labs.length || 1;
+        base.months = labs.length; base.labels = labs.map(function (x) { return x.l; });
+        base.revenue = inc / n; base.adSpend = adv / n; base.opex = Math.max(0, (exp - adv) / n);
+        base.roas = adv > 0 ? inc / adv : null;
+      }
+      var won = (DEALS || []).filter(function (d) { return d.status === 'Closed - Won' && d.final; });
+      if (won.length) {
+        base.avgDealProfit = won.reduce(function (s, d) { return s + d.final; }, 0) / won.length;
+        var ds = won.map(function (d) { return new Date(d.closeDate); }).filter(function (d) { return !isNaN(d); }).sort(function (a, b) { return a - b; });
+        if (ds.length > 1) { var spanMo = Math.max(1, (ds[ds.length - 1] - ds[0]) / (30.44 * 86400000)); base.dealsPerMonth = won.length / spanMo; }
+        else base.dealsPerMonth = won.length;
+      }
+      if (base.adSpend > 0 && base.dealsPerMonth > 0) base.costPerDeal = base.adSpend / base.dealsPerMonth;
+      return base;
+    }
+
+    // Projection months: next month through Dec 2027 (at least 12 months).
+    function hpMonths() {
+      var now = new Date(); var out = [];
+      var cur = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      var end = new Date(2027, 11, 1);
+      if (end < new Date(cur.getFullYear(), cur.getMonth() + 11, 1)) end = new Date(cur.getFullYear(), cur.getMonth() + 11, 1);
+      var mn = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      while (cur <= end) { out.push({ label: mn[cur.getMonth()] + ' ' + cur.getFullYear() }); cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1); }
+      return out;
+    }
+
+    function hpGet(key, def) { var v = localStorage.getItem('hp_' + key); return (v === null || v === '') ? def : v; }
+    function hpVal(id) { var el = document.getElementById(id); return el ? parseFloat(el.value) : NaN; }
+
+    const renderHiringTab = () => {
+      var container = document.getElementById('hiringContent');
+      if (!container) return;
+      var b = hiringBaseline(3);
+      var months = hpMonths();
+      var r0 = function (n) { return Math.round(n || 0); };
+
+      // Defaults anchored to real data (editable, persisted)
+      var d = {
+        start: hpGet('start', months.some(function (m) { return m.label === 'Jan 2027'; }) ? 'Jan 2027' : months[0].label),
+        base: hpGet('base', 5000), burden: hpGet('burden', 12), comm: hpGet('comm', 0), perDeal: hpGet('perDeal', 0), flat: hpGet('flat', 0), onboard: hpGet('onboard', 0),
+        curAd: hpGet('curAd', r0(b.adSpend)), newAd: hpGet('newAd', r0(b.adSpend * 1.5)), roas: hpGet('roas', b.roas ? b.roas.toFixed(2) : 3), ramp: hpGet('ramp', 3),
+        opex: hpGet('opex', r0(b.opex)), revenue: hpGet('revenue', r0(b.revenue)), avgDeal: hpGet('avgDeal', r0(b.avgDealProfit) || 15000), owners: hpGet('owners', 3)
+      };
+
+      function inp(label, id, val, hint, step, extra) {
+        return '<div class="kpi-card" style="border-left:4px solid #2E75B6;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div>' +
+          '<input id="' + id + '" type="number" step="' + (step || 'any') + '" value="' + val + '" oninput="computeHiring()" ' + (extra || '') + ' style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:17px;font-weight:700;color:#1B2A4A;">' +
+          '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div></div>';
+      }
+      function sec(title, color, note) { return '<div style="margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (note ? '<div style="font-size:11px;color:#999;margin-top:2px;">' + note + '</div>' : '') + '</div>'; }
+      var grid = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;';
+
+      var h = '';
+      h += '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:22px;margin-bottom:8px;color:white;">';
+      h += '<h2 style="margin:0 0 4px 0;font-size:22px;font-weight:700;letter-spacing:0.5px;">Hiring Projections</h2>';
+      h += '<p style="margin:0;font-size:13px;opacity:0.75;">What a new hire costs, how much ad spend they let you turn up, and what that does to net cash and owners draw. Baseline = trailing ' + b.months + ' completed month' + (b.months === 1 ? '' : 's') + (b.labels.length ? ' (' + b.labels.join(', ') + ')' : '') + '.</p></div>';
+
+      // Baseline snapshot (read-only, from data)
+      h += sec('Your Current Baseline (auto from Tiller & deals)', '#2E75B6', 'Monthly run-rate. These seed the editable assumptions below.');
+      h += '<div style="' + grid + '">';
+      var ro = function (label, val, color) { return '<div class="kpi-card" style="border-left:4px solid ' + color + ';"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><div style="font-size:22px;font-weight:800;color:' + color + ';">' + val + '</div></div>'; };
+      h += ro('Revenue / mo', fmt(b.revenue), '#548235') + ro('Ad Spend / mo', fmt(b.adSpend), '#ED7D31') + ro('Other Expenses / mo', fmt(b.opex), '#C00000') +
+           ro('Net / mo', fmt(b.revenue - b.adSpend - b.opex), (b.revenue - b.adSpend - b.opex) >= 0 ? '#2E75B6' : '#C00000') +
+           ro('ROAS', b.roas ? b.roas.toFixed(2) + 'x' : '—', '#7030A0') + ro('Avg Profit / Deal', fmt(b.avgDealProfit), '#548235') +
+           ro('Closed Deals / mo', b.dealsPerMonth.toFixed(1), '#2E75B6') + ro('Ad Cost / Closed Deal', b.costPerDeal ? fmt(b.costPerDeal) : '—', '#ED7D31');
+      h += '</div>';
+
+      // Hire inputs
+      h += sec('The Hire', '#1B2A4A', 'Mix and match: salary only, commission only, per-deal, or any combination. Leave a field at 0 to exclude it.');
+      h += '<div style="' + grid + '">';
+      h += '<div class="kpi-card" style="border-left:4px solid #2E75B6;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Start Month</div><select id="hpStart" onchange="computeHiring()" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:15px;font-weight:700;color:#1B2A4A;">';
+      months.forEach(function (m) { h += '<option value="' + m.label + '"' + (m.label === d.start ? ' selected' : '') + '>' + m.label + '</option>'; });
+      h += '</select><div style="font-size:11px;color:#999;margin-top:4px;">When pay & the ad-spend increase begin</div></div>';
+      h += inp('Base Salary / mo', 'hpBase', d.base, 'Fixed monthly pay ($0 = commission-only)', 100);
+      h += inp('Employer Burden %', 'hpBurden', d.burden, 'Payroll tax + benefits on base pay', 0.5);
+      h += inp('Commission % of Added Revenue', 'hpComm', d.comm, '% of the extra revenue the scale-up brings in', 0.5);
+      h += inp('Bonus per Added Deal ($)', 'hpPerDeal', d.perDeal, 'Flat $ per extra closed deal', 100);
+      h += inp('Other Fixed / mo ($)', 'hpFlat', d.flat, 'Software seat, phone, stipend, etc.', 50);
+      h += inp('One-Time Onboarding ($)', 'hpOnboard', d.onboard, 'Recruiting, training, equipment (hits start month)', 100);
+      h += '</div>';
+
+      // Scale-up inputs
+      h += sec('The Scale-Up (what the hire unlocks)', '#ED7D31', 'Extra ad spend converts to revenue at your ROAS, ramping in over a few months.');
+      h += '<div style="' + grid + '">';
+      h += inp('Current Ad Spend / mo', 'hpCurAd', d.curAd, 'Baseline (auto from Tiller)', 500);
+      h += inp('New Ad Spend / mo', 'hpNewAd', d.newAd, 'Turn it up once the hire is in place', 500);
+      h += inp('ROAS on Added Spend', 'hpRoas', d.roas, 'Revenue per $1 of ad spend (auto = your history)', 0.1);
+      h += inp('Ramp (months to full)', 'hpRamp', d.ramp, 'Months for the added spend to reach full return', 1, 'min="1" max="12"');
+      h += inp('Avg Profit / Closed Deal', 'hpAvgDeal', d.avgDeal, 'Used to translate added revenue into added deals', 500);
+      h += '</div>';
+
+      // Baseline assumptions
+      h += sec('Baseline Assumptions', '#548235', 'Auto-filled from your trailing months — adjust if you expect a change.');
+      h += '<div style="' + grid + '">';
+      h += inp('Baseline Revenue / mo', 'hpRevenue', d.revenue, 'Before any scale-up', 500);
+      h += inp('Other Expenses / mo', 'hpOpex', d.opex, 'Everything except ad spend', 250);
+      h += inp('# Owners', 'hpOwners', d.owners, 'For per-owner draw', 1, 'min="1"');
+      h += '</div>';
+
+      h += '<div id="hpSnapshot"></div>';
+      h += '<div id="hpScenarios"></div>';
+      h += '<div id="hpChartWrap" style="margin-top:22px;"></div>';
+      h += '<div id="hpTable" style="margin-top:22px;"></div>';
+      container.innerHTML = h;
+      computeHiring();
+    };
+
+    window.computeHiring = function () {
+      var snap = document.getElementById('hpSnapshot');
+      if (!snap) return;
+      var months = hpMonths();
+      var startSel = document.getElementById('hpStart');
+      var start = startSel ? startSel.value : months[0].label;
+      var v = {
+        base: hpVal('hpBase') || 0, burden: hpVal('hpBurden') || 0, comm: hpVal('hpComm') || 0, perDeal: hpVal('hpPerDeal') || 0, flat: hpVal('hpFlat') || 0, onboard: hpVal('hpOnboard') || 0,
+        curAd: hpVal('hpCurAd') || 0, newAd: hpVal('hpNewAd') || 0, roas: hpVal('hpRoas') || 0, ramp: Math.max(1, hpVal('hpRamp') || 1), avgDeal: hpVal('hpAvgDeal') || 1,
+        revenue: hpVal('hpRevenue') || 0, opex: hpVal('hpOpex') || 0, owners: Math.max(1, hpVal('hpOwners') || 3)
+      };
+      ['base','burden','comm','perDeal','flat','onboard','curAd','newAd','roas','ramp','avgDeal','revenue','opex','owners'].forEach(function (k) {
+        var el = document.getElementById('hp' + k.charAt(0).toUpperCase() + k.slice(1)); if (el) localStorage.setItem('hp_' + k, el.value);
+      });
+      localStorage.setItem('hp_start', start);
+
+      var startIdx = months.findIndex(function (m) { return m.label === start; }); if (startIdx < 0) startIdx = 0;
+      var addedAd = Math.max(0, v.newAd - v.curAd);
+      var net0 = v.revenue - v.curAd - v.opex; // baseline monthly net (no hire)
+      var startCash = (BANK_BALANCE !== null && BANK_BALANCE !== undefined) ? BANK_BALANCE : 0;
+
+      // Steady-state (fully ramped) figures
+      var addedRevFull = addedAd * v.roas;
+      var addedDealsFull = v.avgDeal > 0 ? addedRevFull / v.avgDeal : 0;
+      var fixedCost = v.base * (1 + v.burden / 100) + v.flat;
+      var varCostFull = addedRevFull * (v.comm / 100) + addedDealsFull * v.perDeal;
+      var hireCostFull = fixedCost + varCostFull;
+      var netFull = (v.revenue + addedRevFull) - v.newAd - v.opex - hireCostFull;
+      var impactFull = netFull - net0;
+      // Break-even added revenue: X - addedAd - fixed - comm%X - perDeal*X/avgDeal = 0
+      var varRate = (v.comm / 100) + (v.avgDeal > 0 ? v.perDeal / v.avgDeal : 0);
+      var beRev = (1 - varRate) > 0 ? (addedAd + fixedCost) / (1 - varRate) : null;
+      var beDeals = (beRev !== null && v.avgDeal > 0) ? beRev / v.avgDeal : null;
+      var beRoas = (beRev !== null && addedAd > 0) ? beRev / addedAd : null;
+
+      // Month-by-month
+      var rows = [], cumHire = startCash, cumNo = startCash, cumImpact = 0, paybackLabel = null;
+      months.forEach(function (m, i) {
+        var active = i >= startIdx; var k = i - startIdx;
+        var ramp = active ? Math.min(1, (k + 1) / v.ramp) : 0;
+        var addedRev = active ? addedAd * v.roas * ramp : 0;
+        var addedDeals = v.avgDeal > 0 ? addedRev / v.avgDeal : 0;
+        var hire = active ? fixedCost + addedRev * (v.comm / 100) + addedDeals * v.perDeal + (k === 0 ? v.onboard : 0) : 0;
+        var rev = v.revenue + addedRev, ad = active ? v.newAd : v.curAd, net = rev - ad - v.opex - hire;
+        cumHire += net; cumNo += net0; cumImpact += (net - net0);
+        if (active && paybackLabel === null && cumImpact >= 0 && k > 0) paybackLabel = m.label;
+        rows.push({ label: m.label, active: active, rev: rev, ad: ad, opex: v.opex, hire: hire, net: net, per: net / v.owners, cum: cumHire, cumNo: cumNo, ramp: ramp });
+      });
+      if (paybackLabel === null && cumImpact >= 0 && startIdx < months.length) paybackLabel = months[startIdx].label;
+
+      var pos = function (n) { return n >= 0 ? '#548235' : '#C00000'; };
+      var card = function (label, val, color, hint) { return '<div class="kpi-card" style="border-left:4px solid ' + color + ';"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><div style="font-size:22px;font-weight:800;color:' + color + ';">' + val + '</div>' + (hint ? '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div>' : '') + '</div>'; };
+      var grid = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;';
+      var sec = function (title, color, note) { return '<div style="margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (note ? '<div style="font-size:11px;color:#999;margin-top:2px;">' + note + '</div>' : '') + '</div>'; };
+
+      // Snapshot
+      var s = sec('The Bottom Line (fully ramped, per month)', '#1B2A4A', 'Compares "hire + scale-up" against staying as-is.');
+      s += '<div style="' + grid + '">';
+      s += card('Fully-Loaded Hire Cost', fmt(hireCostFull), '#C00000', fmt(fixedCost) + ' fixed + ' + fmt(varCostFull) + ' variable');
+      s += card('Added Ad Spend', fmt(addedAd), '#ED7D31', fmt(v.curAd) + ' → ' + fmt(v.newAd));
+      s += card('Added Revenue', fmt(addedRevFull), '#548235', '≈ ' + addedDealsFull.toFixed(1) + ' extra deals / mo');
+      s += card('Net Monthly Impact', (impactFull >= 0 ? '+' : '') + fmt(impactFull), pos(impactFull), 'vs. no hire: ' + fmt(net0) + ' → ' + fmt(netFull));
+      s += card('Per-Owner Draw Impact', (impactFull >= 0 ? '+' : '') + fmt(impactFull / v.owners) + '/mo', pos(impactFull), fmt(net0 / v.owners) + ' → ' + fmt(netFull / v.owners) + ' each');
+      s += card('Payback', paybackLabel || 'Not within window', paybackLabel ? '#548235' : '#C00000', 'Month cumulative impact turns positive');
+      s += '</div>';
+      s += sec('Break-Even (what the scale-up must produce to pay for itself)', '#7030A0');
+      s += '<div style="' + grid + '">';
+      s += card('Added Revenue Needed', beRev !== null ? fmt(beRev) + '/mo' : '—', '#7030A0', 'Covers hire + extra ad spend');
+      s += card('Extra Deals Needed', beDeals !== null ? beDeals.toFixed(1) + '/mo' : '—', '#7030A0', 'at ' + fmt(v.avgDeal) + ' avg profit');
+      s += card('ROAS Needed on Added Spend', beRoas !== null ? beRoas.toFixed(2) + 'x' : '—', beRoas !== null && v.roas >= beRoas ? '#548235' : '#C00000', 'You assume ' + v.roas.toFixed(2) + 'x' + (beRoas !== null ? (v.roas >= beRoas ? ' ✓ clears it' : ' ✗ short') : ''));
+      s += '</div>';
+      snap.innerHTML = s;
+
+      // Pay-model scenarios (steady state)
+      var scen = document.getElementById('hpScenarios');
+      if (scen) {
+        var salOnly = v.base * (1 + v.burden / 100) + v.flat;
+        var commOnly = varCostFull;
+        var hybrid = salOnly + commOnly;
+        var models = [
+          { name: 'Salary Only', cost: salOnly, note: 'base × (1 + burden) + fixed' },
+          { name: 'Commission / Per-Deal Only', cost: commOnly, note: v.comm + '% of added revenue + ' + fmt(v.perDeal) + '/deal' },
+          { name: 'Hybrid (both)', cost: hybrid, note: 'salary + commission' }
+        ];
+        var t = sec('Pay Model Comparison (fully ramped)', '#2E75B6', 'Same scale-up assumptions; only how you pay them changes. Set base to 0 or commission to 0 above to explore each.');
+        t += '<div class="table-container"><table><thead><tr><th>Pay Model</th><th>Hire Cost / mo</th><th>New Net / mo</th><th>Net Impact vs No Hire</th><th>Per-Owner Draw / mo</th><th>Break-Even ROAS</th></tr></thead><tbody>';
+        models.forEach(function (mo) {
+          var netM = (v.revenue + addedRevFull) - v.newAd - v.opex - mo.cost;
+          var imp = netM - net0;
+          var beR = addedAd > 0 ? ((addedAd + mo.cost) / addedAd) : null; // approximate: treats cost as fixed
+          t += '<tr><td style="font-weight:600;">' + mo.name + '<div style="font-size:10px;color:#999;">' + mo.note + '</div></td><td>' + fmt(mo.cost) + '</td><td style="color:' + pos(netM) + ';font-weight:600;">' + fmt(netM) + '</td><td style="color:' + pos(imp) + ';font-weight:600;">' + (imp >= 0 ? '+' : '') + fmt(imp) + '</td><td>' + fmt(netM / v.owners) + '</td><td>' + (beR !== null ? beR.toFixed(2) + 'x' : '—') + '</td></tr>';
+        });
+        t += '</tbody></table></div>';
+        scen.innerHTML = t;
+      }
+
+      // Chart: cumulative cash with vs without hire
+      var cw = document.getElementById('hpChartWrap');
+      if (cw) {
+        cw.innerHTML = sec('Cumulative Cash: Hire + Scale-Up vs. Stay As-Is', '#1B2A4A', 'Starts from your Tiller bank balance (' + fmt(startCash) + ').') + '<div class="chart-container" style="height:300px;"><canvas id="hpCashChart"></canvas></div>';
+        setTimeout(function () {
+          var ctx = document.getElementById('hpCashChart'); if (!ctx) return;
+          destroyChart('hpCashChart');
+          chartsCache['hpCashChart'] = new Chart(ctx.getContext('2d'), {
+            type: 'line',
+            data: { labels: rows.map(function (r) { return r.label; }), datasets: [
+              { label: 'Hire + Scale-Up', data: rows.map(function (r) { return Math.round(r.cum); }), borderColor: '#548235', backgroundColor: 'rgba(84,130,53,0.12)', fill: true, tension: 0.3 },
+              { label: 'Stay As-Is', data: rows.map(function (r) { return Math.round(r.cumNo); }), borderColor: '#2E75B6', borderDash: [6, 4], backgroundColor: 'transparent', tension: 0.3 }
+            ] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { y: { ticks: { callback: function (val) { return '$' + (val / 1000).toFixed(0) + 'k'; } } } } }
+          });
+        }, 10);
+      }
+
+      // Monthly table
+      var tb = document.getElementById('hpTable');
+      if (tb) {
+        var tt = sec('Month-by-Month Projection', '#1B2A4A', 'Hire and higher ad spend begin ' + start + '. Shaded rows = hire active; ramp % shows how much of the added return has kicked in.');
+        tt += '<div class="table-container"><table><thead><tr><th>Month</th><th>Revenue</th><th>Ad Spend</th><th>Other Exp</th><th>Hire Cost</th><th>Net</th><th>Per Owner</th><th>Cum. Cash (Hire)</th><th>Cum. Cash (As-Is)</th></tr></thead><tbody>';
+        rows.forEach(function (r) {
+          tt += '<tr style="' + (r.active ? 'background:#F1F7EE;' : '') + '"><td style="font-weight:600;">' + r.label + (r.active && r.ramp < 1 ? ' <span style="font-size:10px;color:#999;">(' + Math.round(r.ramp * 100) + '% ramp)</span>' : '') + '</td><td>' + fmt(r.rev) + '</td><td>' + fmt(r.ad) + '</td><td>' + fmt(r.opex) + '</td><td style="color:#C00000;">' + (r.hire ? fmt(r.hire) : '—') + '</td><td style="font-weight:600;color:' + pos(r.net) + ';">' + fmt(r.net) + '</td><td>' + fmt(r.per) + '</td><td style="font-weight:600;color:' + pos(r.cum) + ';">' + fmt(r.cum) + '</td><td style="color:#666;">' + fmt(r.cumNo) + '</td></tr>';
+        });
+        var totNet = rows.reduce(function (s2, r) { return s2 + r.net; }, 0), totNo = rows.length * net0, totHire = rows.reduce(function (s2, r) { return s2 + r.hire; }, 0);
+        tt += '<tr style="background:#f0f0f0;font-weight:700;"><td>TOTAL</td><td></td><td></td><td></td><td style="color:#C00000;">' + fmt(totHire) + '</td><td style="color:' + pos(totNet) + ';">' + fmt(totNet) + '</td><td>' + fmt(totNet / v.owners) + '</td><td colspan="2" style="color:' + pos(totNet - totNo) + ';">' + (totNet - totNo >= 0 ? '+' : '') + fmt(totNet - totNo) + ' vs. as-is over the window</td></tr>';
+        tt += '</tbody></table></div>';
+        tb.innerHTML = tt;
+      }
+    };
+
     const renderFinancialsTab = () => {
       const container = document.getElementById('financialsContent');
 
@@ -4836,6 +5098,8 @@
         renderProjectionsTab();
       } else if (tab === 'projections2') {
         renderProjections2Tab();
+      } else if (tab === 'hiring') {
+        renderHiringTab();
       } else if (tab === 'dealmap') {
         renderDealMapTab();
       } else if (tab === 'dispo') {
