@@ -3178,6 +3178,7 @@
     window.hpSync = function (key, from) { var num = document.getElementById('hpL_' + key), sl = document.getElementById('hpLs_' + key); if (num && sl) { if (from === 'slider') num.value = sl.value; else sl.value = num.value; } computeHiring(); };
     window.hpUseLive = function (key, val) { var num = document.getElementById('hpL_' + key), sl = document.getElementById('hpLs_' + key); if (num) num.value = val; if (sl) sl.value = val; computeHiring(); };
     window.hpSetView = function (v) { localStorage.setItem('hp6_view', v); computeHiring(); };
+    window.hpSetPayView = function (v) { localStorage.setItem('hp6_payView', v); computeHiring(); };
     window.hpSetPattern = function (v) { localStorage.setItem('hp6_pattern', v); computeHiring(); };
     window.hpToggleApplyQ = function (on) { localStorage.setItem('hp6_applyQ', on ? '1' : '0'); computeHiring(); };
     // Editing the TOTAL ad spend scales the three channels proportionally (keeps your channel mix)
@@ -3409,7 +3410,7 @@
         return rows;
       }
       var rows = run(true), base = run(false);
-      rows.forEach(function (r, i) { r.perOwnerBase = base[i].perOwner; r.drawBase = base[i].draw; r.netBase = base[i].net; r.cumBase = base[i].cum; });
+      rows.forEach(function (r, i) { r.perOwnerBase = base[i].perOwner; r.ownerCommBase = base[i].ownerComm; r.ownerDrawBase = base[i].ownerDraw; r.drawBase = base[i].draw; r.netBase = base[i].net; r.cumBase = base[i].cum; });
 
       // Roll-up strip (average month, before hires)
       var chAdTotal = 0, chRevTotal = 0, parts = [];
@@ -3421,10 +3422,10 @@
       var chips = document.getElementById('hpPatChips');
       if (chips && ref.pattern && ref.pattern.length) chips.innerHTML = HP_MN.map(function (m, i) { var p = ref.pattern[i]; if (p === null || p === undefined) return ''; var eff = 1 + (p - 1) * v.swing; return '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;margin:2px 3px 0 0;background:' + (eff >= 1 ? '#E8F1FB' : '#FBECEC') + ';color:' + (eff >= 1 ? '#1B4F8A' : '#8A1B1B') + ';">' + m + ' ' + eff.toFixed(2) + 'x</span>'; }).join('');
 
-      function aggregate(rs) {
-        if (view !== 'quarter') return rs;
+      function aggregate(rs, mode) {
+        if (mode !== 'quarter') return rs;
         var g = {}, order = [];
-        var sumKeys = ['ad','acqAd','rev','acqRev','oc','dPay','aPay','exp','net','netBase','draw','drawBase','ownerComm','ownerDraw','perOwner','perOwnerBase','mult'];
+        var sumKeys = ['ad','acqAd','rev','acqRev','oc','dPay','aPay','exp','net','netBase','draw','drawBase','ownerComm','ownerDraw','ownerCommBase','ownerDrawBase','perOwner','perOwnerBase','mult'];
         rs.forEach(function (r) {
           var q = hpQKey(r.m);
           if (!g[q.key]) { var o = { m: q.label, n: 0, nD: 0, nA: 0 }; sumKeys.forEach(function (k) { o[k] = 0; }); g[q.key] = o; order.push(q.key); }
@@ -3433,7 +3434,10 @@
         });
         return order.map(function (k) { var a = g[k]; a.mult = a.mult / a.n; if (a.n < 3) a.m = a.m + ' (' + a.n + ' mo)'; return a; });
       }
-      var agg = aggregate(rows);
+      var agg = aggregate(rows, view);
+      var payView = localStorage.getItem('hp6_payView') || 'quarter';
+      var aggPay = aggregate(rows, payView);
+      var mkToggle = function (cur, fn) { return '<div style="display:flex;gap:4px;background:#e8edf3;border-radius:6px;padding:3px;">' + ['month', 'quarter'].map(function (o) { return '<button onclick="' + fn + '(\'' + o + '\')" style="padding:5px 14px;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;background:' + (cur === o ? '#2E75B6' : 'transparent') + ';color:' + (cur === o ? 'white' : '#666') + ';">' + (o === 'month' ? 'Monthly' : 'Quarterly') + '</button>'; }).join('') + '</div>'; };
       var sum = function (arr, k) { return arr.reduce(function (s, r) { return s + r[k]; }, 0); };
       var avg = function (arr, k) { return arr.length ? sum(arr, k) / arr.length : 0; };
       var last = rows[rows.length - 1];
@@ -3453,12 +3457,37 @@
       var s = secT('What Each Owner Gets Paid &mdash; next ' + v.horizon + ' months (' + hiresLabel + (usePattern ? ', historical pattern ' + Math.round(v.swing * 100) + '%' : '') + ')', '#548235',
         'Per owner = your ' + (v.ownerComm * 100 / HP_OWNERS).toFixed(1) + '% commission on every deal + your third of each quarter-end draw. Starting cash ' + fmt(v.startCash) + (applyQ ? ' = Financials tab EOQ after the ' + fin.qLabel + ' draw' : ' = cash in bank today (Tiller)') + '.');
       if (timeline) s += '<div style="margin:-2px 0 10px;">' + timeline + '</div>';
-      s += '<div style="' + grid + '">';
-      s += card('Total per owner', fmt(totOwner), '#548235', 'no hires: ' + fmt(totOwnerBase) + ' &middot; <b style="color:' + pos(totOwner - totOwnerBase) + ';">' + fmtSigned(totOwner - totOwnerBase) + '</b> from hiring');
-      s += card('Commission (per owner)', fmt(sum(rows, 'ownerComm')), '#2E75B6', fmt(avg(rows, 'ownerComm')) + '/mo avg &middot; no hires: ' + fmt(sum(base, 'ownerComm')));
-      s += card('Quarterly draws (per owner)', fmt(sum(rows, 'ownerDraw')), '#B8860B', qRows.length + ' draw' + (qRows.length === 1 ? '' : 's') + ' &middot; no hires: ' + fmt(sum(base, 'ownerDraw')));
-      s += card('Average per month', fmt(totOwner / rows.length), '#548235', 'no hires: ' + fmt(totOwnerBase / rows.length));
-      s += '</div>';
+      // Side-by-side: NO HIRES vs WITH HIRES (per owner, and all 3)
+      var diffOwner = totOwner - totOwnerBase;
+      var mini = function (label, val, color) { return '<div style="background:rgba(255,255,255,0.7);border-radius:6px;padding:8px 10px;border-left:3px solid ' + color + ';"><div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.8px;">' + label + '</div><div style="font-size:16px;font-weight:800;color:#1B2A4A;">' + fmt(val) + '</div></div>'; };
+      var cmpPanel = function (title, color, bg, tot, comm, draws, sub) {
+        return '<div style="background:' + bg + ';border-radius:10px;padding:16px;border-top:4px solid ' + color + ';box-shadow:0 1px 3px rgba(0,0,0,0.08);">' +
+          '<div style="font-size:11px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' +
+          '<div style="font-size:32px;font-weight:800;color:#1B2A4A;margin:6px 0 0;line-height:1.1;">' + fmt(tot) + '</div>' +
+          '<div style="font-size:11px;color:#888;">each owner, next ' + v.horizon + ' months &middot; ' + fmt(tot / rows.length) + '/mo avg</div>' +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">' + mini('Commission', comm, '#2E75B6') + mini('Quarterly draws', draws, '#B8860B') + '</div>' +
+          '<div style="margin-top:10px;font-size:12px;color:#555;">All 3 owners combined: <b>' + fmt(tot * HP_OWNERS) + '</b></div>' + (sub ? '<div style="font-size:11px;color:#888;margin-top:4px;">' + sub + '</div>' : '') + '</div>';
+      };
+      // Payback: cumulative per-owner difference (with - no hires)
+      var cumDiff = 0, cumDiffSeries = rows.map(function (r) { cumDiff += r.perOwner - r.perOwnerBase; return cumDiff; });
+      var minIdx = 0; cumDiffSeries.forEach(function (x, i) { if (x < cumDiffSeries[minIdx]) minIdx = i; });
+      var payback = null; for (var pi = minIdx; pi < cumDiffSeries.length; pi++) { if (cumDiffSeries[pi] >= 0 && cumDiffSeries[minIdx] < 0) { payback = rows[pi].m; break; } }
+      var impactNote = !hires.length ? 'Add a hire above to compare.'
+        : cumDiffSeries[minIdx] >= 0 ? 'Ahead from the first month.'
+        : payback ? 'Behind at first (low point ' + fmt(cumDiffSeries[minIdx]) + ' each), catches up by <b>' + payback + '</b>.'
+        : 'Does not pay back within ' + v.horizon + ' months (low point ' + fmt(cumDiffSeries[minIdx]) + ' each).';
+      var impactCard = '<div style="background:white;border-radius:10px;padding:16px;min-width:220px;max-width:280px;border-top:4px solid ' + pos(diffOwner) + ';box-shadow:0 1px 3px rgba(0,0,0,0.08);display:flex;flex-direction:column;justify-content:center;text-align:center;">' +
+        '<div style="font-size:11px;font-weight:800;color:#888;text-transform:uppercase;letter-spacing:1px;">Hiring impact</div>' +
+        '<div style="font-size:32px;font-weight:800;color:' + pos(diffOwner) + ';margin:6px 0 0;line-height:1.1;">' + (hires.length ? fmtSigned(diffOwner) : '&mdash;') + '</div>' +
+        '<div style="font-size:11px;color:#888;">each owner &middot; ' + (hires.length ? fmtSigned(diffOwner * HP_OWNERS) + ' all 3' : '') + '</div>' +
+        '<div style="font-size:12px;color:#555;margin-top:12px;">' + impactNote + '</div></div>';
+      s += '<div style="display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch;">' +
+        cmpPanel('No hires', '#7F8C9A', '#F4F6F8', totOwnerBase, sum(base, 'ownerComm'), sum(base, 'ownerDraw'), 'Today&rsquo;s spend and ROAS, nobody added') +
+        impactCard +
+        cmpPanel('With hires', '#548235', '#F3F9EE', totOwner, sum(rows, 'ownerComm'), sum(rows, 'ownerDraw'), hires.length ? hiresLabel + ' on the roster above' : 'No one on the roster yet') + '</div>';
+      // Chart: each owner's pay per period, no hires vs with hires (commission + draw stacked), with cumulative difference line
+      s += '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:16px 0 6px;"><div style="font-size:11px;color:#999;">Each owner&rsquo;s pay per ' + (payView === 'quarter' ? 'quarter' : 'month') + ': gray = no hires, green/gold = with hires (commission + draw share). Red/green line = running total of what hiring has added or cost each owner.</div>' + mkToggle(payView, 'hpSetPayView') + '</div>';
+      s += '<div class="chart-container" style="height:300px;background:white;border-radius:10px;padding:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);"><canvas id="hpPayChart"></canvas></div>';
       if (qRows.length) {
         s += '<div style="margin-top:10px;background:white;border-radius:10px;padding:10px 14px;box-shadow:0 1px 3px rgba(0,0,0,0.08);"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Draw schedule (per owner &middot; total for all 3 in parentheses)</div>';
         s += qRows.map(function (r) { return '<span style="display:inline-block;padding:4px 10px;border-radius:12px;font-size:11px;font-weight:700;margin:2px 6px 2px 0;background:' + (r.draw > 0 ? '#FFF6D6' : '#f0f0f0') + ';color:' + (r.draw > 0 ? '#7A5A00' : '#999') + ';">' + r.m + ': ' + fmt(r.ownerDraw) + ' <span style="font-weight:500;">(' + fmt(r.draw) + ')</span>' + (Math.abs(r.draw - r.drawBase) > 1 ? ' <span style="font-weight:500;color:#888;">no hires ' + fmt(r.drawBase / HP_OWNERS) + '</span>' : '') + '</span>'; }).join('');
@@ -3487,7 +3516,21 @@
       if (usePattern) s += '<div style="font-size:11px;color:#999;margin-top:6px;">Historical pattern on: revenue ranges from ' + fmt(Math.min.apply(null, rows.map(function (r) { return r.rev; }))) + ' to ' + fmt(Math.max.apply(null, rows.map(function (r) { return r.rev; }))) + ' a month; cash low point ' + fmt(Math.min.apply(null, rows.map(function (r) { return r.cum; }))) + '.</div>';
       resEl.innerHTML = s;
 
-      var toggle = '<div style="display:flex;gap:4px;background:#e8edf3;border-radius:6px;padding:3px;">' + ['month', 'quarter'].map(function (o) { return '<button onclick="hpSetView(\'' + o + '\')" style="padding:5px 14px;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;background:' + (view === o ? '#2E75B6' : 'transparent') + ';color:' + (view === o ? 'white' : '#666') + ';">' + (o === 'month' ? 'Monthly' : 'Quarterly') + '</button>'; }).join('') + '</div>';
+      // Owner pay chart (no hires vs with hires)
+      setTimeout(function () {
+        var pc = document.getElementById('hpPayChart'); if (!pc) return; destroyChart('hpPayChart');
+        var cd = 0, cdSeries = aggPay.map(function (r) { cd += r.perOwner - r.perOwnerBase; return Math.round(cd); });
+        var pds = [
+          { type: 'bar', label: 'No hires - commission', data: aggPay.map(function (r) { return Math.round(r.ownerCommBase); }), backgroundColor: '#9AA5B1', stack: 'no', borderRadius: 2, yAxisID: 'y', order: 3 },
+          { type: 'bar', label: 'No hires - draw share', data: aggPay.map(function (r) { return Math.round(r.ownerDrawBase); }), backgroundColor: '#CFD6DD', stack: 'no', borderRadius: 2, yAxisID: 'y', order: 3 },
+          { type: 'bar', label: 'With hires - commission', data: aggPay.map(function (r) { return Math.round(r.ownerComm); }), backgroundColor: '#548235', stack: 'with', borderRadius: 2, yAxisID: 'y', order: 3 },
+          { type: 'bar', label: 'With hires - draw share', data: aggPay.map(function (r) { return Math.round(r.ownerDraw); }), backgroundColor: '#E2B93B', stack: 'with', borderRadius: 2, yAxisID: 'y', order: 3 }
+        ];
+        if (hires.length) pds.push({ type: 'line', label: 'Running total: hiring effect per owner', data: cdSeries, borderColor: cdSeries[cdSeries.length - 1] >= 0 ? '#2E7D32' : '#C00000', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [5, 4], pointRadius: 3, tension: 0.15, yAxisID: 'y1', order: 1 });
+        chartsCache['hpPayChart'] = new Chart(pc.getContext('2d'), { data: { labels: aggPay.map(function (r) { return r.m; }), datasets: pds }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: function (ctx) { return ctx.dataset.label + ': ' + fmt(ctx.parsed.y); }, footer: function (items) { var no = 0, wi = 0; items.forEach(function (it) { if (it.dataset.stack === 'no') no += it.parsed.y; else if (it.dataset.stack === 'with') wi += it.parsed.y; }); return 'No hires ' + fmt(no) + '  |  With hires ' + fmt(wi) + '  |  ' + (wi - no >= 0 ? '+' : '-') + fmt(Math.abs(wi - no)); } } } }, scales: { x: { stacked: true }, y: { stacked: true, position: 'left', title: { display: true, text: 'Each owner gets paid ($ per ' + (payView === 'quarter' ? 'quarter' : 'month') + ')' }, ticks: { callback: function (val) { return '$' + (val / 1000).toFixed(0) + 'k'; } } }, y1: { display: !!hires.length, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Hiring effect, running total ($ each)' }, ticks: { callback: function (val) { return (val < 0 ? '-' : '') + '$' + (Math.abs(val) / 1000).toFixed(0) + 'k'; } } } } } });
+      }, 10);
+
+      var toggle = mkToggle(view, 'hpSetView');
       var cw = document.getElementById('hpChartWrap');
       if (cw) {
         cw.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:24px 0 8px;"><div><div style="font-size:13px;font-weight:800;color:#1B2A4A;text-transform:uppercase;letter-spacing:1px;">Hire vs. No Hire &mdash; by ' + (view === 'quarter' ? 'Quarter' : 'Month') + (usePattern ? ' &middot; historical pattern' : '') + '</div><div style="font-size:11px;color:#999;margin-top:2px;">LEFT axis ($ per period): green solid = each owner gets paid WITH hires, gray dashed = NO hires (commission + draw share' + (view === 'month' ? ' &mdash; the spikes are quarter-end draws' : '') + '), bars = rep pay. RIGHT axis: blue = cash in bank after draws, with vs. without hires.</div></div>' + toggle + '</div><div class="chart-container" style="height:340px;"><canvas id="hpChart"></canvas></div>';
