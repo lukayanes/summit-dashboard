@@ -3142,16 +3142,47 @@
           ref.otherOpex6 = ref.otherHist.reduce(function (s, x) { return s + x.v; }, 0) / ref.otherHist.length;
           last3.forEach(function (x) { Object.keys(x.bySec).forEach(function (k) { ref.otherBreak[k] = (ref.otherBreak[k] || 0) + x.bySec[k] / last3.length; }); });
         }
-        // Historical revenue pattern: last 12 completed months of income, as a multiplier of their mean, by calendar month
+        // Growth trend + revenue pattern from the last 12 completed months of Tiller income.
+        //   Trend  = straight line through the 12 months -> growth % per quarter (the GROWTH lever default)
+        //   Pattern = each month vs. the trend line (not vs. the flat average), so the small early months
+        //             read as "small because we were smaller", not "fall is slow"
         var last12 = allLabs.slice(-12);
         var incs = last12.map(function (x) { return EXPENSE_DATA.monthlyTotals[x.l].totalIncome || 0; });
         var mean = incs.length ? incs.reduce(function (s, v) { return s + v; }, 0) / incs.length : 0;
+        ref.growthQ = 0; ref.trend = null; ref.patternDetrended = false;
         if (mean > 0 && incs.length >= 6) {
+          var n = incs.length, sx = 0, sy = 0, sxx = 0, sxy = 0;
+          incs.forEach(function (y, i) { sx += i; sy += y; sxx += i * i; sxy += i * y; });
+          var slope = (n * sxy - sx * sy) / (n * sxx - sx * sx), icpt = (sy - slope * sx) / n;
+          var trendAt = function (i) { return icpt + slope * i; };
+          var levelNow = trendAt(n - 1), levelNext = trendAt(n - 1 + 12);
+          var useTrend = slope > 0 && levelNow > 0;
+          if (useTrend) {
+            ref.trend = { slope: slope, now: levelNow, next12: levelNext, first: trendAt(0), from: last12[0].l, to: last12[n - 1].l };
+            ref.growthQ = Math.max(0, Math.min(50, Math.round((Math.pow(levelNext / levelNow, 1 / 4) - 1) * 100)));
+          }
+          var raw = incs.map(function (y, i) { var b = useTrend ? Math.max(trendAt(i), mean * 0.25) : mean; return y / b; });
+          var rm = raw.reduce(function (s, x) { return s + x; }, 0) / raw.length;
           ref.pattern = new Array(12).fill(null);
-          last12.forEach(function (x, i) { var mi = HP_MN.indexOf(x.l.split(' ')[0]); if (mi >= 0) ref.pattern[mi] = incs[i] / mean; });
+          last12.forEach(function (x, i) { var mi = HP_MN.indexOf(x.l.split(' ')[0]); if (mi >= 0) ref.pattern[mi] = raw[i] / rm; });
           ref.patternMonths = last12.map(function (x) { return x.l; });
+          ref.patternDetrended = useTrend;
+          ref.hist12 = last12.map(function (x, i) { return { l: x.l, v: incs[i] }; });
         }
       }
+      // Pipeline from the Deal Ledger: Escrow + Under Contract/Listed deals bucketed by close month
+      ref.pipe = {}; ref.pipePast = { esc: 0, uc: 0, nEsc: 0, nUc: 0 };
+      var nowD = new Date(), curEndNum = ymdNum(new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0));
+      (DEALS || []).forEach(function (dl) {
+        var st = (dl.status || '').trim().toLowerCase(); if (!dl.closeDate) return;
+        var isEsc = st === 'escrow', isUc = st === 'under contract' || st === 'listed/posted'; if (!isEsc && !isUc) return;
+        var num = closeDateNum(dl.closeDate); if (num >= 99999999) return;
+        var amt = dl.escrow || 0;
+        var bucket;
+        if (num <= curEndNum) bucket = ref.pipePast;
+        else { var lab = HP_MN[Math.floor((num % 10000) / 100) - 1] + ' ' + Math.floor(num / 10000); if (!ref.pipe[lab]) ref.pipe[lab] = { esc: 0, uc: 0, nEsc: 0, nUc: 0 }; bucket = ref.pipe[lab]; }
+        if (isEsc) { bucket.esc += amt; bucket.nEsc++; } else { bucket.uc += amt; bucket.nUc++; }
+      });
       return ref;
     }
 
@@ -3180,7 +3211,8 @@
     window.hpSetView = function (v) { localStorage.setItem('hp6_view', v); computeHiring(); };
     window.hpSetPayView = function (v) { localStorage.setItem('hp6_payView', v); computeHiring(); };
     window.hpSetPattern = function (v) { localStorage.setItem('hp6_pattern', v); computeHiring(); };
-    window.hpToggleApplyQ = function (on) { localStorage.setItem('hp6_applyQ', on ? '1' : '0'); computeHiring(); };
+    window.hpToggleApplyQ = function (on) { localStorage.setItem('hp6_applyQ', on ? '1' : '0'); hpRerenderKeepingLevers(); };
+    window.hpToggleUsePipe = function (on) { localStorage.setItem('hp6_usePipe', on ? '1' : '0'); computeHiring(); };
     // Editing the TOTAL ad spend scales the three channels proportionally (keeps your channel mix)
     window.hpSetTotalAd = function (val) {
       var target = parseFloat(val); if (isNaN(target) || target < 0) return;
@@ -3220,7 +3252,7 @@
     function hpRerenderKeepingLevers() {
       var keep = {};
       HP_CH.forEach(function (c) { keep[c.key + 'Spend'] = hpN('hpL_' + c.key + 'Spend', null); keep[c.key + 'Roas'] = hpN('hpL_' + c.key + 'Roas', null); });
-      ['otherExp', 'ownerComm', 'swing', 'burnMo', 'burnMonths'].forEach(function (k) { keep[k] = hpN('hpL_' + k, null); });
+      ['otherExp', 'ownerComm', 'swing', 'burnMo', 'burnMonths', 'growth', 'ucPct'].forEach(function (k) { keep[k] = hpN('hpL_' + k, null); });
       HP_SESSION = keep; renderHiringTab(); HP_SESSION = null;
     }
 
@@ -3237,7 +3269,9 @@
         pattern: hpG('pattern', 'steady'), swing: has(ses.swing) ? ses.swing : hpG('swing', 60),
         burnMo: has(ses.burnMo) ? ses.burnMo : r0(fin.burnMonthly),          // from Financials tab on load
         burnMonths: has(ses.burnMonths) ? ses.burnMonths : fin.burnMonths,   // from Financials tab on load
-        applyQ: hpG('applyQ', '1') === '1'
+        applyQ: hpG('applyQ', '1') === '1',
+        growth: has(ses.growth) ? ses.growth : hpG('growth', ref.growthQ || 0),
+        usePipe: hpG('usePipe', '1') === '1', pipeWin: hpG('pipeWin', 2), ucPct: has(ses.ucPct) ? ses.ucPct : hpG('ucPct', 50)
       };
       HP_CH.forEach(function (c) {
         var live = ref.ch[c.key] || {};
@@ -3287,18 +3321,36 @@
       h += '</div>';
 
       // Revenue pattern (lumpiness)
-      var patBtn = function (key, label) { return '<button onclick="hpSetPattern(\'' + key + '\')" style="padding:6px 12px;border:none;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;background:' + (d.pattern === key ? '#2E75B6' : 'transparent') + ';color:' + (d.pattern === key ? 'white' : '#666') + ';">' + label + '</button>'; };
+      var patBtn = function (key, label) { return '<button type="button" data-hp-pat="' + key + '" onclick="hpSetPattern(\'' + key + '\')" style="padding:8px 14px;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;background:' + (d.pattern === key ? '#2E75B6' : 'transparent') + ';color:' + (d.pattern === key ? 'white' : '#666') + ';">' + label + '</button>'; };
       var patChips = '';
       if (ref.pattern.length) {
         var sw = parseFloat(d.swing) / 100;
         patChips = HP_MN.map(function (m, i) { var p = ref.pattern[i]; if (p === null || p === undefined) return ''; var eff = 1 + (p - 1) * sw; return '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;margin:2px 3px 0 0;background:' + (eff >= 1 ? '#E8F1FB' : '#FBECEC') + ';color:' + (eff >= 1 ? '#1B4F8A' : '#8A1B1B') + ';">' + m + ' ' + eff.toFixed(2) + 'x</span>'; }).join('');
       }
-      h += '<div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-top:12px;">';
-      h += '<div class="kpi-card" style="border-left:4px solid #7030A0;padding:12px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Revenue Pattern</div>' +
+      // Growth lever (default = your Tiller income trend) + pattern + pipeline
+      var gHint;
+      if (ref.trend) {
+        gHint = 'Tiller income trend ' + ref.trend.from + ' &rarr; ' + ref.trend.to + ': <b>+' + fmt(ref.trend.slope) + '/mo</b> (' + fmt(ref.trend.first) + ' &rarr; ' + fmt(ref.trend.now) + ' trend level). Keeping that line going = ' +
+          '<a href="javascript:void(0)" onclick="hpUseLive(\'growth\',' + ref.growthQ + ')" style="color:#2E75B6;font-weight:600;">+' + ref.growthQ + '%/qtr</a> &middot; <a href="javascript:void(0)" onclick="hpUseLive(\'growth\',0)" style="color:#2E75B6;font-weight:600;">flat 0%</a>. Compounds on revenue on top of spend &times; ROAS; ad spend stays at your levers.';
+      } else gHint = 'Compounds on revenue on top of spend &times; ROAS. No upward trend found in Tiller history, so the default is 0%.';
+      h += '<div style="display:grid;grid-template-columns:1.2fr 1fr 2fr 1fr;gap:12px;margin-top:12px;">';
+      h += lever('Growth % per Quarter', 'growth', d.growth, 0, 50, 1, gHint, '#548235');
+      h += '<div class="kpi-card" style="border-left:4px solid #7030A0;padding:12px;grid-column:span 2;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Revenue Pattern</div>' +
            '<div style="display:flex;gap:4px;background:#e8edf3;border-radius:6px;padding:3px;width:max-content;">' + patBtn('steady', 'Steady (spend &times; ROAS every month)') + patBtn('hist', 'Historical up &amp; down') + '</div>' +
-           (ref.pattern.length ? '<div style="font-size:11px;color:#999;margin-top:8px;">Replays your last 12 months of Tiller revenue (' + ref.patternMonths[0] + ' &rarr; ' + ref.patternMonths[ref.patternMonths.length - 1] + ') by calendar month, scaled so the average still equals spend &times; ROAS. Multiplier applied each month:</div><div id="hpPatChips" style="margin-top:4px;">' + patChips + '</div>' : '<div style="font-size:11px;color:#999;margin-top:8px;">Needs 6+ months of Tiller income to build a pattern.</div>') + '</div>';
+           (ref.pattern.length ? '<div style="font-size:11px;color:#999;margin-top:8px;">Replays the up-and-down shape of your last 12 months of Tiller revenue (' + ref.patternMonths[0] + ' &rarr; ' + ref.patternMonths[ref.patternMonths.length - 1] + ') by calendar month' + (ref.patternDetrended ? ', measured against your growth trend so the small early months don&rsquo;t drag next year down' : '') + '. Average still equals spend &times; ROAS (&times; growth). Multiplier each month:</div><div id="hpPatChips" style="margin-top:4px;">' + patChips + '</div>' : '<div style="font-size:11px;color:#999;margin-top:8px;">Needs 6+ months of Tiller income to build a pattern.</div>') + '</div>';
       h += lever('Swing Strength %', 'swing', d.swing, 0, 100, 5, '100% = your full historical swings; 0% = flat. Only used in Historical mode.', '#7030A0');
       h += '</div>';
+      // Pipeline: what is already in escrow / under contract, by close month
+      var pipeLabs = Object.keys(ref.pipe).filter(function (l) { return opts.indexOf(l) >= 0; }).sort(function (a, b) { return opts.indexOf(a) - opts.indexOf(b); });
+      var pipeChips = pipeLabs.map(function (l) { var p = ref.pipe[l]; return '<span style="display:inline-block;padding:4px 10px;border-radius:12px;font-size:11px;font-weight:700;margin:2px 6px 2px 0;background:#E8F1FB;color:#1B4F8A;">' + l + ': ' + (p.esc ? fmt(p.esc) + ' escrow (' + p.nEsc + ')' : '') + (p.esc && p.uc ? ' + ' : '') + (p.uc ? fmt(p.uc) + ' under contract (' + p.nUc + ')' : '') + '</span>'; }).join('');
+      var pastNote = (ref.pipePast.esc || ref.pipePast.uc) ? '<span style="display:inline-block;padding:4px 10px;border-radius:12px;font-size:11px;font-weight:700;margin:2px 6px 2px 0;background:#f0f0f0;color:#777;">Closing by end of ' + HP_MN[new Date().getMonth()] + ': ' + fmt(ref.pipePast.esc) + ' escrow' + (ref.pipePast.uc ? ' + ' + fmt(ref.pipePast.uc) + ' under contract' : '') + ' &mdash; ' + (d.applyQ ? 'already in the Financials tab EOQ start' : 'added to ' + opts[0]) + '</span>' : '';
+      h += '<div class="kpi-card" style="border-left:4px solid #2E75B6;padding:12px;margin-top:12px;">' +
+           '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">' +
+           '<label style="display:flex;gap:8px;align-items:center;font-size:12px;color:#444;cursor:pointer;font-weight:700;"><input type="checkbox" id="hpUsePipe"' + (d.usePipe ? ' checked' : '') + ' onchange="hpToggleUsePipe(this.checked)">Use the Deal Ledger pipeline for the first months</label>' +
+           '<div style="display:flex;gap:14px;align-items:center;font-size:11px;color:#666;">Pipeline months: <select id="hpPipeWin" onchange="computeHiring()" style="padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-weight:700;">' + [1, 2, 3, 4].map(function (o) { return '<option value="' + o + '"' + (String(o) === String(d.pipeWin) ? ' selected' : '') + '>' + o + '</option>'; }).join('') + '</select>' +
+           'Under contract counted at <input id="hpL_ucPct" type="number" min="0" max="100" step="5" value="' + d.ucPct + '" oninput="computeHiring()" style="width:56px;padding:4px;border:1px solid #ddd;border-radius:4px;font-weight:700;text-align:center;">%</div></div>' +
+           '<div style="font-size:11px;color:#999;margin-top:6px;">Deals in escrow are money already earned, they just have not closed yet. For the first pipeline months revenue = what is actually closing (escrow at 100% + under contract at the % above) instead of spend &times; ROAS, because new ad spend takes a couple of months to turn into closings. After that, the model uses the larger of the two so a known closing is never dropped.</div>' +
+           '<div style="margin-top:6px;">' + (pipeChips || '<span style="font-size:11px;color:#999;">No escrow / under-contract deals with close dates in the projection window.</span>') + pastNote + '</div></div>';
 
       // EXPENSES + CASH
       var oeHint = 'Everything in Tiller except ad spend &amp; commissions';
@@ -3373,14 +3425,17 @@
         otherExp: hpN('hpL_otherExp', 2000),
         startCash: applyQ ? (fin.eoq - Math.max(0, fin.draw)) : cashToday,
         pattern: localStorage.getItem('hp6_pattern') || 'steady', swing: Math.max(0, Math.min(100, hpN('hpL_swing', 60))) / 100,
-        burnMo: hpN('hpL_burnMo', fin.burnMonthly), burnMonths: Math.min(6, Math.max(4, hpN('hpL_burnMonths', fin.burnMonths))), ch: {}
+        burnMo: hpN('hpL_burnMo', fin.burnMonthly), burnMonths: Math.min(6, Math.max(4, hpN('hpL_burnMonths', fin.burnMonths))), ch: {},
+        growth: Math.max(0, hpN('hpL_growth', ref.growthQ || 0)) / 100,
+        usePipe: (localStorage.getItem('hp6_usePipe') || '1') === '1', pipeWin: Math.round(hpN('hpPipeWin', 2)), ucPct: Math.max(0, Math.min(100, hpN('hpL_ucPct', 50))) / 100
       };
       v.reserve = v.burnMo * v.burnMonths;
       HP_CH.forEach(function (c) { v.ch[c.key] = { spend: hpN('hpL_' + c.key + 'Spend', 0), roas: hpN('hpL_' + c.key + 'Roas', 0) }; });
-      // Persist only the non-Tiller levers (ROAS, commissions, swing, horizon). Spend, other expenses and draw settings reload from Tiller / Financials.
-      var keys = ['ownerComm', 'swing']; HP_CH.forEach(function (c) { keys.push(c.key + 'Roas'); });
+      // Persist only the assumption levers (ROAS, growth, commissions, swing, horizon, pipeline settings). Spend, other expenses and draw settings reload from Tiller / Financials.
+      var keys = ['ownerComm', 'swing', 'growth', 'ucPct']; HP_CH.forEach(function (c) { keys.push(c.key + 'Roas'); });
       keys.forEach(function (k) { var el = document.getElementById('hpL_' + k); if (el) localStorage.setItem('hp6_' + k, el.value); });
       var hz = document.getElementById('hpHorizon'); if (hz) localStorage.setItem('hp6_horizon', hz.value);
+      var pw = document.getElementById('hpPipeWin'); if (pw) localStorage.setItem('hp6_pipeWin', pw.value);
       var view = localStorage.getItem('hp6_view') || 'month';
 
       var months = hpMonths(v.horizon);
@@ -3388,24 +3443,37 @@
       var hireIdx = hires.map(function (hr) { return startIdx(hr.start); });
       var usePattern = v.pattern === 'hist' && ref.pattern && ref.pattern.length;
       var multFor = function (label) { if (!usePattern) return 1; var mi = HP_MN.indexOf(label.split(' ')[0]); var p = ref.pattern[mi]; if (p === null || p === undefined) return 1; return Math.max(0, 1 + (p - 1) * v.swing); };
+      var growthFor = function (i) { return Math.pow(1 + v.growth, i / 3); };   // compounds at the quarterly rate, month by month
+      var pipeFor = function (m, i) {   // known closings from the Deal Ledger for this month (escrow 100% + under contract at ucPct)
+        var p = (ref.pipe && ref.pipe[m]) || { esc: 0, uc: 0 }, val = p.esc + p.uc * v.ucPct;
+        if (i === 0 && !applyQ && ref.pipePast) val += ref.pipePast.esc + ref.pipePast.uc * v.ucPct;   // overdue / this-month closings not already in the start cash
+        return val;
+      };
 
       function run(withHires) {
         var rows = [], cum = v.startCash;
         months.forEach(function (m, i) {
-          var mult = multFor(m);
+          var mult = multFor(m), gf = growthFor(i);
           var baseAd = 0, baseRev = 0;
-          HP_CH.forEach(function (c) { baseAd += v.ch[c.key].spend; baseRev += v.ch[c.key].spend * v.ch[c.key].roas * mult; });
+          HP_CH.forEach(function (c) { baseAd += v.ch[c.key].spend; baseRev += v.ch[c.key].spend * v.ch[c.key].roas * mult * gf; });
           var active = withHires ? hires.filter(function (hr, k) { return i >= hireIdx[k]; }) : [];
           var acqs = active.filter(function (hr) { return hr.type === 'acq'; }), dispos = active.filter(function (hr) { return hr.type === 'dispo'; });
           var acqAd = 0, acqRev = 0, aPay = 0;
-          acqs.forEach(function (hr) { var ad = hr.ad || 0, rv = ad * (hr.roas || 0) * mult; acqAd += ad; acqRev += rv; aPay += (hr.base || 0) + rv * (hr.comm || 0) / 100; });
-          var ad = baseAd + acqAd, rev = baseRev + acqRev;
+          acqs.forEach(function (hr) { var ad = hr.ad || 0, rv = ad * (hr.roas || 0) * mult * gf; acqAd += ad; acqRev += rv; aPay += (hr.base || 0) + rv * (hr.comm || 0) / 100; });
+          var ad = baseAd + acqAd, modeled = baseRev + acqRev, rev = modeled, src = 'model';
+          if (v.usePipe) {
+            var known = pipeFor(m, i);
+            if (i < v.pipeWin) { rev = known; src = 'pipe'; }                 // first months: what is actually closing
+            else if (known > modeled) { rev = known; src = 'pipe'; }          // later: never drop a known closing
+            if (src === 'pipe' && modeled > 0) { var sc = rev / modeled; baseRev *= sc; acqRev *= sc; aPay = 0; acqs.forEach(function (hr) { var rv = (hr.ad || 0) * (hr.roas || 0) * mult * gf * sc; aPay += (hr.base || 0) + rv * (hr.comm || 0) / 100; }); }
+            else if (src === 'pipe') { baseRev = rev; acqRev = 0; }
+          }
           var dPay = 0; if (dispos.length) { var share = rev / dispos.length; dispos.forEach(function (hr) { dPay += (hr.base || 0) + share * (hr.comm || 0) / 100; }); }
           var oc = rev * v.ownerComm;
           var net = rev - ad - v.otherExp - oc - dPay - aPay; cum += net;
           var q = hpQKey(m), draw = 0;
           if (q.isEnd) { draw = Math.max(0, cum - v.reserve); cum -= draw; }
-          rows.push({ m: m, isQ: q.isEnd, mult: mult, ad: ad, acqAd: acqAd, rev: rev, acqRev: acqRev, oc: oc, dPay: dPay, aPay: aPay, exp: v.otherExp, net: net, draw: draw, ownerComm: oc / HP_OWNERS, ownerDraw: draw / HP_OWNERS, perOwner: (oc + draw) / HP_OWNERS, cum: cum, nD: dispos.length, nA: acqs.length });
+          rows.push({ m: m, isQ: q.isEnd, mult: mult, gf: gf, nPipe: src === 'pipe' ? 1 : 0, ad: ad, acqAd: acqAd, rev: rev, acqRev: acqRev, oc: oc, dPay: dPay, aPay: aPay, exp: v.otherExp, net: net, draw: draw, ownerComm: oc / HP_OWNERS, ownerDraw: draw / HP_OWNERS, perOwner: (oc + draw) / HP_OWNERS, cum: cum, nD: dispos.length, nA: acqs.length });
         });
         return rows;
       }
@@ -3419,20 +3487,22 @@
       var totEl = document.getElementById('hpL_totalAd'); if (totEl && document.activeElement !== totEl) totEl.value = Math.round(chAdTotal);
       setT('hpChTotalAdSub', parts.join(' + ')); setT('hpChTotalRev', fmt(chRevTotal)); setT('hpChBlended', (chAdTotal > 0 ? (chRevTotal / chAdTotal).toFixed(2) : '0.00') + 'x');
       setT('hpReserve', fmt(v.reserve));
+      // Highlight the selected Revenue Pattern button in place
+      Array.prototype.forEach.call(document.querySelectorAll('[data-hp-pat]'), function (b) { var on = b.getAttribute('data-hp-pat') === v.pattern; b.style.background = on ? '#2E75B6' : 'transparent'; b.style.color = on ? 'white' : '#666'; });
       var chips = document.getElementById('hpPatChips');
       if (chips && ref.pattern && ref.pattern.length) chips.innerHTML = HP_MN.map(function (m, i) { var p = ref.pattern[i]; if (p === null || p === undefined) return ''; var eff = 1 + (p - 1) * v.swing; return '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;margin:2px 3px 0 0;background:' + (eff >= 1 ? '#E8F1FB' : '#FBECEC') + ';color:' + (eff >= 1 ? '#1B4F8A' : '#8A1B1B') + ';">' + m + ' ' + eff.toFixed(2) + 'x</span>'; }).join('');
 
       function aggregate(rs, mode) {
         if (mode !== 'quarter') return rs;
         var g = {}, order = [];
-        var sumKeys = ['ad','acqAd','rev','acqRev','oc','dPay','aPay','exp','net','netBase','draw','drawBase','ownerComm','ownerDraw','ownerCommBase','ownerDrawBase','perOwner','perOwnerBase','mult'];
+        var sumKeys = ['ad','acqAd','rev','acqRev','oc','dPay','aPay','exp','net','netBase','draw','drawBase','ownerComm','ownerDraw','ownerCommBase','ownerDrawBase','perOwner','perOwnerBase','mult','gf','nPipe'];
         rs.forEach(function (r) {
           var q = hpQKey(r.m);
           if (!g[q.key]) { var o = { m: q.label, n: 0, nD: 0, nA: 0 }; sumKeys.forEach(function (k) { o[k] = 0; }); g[q.key] = o; order.push(q.key); }
           var a = g[q.key]; sumKeys.forEach(function (k) { a[k] += r[k]; });
           a.n++; a.cum = r.cum; a.cumBase = r.cumBase; a.nD = Math.max(a.nD, r.nD); a.nA = Math.max(a.nA, r.nA);
         });
-        return order.map(function (k) { var a = g[k]; a.mult = a.mult / a.n; if (a.n < 3) a.m = a.m + ' (' + a.n + ' mo)'; return a; });
+        return order.map(function (k) { var a = g[k]; a.mult = a.mult / a.n; a.gf = a.gf / a.n; if (a.n < 3) a.m = a.m + ' (' + a.n + ' mo)'; return a; });
       }
       var agg = aggregate(rows, view);
       var payView = localStorage.getItem('hp6_payView') || 'quarter';
@@ -3501,8 +3571,11 @@
         return '<tr style="' + (opt.bold ? 'background:#f5f7fa;font-weight:700;' : '') + '"><td style="' + (opt.indent ? 'padding-left:22px;color:#666;' : 'font-weight:600;') + '">' + label + '</td>' +
           '<td style="text-align:right;">' + (wAvg === null ? '' : fmt(wAvg)) + '</td><td style="text-align:right;font-weight:600;">' + fmt(wTot) + '</td><td style="text-align:right;color:#888;">' + fmt(bTot) + '</td><td style="text-align:right;color:' + dc + ';font-weight:600;">' + (Math.abs(diff) < 1 ? '&mdash;' : fmtSigned(diff)) + '</td></tr>';
       };
+      var first = rows[0], nPipeMonths = sum(rows, 'nPipe');
+      var revPath = 'Revenue <span style="font-weight:500;color:#888;font-size:11px;">' + first.m + ' ' + fmt(first.rev) + ' &rarr; ' + last.m + ' ' + fmt(last.rev) +
+        (v.growth > 0 ? ' &middot; growth +' + Math.round(v.growth * 100) + '%/qtr' : ' &middot; no growth') + (nPipeMonths ? ' &middot; ' + nPipeMonths + ' month' + (nPipeMonths === 1 ? '' : 's') + ' from the pipeline' : '') + '</span>';
       s += '<div class="table-container"><table><thead><tr><th></th><th style="text-align:right;">With hires &middot; avg / mo</th><th style="text-align:right;">With hires &middot; ' + v.horizon + '-mo total</th><th style="text-align:right;">No hires &middot; total</th><th style="text-align:right;">Hiring impact</th></tr></thead><tbody>';
-      s += row('Revenue', avg(rows, 'rev'), sum(rows, 'rev'), sum(base, 'rev'));
+      s += row(revPath, avg(rows, 'rev'), sum(rows, 'rev'), sum(base, 'rev'));
       if (nAcq) s += row('of which from acq reps\' ad spend', avg(rows, 'acqRev'), sum(rows, 'acqRev'), 0, { indent: true, neutral: true });
       s += row('&minus; Ad spend', avg(rows, 'ad'), sum(rows, 'ad'), sum(base, 'ad'), { costRow: true });
       s += row('&minus; Other expenses', avg(rows, 'exp'), sum(rows, 'exp'), sum(base, 'exp'), { costRow: true });
@@ -3555,7 +3628,7 @@
         agg.forEach(function (r) {
           var anyHire = r.nD || r.nA; var shade = anyHire ? 'background:#FBF7FF;' : '';
           var team = (r.nD ? '<span style="color:#7030A0;font-weight:700;">' + r.nD + 'D</span>' : '') + (r.nD && r.nA ? ' ' : '') + (r.nA ? '<span style="color:#ED7D31;font-weight:700;">' + r.nA + 'A</span>' : '');
-          t += '<tr style="' + shade + '"><td style="font-weight:600;">' + r.m + '</td><td style="font-size:11px;">' + (team || '&mdash;') + '</td>' + (usePattern ? '<td style="text-align:right;color:' + (r.mult >= 1 ? '#1B4F8A' : '#8A1B1B') + ';font-size:11px;">' + r.mult.toFixed(2) + 'x</td>' : '') + '<td style="text-align:right;font-weight:600;color:#548235;">' + fmt(r.rev) + '</td><td style="text-align:right;">' + fmt(r.ad) + (r.acqAd ? ' <span style="font-size:10px;color:#ED7D31;">(+' + fmt(r.acqAd) + ')</span>' : '') + '</td><td style="text-align:right;">' + fmt(r.exp) + '</td><td style="text-align:right;">' + fmt(r.oc) + '</td>' + (nDispo ? '<td style="text-align:right;color:#7030A0;">' + (r.dPay ? fmt(r.dPay) : '&mdash;') + '</td>' : '') + (nAcq ? '<td style="text-align:right;color:#ED7D31;">' + (r.aPay ? fmt(r.aPay) : '&mdash;') + '</td>' : '') + '<td style="text-align:right;font-weight:600;color:' + pos(r.net) + ';">' + fmt(r.net) + '</td><td style="text-align:right;color:#B8860B;font-weight:600;">' + (r.draw ? fmt(r.draw) : '&mdash;') + '</td><td style="text-align:right;font-weight:700;color:#548235;">' + fmt(r.perOwner) + '</td><td style="text-align:right;color:#888;">' + fmt(r.perOwnerBase) + '</td><td style="text-align:right;font-weight:600;color:' + pos(r.cum) + ';">' + fmt(r.cum) + '</td><td style="text-align:right;color:#888;">' + fmt(r.cumBase) + '</td></tr>';
+          t += '<tr style="' + shade + '"><td style="font-weight:600;">' + r.m + '</td><td style="font-size:11px;">' + (team || '&mdash;') + '</td>' + (usePattern ? '<td style="text-align:right;color:' + (r.mult >= 1 ? '#1B4F8A' : '#8A1B1B') + ';font-size:11px;">' + r.mult.toFixed(2) + 'x</td>' : '') + '<td style="text-align:right;font-weight:600;color:#548235;">' + fmt(r.rev) + (r.nPipe ? ' <span title="From deals in escrow / under contract in the Deal Ledger" style="font-size:9px;font-weight:700;color:#1B4F8A;background:#E8F1FB;border-radius:8px;padding:1px 6px;vertical-align:middle;">pipeline' + (view === 'quarter' && r.nPipe < r.n ? ' ' + r.nPipe + '/' + r.n : '') + '</span>' : '') + '</td><td style="text-align:right;">' + fmt(r.ad) + (r.acqAd ? ' <span style="font-size:10px;color:#ED7D31;">(+' + fmt(r.acqAd) + ')</span>' : '') + '</td><td style="text-align:right;">' + fmt(r.exp) + '</td><td style="text-align:right;">' + fmt(r.oc) + '</td>' + (nDispo ? '<td style="text-align:right;color:#7030A0;">' + (r.dPay ? fmt(r.dPay) : '&mdash;') + '</td>' : '') + (nAcq ? '<td style="text-align:right;color:#ED7D31;">' + (r.aPay ? fmt(r.aPay) : '&mdash;') + '</td>' : '') + '<td style="text-align:right;font-weight:600;color:' + pos(r.net) + ';">' + fmt(r.net) + '</td><td style="text-align:right;color:#B8860B;font-weight:600;">' + (r.draw ? fmt(r.draw) : '&mdash;') + '</td><td style="text-align:right;font-weight:700;color:#548235;">' + fmt(r.perOwner) + '</td><td style="text-align:right;color:#888;">' + fmt(r.perOwnerBase) + '</td><td style="text-align:right;font-weight:600;color:' + pos(r.cum) + ';">' + fmt(r.cum) + '</td><td style="text-align:right;color:#888;">' + fmt(r.cumBase) + '</td></tr>';
         });
         t += '<tr style="background:#f0f0f0;font-weight:700;"><td>TOTAL</td><td></td>' + (usePattern ? '<td></td>' : '') + '<td style="text-align:right;color:#548235;">' + fmt(sum(rows, 'rev')) + '</td><td style="text-align:right;">' + fmt(sum(rows, 'ad')) + '</td><td style="text-align:right;">' + fmt(sum(rows, 'exp')) + '</td><td style="text-align:right;">' + fmt(sum(rows, 'oc')) + '</td>' + (nDispo ? '<td style="text-align:right;color:#7030A0;">' + fmt(sum(rows, 'dPay')) + '</td>' : '') + (nAcq ? '<td style="text-align:right;color:#ED7D31;">' + fmt(sum(rows, 'aPay')) + '</td>' : '') + '<td style="text-align:right;color:' + pos(sum(rows, 'net')) + ';">' + fmt(sum(rows, 'net')) + '</td><td style="text-align:right;color:#B8860B;">' + fmt(sum(rows, 'draw')) + '</td><td style="text-align:right;color:#548235;">' + fmt(sum(rows, 'perOwner')) + '</td><td style="text-align:right;color:#888;">' + fmt(sum(base, 'perOwner')) + '</td><td style="text-align:right;color:' + pos(last.cum) + ';">' + fmt(last.cum) + '</td><td style="text-align:right;color:#888;">' + fmt(last.cumBase) + '</td></tr>';
         tb.innerHTML = t + '</tbody></table></div>';
