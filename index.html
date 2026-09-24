@@ -587,7 +587,6 @@
             <select id="filterStatus" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px;">
               <option value="">All</option>
               <option value="Under Contract">Under Contract</option>
-              <option value="Listed/Posted">Listed/Posted</option>
               <option value="Escrow">Escrow</option>
               <option value="Closed - Won">Closed - Won</option>
               <option value="Closed - Lost">Closed - Lost</option>
@@ -650,7 +649,7 @@
             <select id="dealMapStatusFilter" onchange="renderDealMap()" style="padding:8px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
               <option value="">All Statuses</option>
               <option value="Under Contract">Under Contract</option>
-              <option value="Listed/Posted">Listed/Posted</option>
+              <option value="Escrow">Escrow</option>
               <option value="Closed - Won">Closed - Won</option>
               <option value="Closed - Lost">Closed - Lost</option>
             </select>
@@ -682,7 +681,7 @@
     <div id="executive" class="tab-content">
       <div id="execFilterBar" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;background:white;border-radius:8px;padding:10px 14px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,0.08);"></div>
       <div id="execKPIs" class="grid gap-4 mb-6" style="grid-template-columns: repeat(8, 1fr);"></div>
-      <div id="execKPIs2" class="grid gap-4 mb-6" style="grid-template-columns: repeat(8, 1fr);"></div>
+      <div id="execKPIs2" class="grid gap-4 mb-6" style="grid-template-columns: repeat(9, 1fr);"></div>
 
       <!-- Drill-down table -->
       <div id="execDrillDown" style="display: none;">
@@ -1498,7 +1497,8 @@
     // ==================== CALCULATIONS ====================
     const calculateMetrics = (dealList) => {
       const DEALS = dealList || ALL_DEALS();
-      const active = DEALS.filter(d => ['Under Contract', 'Listed/Posted'].includes(d.status));
+      const isEsc = d => (d.status || '').trim().toLowerCase() === 'escrow';
+      const active = DEALS.filter(d => d.status === 'Under Contract' || isEsc(d));   // Active = Under Contract + Escrow
       const uc = DEALS.filter(d => d.status === 'Under Contract');
       const listed = DEALS.filter(d => d.status === 'Listed/Posted');
       const escrow = DEALS.filter(d => (d.status || '').trim().toLowerCase() === 'escrow');
@@ -1831,8 +1831,8 @@
 
       // Sort months chronologically
       const sortedMonths = [...allMonths].sort((a, b) => {
-        const da = new Date(a + ' 1');
-        const db = new Date(b + ' 1');
+        const da = monthLabelToDate(a) || new Date(0);
+        const db = monthLabelToDate(b) || new Date(0);
         return da - db;
       });
 
@@ -1863,8 +1863,8 @@
       // Show individual month columns
       sortedMonths.forEach(m => {
         // Format month header shorter: "Jan 25" instead of "January 2025"
-        const d = new Date(m + ' 1');
-        const shortMonth = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+        const d = monthLabelToDate(m);
+        const shortMonth = d ? d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : m;
         html += '<th style="padding:10px 8px;text-align:right;font-size:11px;">' + shortMonth + '</th>';
       });
 
@@ -2432,6 +2432,7 @@
       const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
       const tillerMarketing = execTillerSum((n) => mktCats.includes(n.toLowerCase()), -1);
       const tillerROAS = tillerMarketing > 0 ? ((tillerRevenue || metrics.wonValue) / tillerMarketing).toFixed(1) + 'x' : '-';
+      kpis2.appendChild(createKpiCard(inRange ? 'Marketing Spend (in range)' : 'Total Marketing Spend', fmt(tillerMarketing), '#B8860B'));
       kpis2.appendChild(createKpiCard('ROAS', tillerROAS, '#C00000'));
 
       kpis2.appendChild(createKpiCard('Deals 60+ Days', metrics.over60Count, '#C00000',
@@ -12881,10 +12882,11 @@
     }
 
     function getStatusColor(status) {
+      status = status || '';
       if (status.includes('Won')) return '#10b981';
       if (status.includes('Lost')) return '#ef4444';
       if (status.includes('Under Contract')) return '#ED7D31';
-      if (status.includes('Listed')) return '#2E75B6';
+      if (status.toLowerCase().includes('escrow')) return '#FFC000';
       return '#666';
     }
 
@@ -12918,7 +12920,9 @@
 
       // Stats
       var statsEl = document.getElementById('dealMapStats');
-      statsEl.textContent = deals.length + ' deals shown';
+      var cnt = function (st) { return deals.filter(function (d) { return (d.status || '').trim().toLowerCase() === st.toLowerCase(); }).length; };
+      var dot = function (st, label) { return '<span style="display:inline-flex;align-items:center;gap:5px;margin-left:12px;"><span style="width:10px;height:10px;border-radius:50%;background:' + getStatusColor(st) + ';display:inline-block;"></span>' + label + ' <b>' + cnt(st) + '</b></span>'; };
+      statsEl.innerHTML = '<b>' + deals.length + '</b> deals shown' + dot('Under Contract', 'Under Contract') + dot('Escrow', 'Escrow') + dot('Closed - Won', 'Closed - Won') + dot('Closed - Lost', 'Closed - Lost');
 
       // Init map if needed
       if (!dealMap) {
