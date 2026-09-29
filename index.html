@@ -565,6 +565,7 @@
     <button class="tab-button" onclick="switchTab('financials')">Financials</button>
     <button class="tab-button" onclick="switchTab('projections')">Projections</button>
     <button class="tab-button" onclick="switchTab('projections2')">Projections 2</button>
+    <button class="tab-button" onclick="switchTab('scaling')">Scaling</button>
     <button class="tab-button" onclick="switchTab('hiring')">Hiring Projections</button>
     <button class="tab-button" onclick="switchTab('dispo')">Dispo</button>
   </div>
@@ -959,6 +960,9 @@
     </div>
 
     <!-- DISPO TAB -->
+    <!-- SCALING MODEL TAB -->
+    <div id="scaling" class="tab-content"><div id="scalingContent"></div></div>
+
     <div id="dispo" class="tab-content">
       <div id="dispoContent"></div>
     </div>
@@ -1428,6 +1432,9 @@
 
     const formatDate = (dateStr) => {
       if (!dateStr) return '';
+      // YYYY-MM-DD is parsed as UTC by new Date(), which shows the day before in US time zones - read it as a plain calendar date
+      const iso = String(dateStr).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (iso) return iso[2] + '/' + iso[3] + '/' + iso[1];
       const d = new Date(dateStr);
       const m = String(d.getMonth() + 1).padStart(2, '0');
       const day = String(d.getDate()).padStart(2, '0');
@@ -1791,119 +1798,101 @@
      * If Tiller data exists, shows each income category with monthly breakdown.
      * Falls back to showing won deals if no Tiller data.
      */
-    const showRevenueBreakdown = () => {
-      document.getElementById('execDrillDownTitle').innerText = 'TOTAL REVENUE BREAKDOWN';
+    // Month-by-month breakdown of Tiller categories, scoped to the Executive time frame.
+    // kind = 'income' (revenue) or 'marketing' (ad spend). Partial months are pro-rated by day.
+    const showTillerBreakdown = (kind) => {
+      const isMkt = kind === 'marketing';
+      const b = (typeof execRangeBounds === 'function') ? execRangeBounds() : null;
+      const fmtD = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      document.getElementById('execDrillDownTitle').innerText = (isMkt ? 'MARKETING SPEND BREAKDOWN' : 'TOTAL REVENUE BREAKDOWN') + (b ? ' · ' + fmtD(b.fromDate) + ' – ' + fmtD(b.toDate) : ' · ALL TIME');
       const container = document.getElementById('execDrillDownTable');
 
-      // If no Tiller data, fall back to showing won deals
       if (!EXPENSE_DATA || !EXPENSE_DATA.categories) {
-        const won = DEALS.filter(d => d.status === 'Closed - Won');
-        renderDealTable(won, 'execDrillDownTable');
+        if (!isMkt) { renderDealTable((typeof execFilteredDeals === 'function' ? execFilteredDeals() : DEALS).filter(d => d.status === 'Closed - Won'), 'execDrillDownTable'); }
+        else container.innerHTML = '<div style="padding:20px;color:#888;">No Tiller data loaded.</div>';
         document.getElementById('execDrillDown').style.display = 'block';
         return;
       }
+      const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
+      const matches = (name, mv) => isMkt ? mktCats.includes(name.toLowerCase()) : (mv._type || '').toLowerCase() === 'income';
+      // share of the month inside the window (1 = whole month, 0 = none)
+      const share = (month) => {
+        if (!b) return 1;
+        const md = monthLabelToDate(month); if (!md) return 0;
+        const mStart = new Date(md.getFullYear(), md.getMonth(), 1), mEnd = new Date(md.getFullYear(), md.getMonth() + 1, 0);
+        const lo = Math.max(mStart, b.fromDate), hi = Math.min(mEnd, b.toDate);
+        if (hi < lo) return 0;
+        return (Math.round((hi - lo) / 86400000) + 1) / mEnd.getDate();
+      };
 
-      // Collect all income categories and their monthly data
-      const incomeCategories = [];
-      let grandTotal = 0;
-      const allMonths = new Set();
-
+      const cats = []; let grandTotal = 0; const allMonths = new Set(); const partial = {};
       Object.entries(EXPENSE_DATA.categories).forEach(([catName, monthlyVals]) => {
-        if ((monthlyVals._type || '').toLowerCase() !== 'income') return;
-        const monthData = {};
-        let catTotal = 0;
+        if (!matches(catName, monthlyVals)) return;
+        const monthData = {}; let catTotal = 0;
         Object.entries(monthlyVals).forEach(([month, value]) => {
-          if (month.charAt(0) === '_') return;
-          if (value > 0) {
-            monthData[month] = value;
-            catTotal += value;
-            allMonths.add(month);
-          }
+          if (month.charAt(0) === '_' || typeof value !== 'number') return;
+          if (isMkt ? value >= 0 : value <= 0) return;
+          const sh = share(month); if (sh <= 0) return;
+          const v = Math.abs(value) * sh;
+          monthData[month] = v; catTotal += v; allMonths.add(month); if (sh < 1) partial[month] = sh;
         });
-        if (catTotal > 0) {
-          incomeCategories.push({ name: catName, months: monthData, total: catTotal });
-          grandTotal += catTotal;
-        }
+        if (catTotal > 0) { cats.push({ name: catName, months: monthData, total: catTotal }); grandTotal += catTotal; }
       });
+      cats.sort((x, y) => y.total - x.total);
+      const sortedMonths = [...allMonths].sort((x, y) => (monthLabelToDate(x) || new Date(0)) - (monthLabelToDate(y) || new Date(0)));
+      const C = isMkt ? { bg: '#FFF8E1', border: '#FFE082', text: '#B8860B', label: 'Marketing Spend', src: 'Ad Channel' } : { bg: '#E8F5E9', border: '#A5D6A7', text: '#2E7D32', label: 'Grand Total', src: 'Income Source' };
 
-      // Sort categories by total descending
-      incomeCategories.sort((a, b) => b.total - a.total);
-
-      // Sort months chronologically
-      const sortedMonths = [...allMonths].sort((a, b) => {
-        const da = monthLabelToDate(a) || new Date(0);
-        const db = monthLabelToDate(b) || new Date(0);
-        return da - db;
-      });
-
-      // Build the HTML
       let html = '<div style="padding:12px;">';
-
-      // Summary cards at the top
       html += '<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">';
-      html += '<div style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:8px;padding:12px 20px;flex:1;min-width:140px;">';
-      html += '<div style="font-size:10px;font-weight:700;color:#2E7D32;text-transform:uppercase;letter-spacing:0.5px;">Grand Total</div>';
-      html += '<div style="font-size:24px;font-weight:800;color:#2E7D32;">' + fmt(grandTotal) + '</div>';
+      html += '<div style="background:' + C.bg + ';border:1px solid ' + C.border + ';border-radius:8px;padding:12px 20px;flex:1;min-width:140px;"><div style="font-size:10px;font-weight:700;color:' + C.text + ';text-transform:uppercase;letter-spacing:0.5px;">' + C.label + '</div><div style="font-size:24px;font-weight:800;color:' + C.text + ';">' + fmt(grandTotal) + '</div></div>';
+      html += '<div style="background:#E3F2FD;border:1px solid #90CAF9;border-radius:8px;padding:12px 20px;flex:1;min-width:140px;"><div style="font-size:10px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:0.5px;">' + (isMkt ? 'Channels' : 'Income Sources') + '</div><div style="font-size:24px;font-weight:800;color:#1565C0;">' + cats.length + '</div></div>';
+      html += '<div style="background:#F3E5F5;border:1px solid #CE93D8;border-radius:8px;padding:12px 20px;flex:1;min-width:140px;"><div style="font-size:10px;font-weight:700;color:#6A1B9A;text-transform:uppercase;letter-spacing:0.5px;">' + (b ? 'Months in Range' : 'Months Tracked') + '</div><div style="font-size:24px;font-weight:800;color:#6A1B9A;">' + sortedMonths.length + '</div></div>';
       html += '</div>';
-      html += '<div style="background:#E3F2FD;border:1px solid #90CAF9;border-radius:8px;padding:12px 20px;flex:1;min-width:140px;">';
-      html += '<div style="font-size:10px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:0.5px;">Income Sources</div>';
-      html += '<div style="font-size:24px;font-weight:800;color:#1565C0;">' + incomeCategories.length + '</div>';
-      html += '</div>';
-      html += '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:12px 20px;flex:1;min-width:140px;">';
-      html += '<div style="font-size:10px;font-weight:700;color:#F57F17;text-transform:uppercase;letter-spacing:0.5px;">Months Tracked</div>';
-      html += '<div style="font-size:24px;font-weight:800;color:#F57F17;">' + sortedMonths.length + '</div>';
-      html += '</div>';
-      html += '</div>';
+      if (Object.keys(partial).length) html += '<div style="font-size:11px;color:#888;margin-bottom:8px;">Months marked * are only partly inside the time frame; Tiller reports by month, so those are pro-rated by day (' + Object.keys(partial).map(m => m + ' ' + Math.round(partial[m] * 100) + '%').join(', ') + ').</div>';
 
-      // Category breakdown table
-      html += '<table style="width:100%;font-size:12px;border-collapse:collapse;border:1px solid #eee;border-radius:8px;overflow:hidden;">';
-      html += '<thead><tr style="background:#1B2A4A;color:white;">';
-      html += '<th style="padding:10px 12px;text-align:left;">Income Source</th>';
-
-      // Show individual month columns
-      sortedMonths.forEach(m => {
-        // Format month header shorter: "Jan 25" instead of "January 2025"
-        const d = monthLabelToDate(m);
-        const shortMonth = d ? d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : m;
-        html += '<th style="padding:10px 8px;text-align:right;font-size:11px;">' + shortMonth + '</th>';
-      });
-
-      html += '<th style="padding:10px 12px;text-align:right;">Total</th>';
-      html += '<th style="padding:10px 12px;text-align:right;">% of Rev</th>';
-      html += '</tr></thead><tbody>';
-
-      incomeCategories.forEach((cat, idx) => {
-        const rowBg = idx % 2 === 0 ? '' : 'background:#fafafa;';
+      html += '<table style="width:100%;font-size:12px;border-collapse:collapse;border:1px solid #eee;border-radius:8px;overflow:hidden;"><thead><tr style="background:#1B2A4A;color:white;">';
+      html += '<th style="padding:10px 12px;text-align:left;">' + C.src + '</th>';
+      sortedMonths.forEach(m => { const d = monthLabelToDate(m); const shortMonth = d ? d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) : m; html += '<th style="padding:10px 8px;text-align:right;font-size:11px;">' + shortMonth + (partial[m] ? '*' : '') + '</th>'; });
+      html += '<th style="padding:10px 12px;text-align:right;">Total</th><th style="padding:10px 12px;text-align:right;">% of ' + (isMkt ? 'Spend' : 'Rev') + '</th></tr></thead><tbody>';
+      if (!cats.length) html += '<tr><td colspan="' + (sortedMonths.length + 3) + '" style="padding:20px;text-align:center;color:#888;">Nothing in Tiller for this time frame.</td></tr>';
+      cats.forEach((cat, idx) => {
         const pct = grandTotal > 0 ? (cat.total / grandTotal * 100).toFixed(1) : '0.0';
-        html += '<tr style="border-bottom:1px solid #f0f0f0;' + rowBg + '">';
-        html += '<td style="padding:8px 12px;font-weight:600;">' + cat.name + '</td>';
-
-        sortedMonths.forEach(m => {
-          const val = cat.months[m] || 0;
-          html += '<td style="padding:8px;text-align:right;color:' + (val > 0 ? '#333' : '#ccc') + ';">' + (val > 0 ? fmt(val) : '—') + '</td>';
-        });
-
-        html += '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#2E7D32;">' + fmt(cat.total) + '</td>';
-        html += '<td style="padding:8px 12px;text-align:right;font-weight:600;color:#666;">' + pct + '%</td>';
-        html += '</tr>';
+        html += '<tr style="border-bottom:1px solid #f0f0f0;' + (idx % 2 ? 'background:#fafafa;' : '') + '"><td style="padding:8px 12px;font-weight:600;">' + cat.name + '</td>';
+        sortedMonths.forEach(m => { const val = cat.months[m] || 0; html += '<td style="padding:8px;text-align:right;color:' + (val > 0 ? '#333' : '#ccc') + ';">' + (val > 0 ? fmt(val) : '—') + '</td>'; });
+        html += '<td style="padding:8px 12px;text-align:right;font-weight:700;color:' + C.text + ';">' + fmt(cat.total) + '</td><td style="padding:8px 12px;text-align:right;font-weight:600;color:#666;">' + pct + '%</td></tr>';
       });
-
-      // Grand total row
-      html += '<tr style="background:#E8F5E9;font-weight:700;border-top:2px solid #2E7D32;">';
-      html += '<td style="padding:10px 12px;color:#2E7D32;">TOTAL</td>';
-      sortedMonths.forEach(m => {
-        let monthTotal = 0;
-        incomeCategories.forEach(cat => { monthTotal += cat.months[m] || 0; });
-        html += '<td style="padding:10px 8px;text-align:right;color:#2E7D32;">' + fmt(monthTotal) + '</td>';
-      });
-      html += '<td style="padding:10px 12px;text-align:right;color:#2E7D32;font-size:14px;">' + fmt(grandTotal) + '</td>';
-      html += '<td style="padding:10px 12px;text-align:right;color:#2E7D32;">100%</td>';
-      html += '</tr>';
-
-      html += '</tbody></table>';
-      html += '</div>';
-
+      html += '<tr style="background:' + C.bg + ';font-weight:700;border-top:2px solid ' + C.text + ';"><td style="padding:10px 12px;color:' + C.text + ';">TOTAL</td>';
+      sortedMonths.forEach(m => { let t = 0; cats.forEach(cat => { t += cat.months[m] || 0; }); html += '<td style="padding:10px 8px;text-align:right;color:' + C.text + ';">' + fmt(t) + '</td>'; });
+      html += '<td style="padding:10px 12px;text-align:right;color:' + C.text + ';font-size:14px;">' + fmt(grandTotal) + '</td><td style="padding:10px 12px;text-align:right;color:' + C.text + ';">100%</td></tr>';
+      html += '</tbody></table></div>';
       container.innerHTML = html;
+      document.getElementById('execDrillDown').style.display = 'block';
+    };
+    const showRevenueBreakdown = () => showTillerBreakdown('income');
+    const showMarketingBreakdown = () => showTillerBreakdown('marketing');
+    // Avg Fee = average Final Profit across Closed-Won deals in the time frame (deals with a blank Final Profit are excluded)
+    const showAvgFeeBreakdown = (metrics) => {
+      const won = metrics.won.filter(d => d.final !== null && d.final !== undefined).slice().sort((x, y) => (y.final || 0) - (x.final || 0));
+      const total = won.reduce((s, d) => s + d.final, 0);
+      const skipped = metrics.won.length - won.length;
+      document.getElementById('execDrillDownTitle').innerText = 'AVG FEE - HOW IT IS CALCULATED';
+      let html = '<div style="padding:12px;">';
+      html += '<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">';
+      const card = (label, val, bg, bd, tx) => '<div style="background:' + bg + ';border:1px solid ' + bd + ';border-radius:8px;padding:12px 20px;flex:1;min-width:150px;"><div style="font-size:10px;font-weight:700;color:' + tx + ';text-transform:uppercase;letter-spacing:0.5px;">' + label + '</div><div style="font-size:24px;font-weight:800;color:' + tx + ';">' + val + '</div></div>';
+      html += card('Total Final Profit', fmt(total), '#E8F5E9', '#A5D6A7', '#2E7D32');
+      html += card('&divide; Closed-Won deals', won.length, '#E3F2FD', '#90CAF9', '#1565C0');
+      html += card('= Avg Fee', fmt(won.length ? total / won.length : 0), '#FFF8E1', '#FFE082', '#B8860B');
+      html += '</div>';
+      html += '<div style="font-size:11px;color:#888;margin-bottom:8px;">Avg Fee = sum of Final Profit on Closed-Won deals in the selected time frame &divide; number of those deals.' + (skipped ? ' ' + skipped + ' Closed-Won deal' + (skipped === 1 ? '' : 's') + ' with no Final Profit entered ' + (skipped === 1 ? 'is' : 'are') + ' left out of the average.' : '') + '</div>';
+      html += '<table style="width:100%;font-size:12px;border-collapse:collapse;border:1px solid #eee;"><thead><tr style="background:#1B2A4A;color:white;"><th style="padding:10px 12px;text-align:left;">Deal</th><th style="padding:10px 12px;text-align:left;">Address</th><th style="padding:10px 12px;text-align:left;">Source</th><th style="padding:10px 12px;text-align:left;">Strategy</th><th style="padding:10px 12px;text-align:right;">Close Date</th><th style="padding:10px 12px;text-align:right;">Final Profit</th><th style="padding:10px 12px;text-align:right;">vs Avg</th></tr></thead><tbody>';
+      const avg = won.length ? total / won.length : 0;
+      won.forEach((d, i) => {
+        const diff = d.final - avg;
+        html += '<tr style="border-bottom:1px solid #f0f0f0;' + (i % 2 ? 'background:#fafafa;' : '') + '"><td style="padding:8px 12px;font-weight:600;">' + (d.id || '') + '</td><td style="padding:8px 12px;color:#555;">' + (d.address || '') + '</td><td style="padding:8px 12px;">' + (d.source || '') + '</td><td style="padding:8px 12px;">' + (d.strategy || '') + '</td><td style="padding:8px 12px;text-align:right;">' + formatDate(d.closeDate) + '</td><td style="padding:8px 12px;text-align:right;font-weight:700;color:#2E7D32;">' + fmt(d.final) + '</td><td style="padding:8px 12px;text-align:right;color:' + (diff >= 0 ? '#2E7D32' : '#C00000') + ';">' + (diff >= 0 ? '+' : '-') + fmt(Math.abs(diff)) + '</td></tr>';
+      });
+      html += '<tr style="background:#E8F5E9;font-weight:700;border-top:2px solid #2E7D32;"><td style="padding:10px 12px;color:#2E7D32;" colspan="5">TOTAL &divide; ' + won.length + ' = AVG FEE</td><td style="padding:10px 12px;text-align:right;color:#2E7D32;">' + fmt(total) + '</td><td style="padding:10px 12px;text-align:right;color:#2E7D32;">' + fmt(avg) + '</td></tr>';
+      html += '</tbody></table></div>';
+      document.getElementById('execDrillDownTable').innerHTML = html;
       document.getElementById('execDrillDown').style.display = 'block';
     };
 
@@ -2393,7 +2382,8 @@
       kpis.innerHTML = '';
       kpis.appendChild(createKpiCard('Active Deals', metrics.activeCount, '#2E75B6',
         () => showDrillDown('exec', 'ACTIVE', metrics.active)));
-      kpis.appendChild(createKpiCard('Under Contract', metrics.ucCount, '#ED7D31'));
+      kpis.appendChild(createKpiCard('Under Contract', metrics.ucCount, '#ED7D31',
+        () => showDrillDown('exec', 'UNDER CONTRACT', metrics.uc)));
       kpis.appendChild(createKpiCard('Escrow', metrics.escrowCount, '#FFC000',
         () => showDrillDown('exec', 'ESCROW', metrics.escrow)));
       kpis.appendChild(createKpiCard('Total Deals', metrics.totalCount, '#1B2A4A'));
@@ -2413,7 +2403,8 @@
       kpis2.appendChild(createKpiCard(inRange ? 'Revenue (Tiller, in range)' : 'Total Revenue', fmt(tillerRevenue || metrics.wonValue), '#548235',
         () => showRevenueBreakdown()));
 
-      kpis2.appendChild(createKpiCard('Avg Fee', fmt(metrics.avgFee), '#2E75B6'));
+      kpis2.appendChild(createKpiCard('Avg Fee', fmt(metrics.avgFee), '#2E75B6',
+        () => showAvgFeeBreakdown(metrics)));
 
       // Escrow Amount — total sitting in escrow (Escrow-status deals in range)
       const escrowDealsExec = scoped.filter(d => (d.status || '').trim().toLowerCase() === 'escrow');
@@ -2432,7 +2423,8 @@
       const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
       const tillerMarketing = execTillerSum((n) => mktCats.includes(n.toLowerCase()), -1);
       const tillerROAS = tillerMarketing > 0 ? ((tillerRevenue || metrics.wonValue) / tillerMarketing).toFixed(1) + 'x' : '-';
-      kpis2.appendChild(createKpiCard(inRange ? 'Marketing Spend (in range)' : 'Total Marketing Spend', fmt(tillerMarketing), '#B8860B'));
+      kpis2.appendChild(createKpiCard(inRange ? 'Marketing Spend (in range)' : 'Total Marketing Spend', fmt(tillerMarketing), '#B8860B',
+        () => showMarketingBreakdown()));
       kpis2.appendChild(createKpiCard('ROAS', tillerROAS, '#C00000'));
 
       kpis2.appendChild(createKpiCard('Deals 60+ Days', metrics.over60Count, '#C00000',
@@ -3156,6 +3148,228 @@
       panel.innerHTML = h;
       panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
+
+    // ==================== SCALING MODEL: TARGETS VS ACTUALS ====================
+    // Levers (same math as the Pod Scaling Model workbook) -> yearly / monthly / weekly targets.
+    // Actuals: closings, contracts, revenue from the Deal Ledger; offers from GHL opportunities
+    // (Active Leads pipeline, stage "Offer Made" or later, dated by last stage change);
+    // leads from the SM3 + Facebook lead sheets; ad spend from Tiller (pro-rated by day).
+    var SC_KEYS = { rev: 2500000, deal: 30000, close: 35, otc: 6, roas: 3.5, quota: 65000, eff: 70, cpl: 180 };
+    var SC_OPPS = null, SC_STAGES = null, SC_OPPS_ERR = null, SC_LOADING = false;
+    function scG(k) { var v = parseFloat(localStorage.getItem('sc_' + k)); return isNaN(v) ? SC_KEYS[k] : v; }
+    function scN(id, def) { var el = document.getElementById(id); if (!el) return def; var n = parseFloat(el.value); return isNaN(n) ? def : n; }
+
+    function scTargets() {
+      var t = {}; Object.keys(SC_KEYS).forEach(function (k) { t[k] = scN('scL_' + k, scG(k)); localStorage.setItem('sc_' + k, t[k]); });
+      var closeF = t.close / 100, effF = t.eff / 100;
+      t.costPerDeal = t.roas > 0 ? t.deal / t.roas : 0;
+      t.costPerContract = t.costPerDeal * closeF;
+      t.ltc = t.cpl > 0 ? t.costPerContract / t.cpl : 0;
+      var y = {};
+      y.deals = t.deal > 0 ? t.rev / t.deal : 0;
+      y.contracts = closeF > 0 ? y.deals / closeF : 0;
+      y.offers = y.contracts * t.otc;
+      y.leads = y.contracts * t.ltc;
+      y.ad = t.roas > 0 ? t.rev / t.roas : 0;
+      y.rev = t.rev;
+      t.year = y;
+      t.month = {}; t.week = {};
+      Object.keys(y).forEach(function (k) { t.month[k] = y[k] / 12; t.week[k] = y[k] / 52; });
+      t.repsUnrounded = t.quota > 0 ? (t.rev / 12 / t.quota) * (1 + (1 - effF)) : 0;
+      t.reps = Math.round(t.repsUnrounded);
+      return t;
+    }
+
+    // ---- period helpers ----
+    function scStartOfWeek(d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); var dow = (x.getDay() + 6) % 7; x.setDate(x.getDate() - dow); return x; }   // Monday
+    function scPeriods() {
+      var now = new Date(), today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      var wk = scStartOfWeek(today), wkEnd = new Date(wk); wkEnd.setDate(wk.getDate() + 6);
+      var mo = new Date(today.getFullYear(), today.getMonth(), 1), moEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      return {
+        week: { from: wk, to: wkEnd, elapsed: (Math.round((today - wk) / 86400000) + 1) / 7, label: 'This Week' },
+        month: { from: mo, to: moEnd, elapsed: today.getDate() / moEnd.getDate(), label: 'This Month' }
+      };
+    }
+    function scDateIn(dateObj, p) { return dateObj && !isNaN(dateObj) && dateObj >= p.from && dateObj <= new Date(p.to.getFullYear(), p.to.getMonth(), p.to.getDate(), 23, 59, 59); }
+    function scLocalDate(ymd) { if (!ymd) return null; var m = String(ymd).match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return new Date(+m[1], +m[2] - 1, +m[3]); var d = new Date(ymd); return isNaN(d) ? null : d; }
+
+    // ---- actuals for a period ----
+    function scActuals(p) {
+      var a = { closings: 0, contracts: 0, revenue: 0, offers: null, leads: null, ad: 0, wonDeals: [], ucDeals: [], offerOpps: [] };
+      (DEALS || []).forEach(function (d) {
+        if (d.status === 'Closed - Won' && scDateIn(scLocalDate(d.closeDate), p)) { a.closings++; a.revenue += (d.final || 0); a.wonDeals.push(d); }
+        if (scDateIn(scLocalDate(d.ucDate), p)) { a.contracts++; a.ucDeals.push(d); }
+      });
+      if ((SM3_LEADS && SM3_LEADS.length) || (FB_LEADS && FB_LEADS.length)) {
+        a.leads = 0;
+        [SM3_LEADS || [], FB_LEADS || []].forEach(function (arr) { arr.forEach(function (l) { if (scDateIn(l.date, p)) a.leads++; }); });
+      }
+      if (SC_OPPS) {
+        a.offers = 0;
+        SC_OPPS.forEach(function (o) { if (scDateIn(o._offerDate, p)) { a.offers++; a.offerOpps.push(o); } });
+      }
+      // Tiller ad spend, pro-rated by the days of each month inside the period
+      if (EXPENSE_DATA && EXPENSE_DATA.categories) {
+        var mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee','ppl','ppl leads','pay per lead','pay-per-lead','ppl lead gen','ppl marketing','property leads (ppl)','property leads'];
+        Object.keys(EXPENSE_DATA.categories).forEach(function (cn) {
+          if (!mktCats.includes(cn.toLowerCase())) return;
+          var mv = EXPENSE_DATA.categories[cn];
+          Object.keys(mv).forEach(function (month) {
+            if (month.charAt(0) === '_' || typeof mv[month] !== 'number' || mv[month] >= 0) return;
+            var md = monthLabelToDate(month); if (!md) return;
+            var mS = new Date(md.getFullYear(), md.getMonth(), 1), mE = new Date(md.getFullYear(), md.getMonth() + 1, 0);
+            var lo = Math.max(mS, p.from), hi = Math.min(mE, p.to); if (hi < lo) return;
+            a.ad += Math.abs(mv[month]) * ((Math.round((hi - lo) / 86400000) + 1) / mE.getDate());
+          });
+        });
+      }
+      return a;
+    }
+
+    // ---- GHL offers ----
+    async function scLoadOpps(force) {
+      if (SC_LOADING) return; if (SC_OPPS && !force) return;
+      SC_LOADING = true; SC_OPPS_ERR = null;
+      var base = (typeof pipelineWorkerUrl !== 'undefined' && pipelineWorkerUrl) ? pipelineWorkerUrl : 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+      try {
+        var res = await Promise.all([fetch(base + '/api/pipelines').then(function (r) { return r.json(); }), fetch(base + '/api/opportunities').then(function (r) { return r.json(); })]);
+        var pipes = res[0].pipelines || [], opps = res[1].opportunities || [];
+        // Offer stages = every stage in the Active Leads pipeline at or after the first "Offer Made" stage (offer, contract sent, under contract, closed)
+        var offerStageIds = {}, stageName = {};
+        pipes.forEach(function (pl) {
+          var stages = (pl.stages || []).slice().sort(function (x, y) { return (x.position || 0) - (y.position || 0); });
+          var firstOffer = -1;
+          stages.forEach(function (st, i) { stageName[st.id] = pl.name + ' / ' + st.name; if (firstOffer < 0 && /offer made/i.test(st.name)) firstOffer = i; });
+          if (firstOffer >= 0 && /active leads/i.test(pl.name)) stages.forEach(function (st, i) { if (i >= firstOffer) offerStageIds[st.id] = st.name; });
+        });
+        SC_STAGES = { offerStageIds: offerStageIds, stageName: stageName, pipelines: pipes.length, totalOpps: opps.length };
+        SC_OPPS = opps.filter(function (o) { return offerStageIds[o.pipelineStageId]; }).map(function (o) {
+          var ds = o.lastStageChangeAt || o.updatedAt || o.createdAt; var dt = ds ? new Date(ds) : null;
+          return { id: o.id, name: o.name, stage: offerStageIds[o.pipelineStageId], status: o.status, value: o.monetaryValue || 0, _offerDate: (dt && !isNaN(dt)) ? dt : null, contact: (o.contact && (o.contact.name || o.contact.email)) || '' };
+        });
+      } catch (e) { SC_OPPS = null; SC_OPPS_ERR = e.message || String(e); }
+      SC_LOADING = false;
+      if (document.getElementById('scalingContent') && document.getElementById('scaling').classList.contains('active')) renderScalingTab(true);
+    }
+    window.scReloadOffers = function () { SC_OPPS = null; scLoadOpps(true); renderScalingTab(true); };
+
+    // ---- drill-downs ----
+    window.scDrill = function (kind, periodKey) {
+      var p = scPeriods()[periodKey], a = scActuals(p), box = document.getElementById('scDrill'); if (!box) return;
+      var fmtD = function (d) { return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; };
+      var h = '<div class="section-title" style="background:#1B2A4A;display:flex;justify-content:space-between;"><span>' + kind.toUpperCase() + ' &middot; ' + p.label.toUpperCase() + ' (' + fmtD(p.from) + ' &ndash; ' + fmtD(p.to) + ')</span><span class="close-btn" onclick="document.getElementById(\'scDrill\').style.display=\'none\'">&times;</span></div><div class="section-body" style="max-height:360px;overflow:auto;">';
+      if (kind === 'offers') {
+        if (!SC_OPPS) h += '<div style="padding:16px;color:#888;">GHL opportunities not loaded.</div>';
+        else { h += '<table><thead><tr><th>Opportunity</th><th>Contact</th><th>Stage</th><th>Date</th><th style="text-align:right;">Value</th></tr></thead><tbody>';
+          a.offerOpps.sort(function (x, y) { return y._offerDate - x._offerDate; }).forEach(function (o) { h += '<tr><td>' + (o.name || '') + '</td><td>' + o.contact + '</td><td>' + o.stage + '</td><td>' + fmtD(o._offerDate) + '</td><td style="text-align:right;">' + (o.value ? fmt(o.value) : '&mdash;') + '</td></tr>'; });
+          h += '</tbody></table>' + (a.offerOpps.length ? '' : '<div style="padding:16px;color:#888;">No opportunities reached an offer stage in this period.</div>'); }
+      } else {
+        var rows = kind === 'closings' ? a.wonDeals : a.ucDeals;
+        h += '<table><thead><tr><th>Deal</th><th>Address</th><th>Status</th><th>Source</th><th>Strategy</th><th>UC Date</th><th>Close Date</th><th style="text-align:right;">' + (kind === 'closings' ? 'Final Profit' : 'Contract') + '</th></tr></thead><tbody>';
+        rows.forEach(function (d) { h += '<tr><td>' + (d.id || '') + '</td><td>' + (d.address || '') + '</td><td>' + (d.status || '') + '</td><td>' + (d.source || '') + '</td><td>' + (d.strategy || '') + '</td><td>' + formatDate(d.ucDate) + '</td><td>' + formatDate(d.closeDate) + '</td><td style="text-align:right;">' + fmt(kind === 'closings' ? (d.final || 0) : (d.contract || 0)) + '</td></tr>'; });
+        h += '</tbody></table>' + (rows.length ? '' : '<div style="padding:16px;color:#888;">Nothing in this period.</div>');
+      }
+      box.innerHTML = h + '</div>'; box.style.display = 'block'; box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
+
+    // ---- render ----
+    const renderScalingTab = (keepScroll) => {
+      var c = document.getElementById('scalingContent'); if (!c) return;
+      if (!SC_OPPS && !SC_LOADING && !SC_OPPS_ERR) scLoadOpps(false);
+      var t = scTargets(), P = scPeriods(), r0 = function (n) { return Math.round(n || 0); };
+      var numStyle = 'width:100%;padding:7px;border:1px solid #9DC3E6;background:#F3F8FD;border-radius:4px;font-size:15px;font-weight:800;color:#1B2A4A;text-align:center;';
+      var lever = function (label, key, val, step, hint, fmtFn) { return '<div class="kpi-card" style="border-left:4px solid #2E75B6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><input id="scL_' + key + '" type="number" step="' + step + '" value="' + val + '" oninput="renderScalingTab(true)" style="' + numStyle + '">' + (hint ? '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div>' : '') + '</div>'; };
+      var secT = function (title, color, right) { return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (right || '') + '</div>'; };
+
+      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals</h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
+
+      // 1. levers
+      h += secT('1. Model Levers', '#1B2A4A', '<span style="font-size:11px;color:#999;">Same math as the Pod Scaling Model workbook. Saved in this browser.</span>');
+      h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">';
+      h += lever('Target Revenue / yr', 'rev', t.rev, 50000); h += lever('Avg Deal Size', 'deal', t.deal, 1000); h += lever('% Closed to Signed', 'close', t.close, 1, 'of contracts that close');
+      h += lever('Offers per Contract', 'otc', t.otc, 0.5); h += lever('Target ROAS', 'roas', t.roas, 0.1); h += lever('Avg Price per Lead', 'cpl', t.cpl, 5);
+      h += lever('Rep Quota / mo', 'quota', t.quota, 5000, 'closed revenue per rep'); h += lever('Team Efficiency %', 'eff', t.eff, 5);
+      h += '</div>';
+      // derived strip
+      var d1 = function (label, val, sub) { return '<div><div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.65);text-transform:uppercase;letter-spacing:1px;">' + label + '</div><div style="font-size:20px;font-weight:800;color:#FFD966;">' + val + '</div>' + (sub ? '<div style="font-size:11px;color:rgba(255,255,255,0.6);">' + sub + '</div>' : '') + '</div>'; };
+      h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:10px;background:#1B2A4A;border-radius:10px;padding:12px 14px;">';
+      h += d1('Deals / yr', r0(t.year.deals), fmt(t.deal) + ' avg') + d1('Contracts / yr', r0(t.year.contracts), t.close + '% close') + d1('Offers / yr', r0(t.year.offers), t.otc + ' per contract') + d1('Leads / yr', r0(t.year.leads), t.ltc.toFixed(1) + ' leads per contract');
+      h += d1('Ad Spend / yr', fmt(t.year.ad), fmt(t.year.ad / 12) + '/mo &middot; ' + fmt(t.costPerDeal) + ' per deal') + d1('Acq Reps Needed', t.reps, t.repsUnrounded.toFixed(1) + ' unrounded');
+      h += '</div>';
+
+      // 2. scoreboard: week + month
+      var actW = scActuals(P.week), actM = scActuals(P.month);
+      var fmtD = function (d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
+      var oppsNote = SC_LOADING ? '<span style="color:#2E75B6;">Loading GHL opportunities&hellip;</span>' : SC_OPPS_ERR ? '<span style="color:#C00000;">GHL offers unavailable: ' + SC_OPPS_ERR + '</span> <a href="javascript:void(0)" onclick="scReloadOffers()" style="color:#2E75B6;font-weight:600;">retry</a>' : SC_OPPS ? 'GHL: ' + SC_STAGES.totalOpps.toLocaleString() + ' opportunities, ' + SC_OPPS.length.toLocaleString() + ' at an offer stage or later &middot; <a href="javascript:void(0)" onclick="scReloadOffers()" style="color:#2E75B6;font-weight:600;">&#8635; refresh</a>' : '';
+      h += secT('2. Scoreboard', '#548235', '<span style="font-size:11px;color:#999;">' + oppsNote + '</span>');
+      var rows = [
+        { key: 'offers', label: 'Offers Made', src: 'GHL', fmtv: r0, drill: true },
+        { key: 'contracts', label: 'Contracts Signed', src: 'Deal Ledger (UC date)', fmtv: r0, drill: true },
+        { key: 'closings', label: 'Closings', src: 'Deal Ledger (Closed-Won)', fmtv: r0, drill: true },
+        { key: 'revenue', label: 'Revenue (Final Profit)', src: 'Deal Ledger', fmtv: fmt, tkey: 'rev' },
+        { key: 'leads', label: 'Leads', src: 'SM3 + FB lead sheets', fmtv: r0 },
+        { key: 'ad', label: 'Ad Spend', src: 'Tiller (pro-rated)', fmtv: fmt, cost: true }
+      ];
+      var tkeyOf = function (rw) { return rw.tkey || (rw.key === 'closings' ? 'deals' : rw.key); };
+      var scoreTable = function (pk, act, tgt, p) {
+        var s = '<div style="background:white;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);overflow:hidden;"><div style="background:' + (pk === 'week' ? '#2E75B6' : '#548235') + ';color:white;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;"><b style="font-size:13px;text-transform:uppercase;letter-spacing:1px;">' + p.label + '</b><span style="font-size:11px;opacity:0.85;">' + fmtD(p.from) + ' &ndash; ' + fmtD(p.to) + ' &middot; ' + Math.round(p.elapsed * 100) + '% elapsed</span></div>';
+        s += '<table style="width:100%;font-size:12px;"><thead><tr style="color:#888;font-size:10px;text-transform:uppercase;"><th style="text-align:left;padding:8px 12px;">Metric</th><th style="text-align:right;padding:8px;">Actual</th><th style="text-align:right;padding:8px;">Pace</th><th style="text-align:right;padding:8px;">Target</th><th style="padding:8px 12px;width:34%;">Progress</th></tr></thead><tbody>';
+        rows.forEach(function (rw) {
+          var tk = tkeyOf(rw), target = tgt[tk], pace = target * p.elapsed, actual = act[rw.key];
+          var na = actual === null || actual === undefined;
+          var pct = target > 0 && !na ? actual / target : 0, pacePct = pace > 0 && !na ? actual / pace : 0;
+          var good = rw.cost ? pacePct <= 1.05 : pacePct >= 0.9;
+          var color = na ? '#bbb' : good ? '#548235' : pacePct >= 0.6 ? '#ED7D31' : '#C00000';
+          if (rw.cost && !na) color = pacePct <= 1.05 ? '#548235' : pacePct <= 1.25 ? '#ED7D31' : '#C00000';
+          var click = rw.drill ? ' style="cursor:pointer;" onclick="scDrill(\'' + rw.key + '\',\'' + pk + '\')" title="Click to see the ' + rw.label.toLowerCase() + '"' : '';
+          s += '<tr' + click + '><td style="padding:8px 12px;"><div style="font-weight:700;color:#1B2A4A;">' + rw.label + (rw.drill ? ' <span style="color:#2E75B6;font-size:10px;">&#9656;</span>' : '') + '</div><div style="font-size:10px;color:#999;">' + rw.src + '</div></td>';
+          s += '<td style="text-align:right;padding:8px;font-weight:800;font-size:15px;color:' + color + ';">' + (na ? '&mdash;' : rw.fmtv(actual)) + '</td>';
+          s += '<td style="text-align:right;padding:8px;color:#666;">' + rw.fmtv(pace) + '</td><td style="text-align:right;padding:8px;color:#1B2A4A;font-weight:600;">' + rw.fmtv(target) + '</td>';
+          s += '<td style="padding:8px 12px;"><div style="position:relative;height:16px;background:#eef1f5;border-radius:8px;overflow:hidden;"><div style="position:absolute;left:0;top:0;bottom:0;width:' + Math.min(100, pct * 100) + '%;background:' + color + ';border-radius:8px;"></div><div style="position:absolute;top:0;bottom:0;left:' + Math.min(100, p.elapsed * 100) + '%;width:2px;background:#1B2A4A;" title="where you should be today"></div></div><div style="font-size:10px;color:#888;margin-top:2px;">' + (na ? 'no data' : Math.round(pct * 100) + '% of target &middot; ' + Math.round(pacePct * 100) + '% of pace') + '</div></td></tr>';
+        });
+        return s + '</tbody></table></div>';
+      };
+      h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">' + scoreTable('week', actW, t.week, P.week) + scoreTable('month', actM, t.month, P.month) + '</div>';
+      h += '<div style="font-size:11px;color:#999;margin-top:6px;">Pace = target &times; share of the period elapsed (the dark tick on each bar). Green = at/above pace, orange = 60&ndash;90%, red = below. Offers count GHL opportunities in the Active Leads pipeline that reached an &ldquo;Offer Made&rdquo; stage or later, dated by their last stage change. Leads exclude PPL (no lead sheet yet).</div>';
+      h += '<div id="scDrill" style="display:none;margin-top:14px;"></div>';
+
+      // 3. per-rep targets
+      h += secT('3. Per Acq Rep (' + t.repsUnrounded.toFixed(1) + ' reps)', '#ED7D31');
+      var per = function (v) { return t.repsUnrounded > 0 ? v / t.repsUnrounded : 0; };
+      h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">';
+      [['Offers', 'offers', r0], ['Contracts', 'contracts', function (v) { return v.toFixed(1); }], ['Closings', 'deals', function (v) { return v.toFixed(2); }], ['Leads', 'leads', r0], ['Ad Spend', 'ad', fmt]].forEach(function (x) {
+        h += '<div class="kpi-card" style="border-left:4px solid #ED7D31;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">' + x[0] + ' per rep</div><div style="font-size:18px;font-weight:800;color:#1B2A4A;">' + x[2](per(t.week[x[1]])) + ' <span style="font-size:11px;color:#999;font-weight:600;">/ wk</span></div><div style="font-size:12px;color:#666;">' + x[2](per(t.month[x[1]])) + ' / mo</div></div>';
+      });
+      h += '</div>';
+
+      // 4. history: last 8 weeks + last 6 months
+      var hist = function (mode, n) {
+        var out = [], today = new Date(); today.setHours(0, 0, 0, 0);
+        for (var i = n - 1; i >= 0; i--) {
+          var p;
+          if (mode === 'week') { var ws = scStartOfWeek(today); ws.setDate(ws.getDate() - 7 * i); var we = new Date(ws); we.setDate(ws.getDate() + 6); p = { from: ws, to: we, label: fmtD(ws) }; }
+          else { var ms = new Date(today.getFullYear(), today.getMonth() - i, 1); p = { from: ms, to: new Date(ms.getFullYear(), ms.getMonth() + 1, 0), label: ms.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }) }; }
+          p.elapsed = i === 0 ? (mode === 'week' ? P.week.elapsed : P.month.elapsed) : 1;
+          out.push({ p: p, a: scActuals(p) });
+        }
+        return out;
+      };
+      var histTable = function (mode, n) {
+        var hs = hist(mode, n), tg = t[mode];
+        var cell = function (rw, hrow) { var tk = tkeyOf(rw), actual = hrow.a[rw.key], target = tg[tk] * hrow.p.elapsed; if (actual === null || actual === undefined) return '<td style="text-align:center;color:#ccc;">&mdash;</td>'; var pct = target > 0 ? actual / target : 0; var ok = rw.cost ? pct <= 1.05 : pct >= 0.9; var bg = ok ? '#E8F5E9' : (rw.cost ? pct <= 1.25 : pct >= 0.6) ? '#FFF3E0' : '#FDECEA'; return '<td style="text-align:center;background:' + bg + ';font-weight:600;">' + rw.fmtv(actual) + '<div style="font-size:9px;color:#888;font-weight:500;">' + Math.round(pct * 100) + '%</div></td>'; };
+        var s = '<div class="table-container"><table style="font-size:12px;"><thead><tr><th>Metric</th><th style="text-align:right;">Target / ' + (mode === 'week' ? 'wk' : 'mo') + '</th>' + hs.map(function (x) { return '<th style="text-align:center;">' + x.p.label + (x.p.elapsed < 1 ? '*' : '') + '</th>'; }).join('') + '</tr></thead><tbody>';
+        rows.forEach(function (rw) { s += '<tr><td style="font-weight:600;">' + rw.label + '</td><td style="text-align:right;color:#666;">' + rw.fmtv(tg[tkeyOf(rw)]) + '</td>' + hs.map(function (x) { return cell(rw, x); }).join('') + '</tr>'; });
+        return s + '</tbody></table></div><div style="font-size:11px;color:#999;margin-top:4px;">* current period &mdash; compared against pace, not the full target.</div>';
+      };
+      h += secT('4. Last 8 Weeks vs Target', '#1B2A4A') + histTable('week', 8);
+      h += secT('5. Last 6 Months vs Target', '#1B2A4A') + histTable('month', 6);
+
+      var scrollY = keepScroll ? window.scrollY : null; var focusId = document.activeElement && document.activeElement.id;
+      c.innerHTML = h;
+      if (focusId && document.getElementById(focusId)) { var el = document.getElementById(focusId); el.focus(); try { el.setSelectionRange && el.value && el.setSelectionRange(el.value.length, el.value.length); } catch (e) {} }
+      if (scrollY !== null) window.scrollTo(0, scrollY);
+    };
 
     // ==================== HIRING PROJECTIONS (PLANNER + HIRE ROSTER) ====================
     // Only the variables that move revenue, expenses, and pay:
@@ -5569,6 +5783,8 @@
         renderProjectionsTab();
       } else if (tab === 'projections2') {
         renderProjections2Tab();
+      } else if (tab === 'scaling') {
+        renderScalingTab();
       } else if (tab === 'hiring') {
         renderHiringTab();
       } else if (tab === 'dealmap') {
