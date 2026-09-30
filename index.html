@@ -3154,13 +3154,42 @@
     // Actuals: closings, contracts, revenue from the Deal Ledger; offers from GHL opportunities
     // (Active Leads pipeline, stage "Offer Made" or later, dated by last stage change);
     // leads from the SM3 + Facebook lead sheets; ad spend from Tiller (pro-rated by day).
-    var SC_KEYS = { rev: 2500000, deal: 30000, close: 35, otc: 6, roas: 3.5, quota: 65000, eff: 70, cpl: 180 };
-    var SC_OPPS = null, SC_STAGES = null, SC_OPPS_ERR = null, SC_LOADING = false;
+    var SC_KEYS = { rev: 1200000, deal: 20000, close: 35, otc: 6, roas: 3.5, quota: 65000, eff: 70, cpl: 180 };
+    // one-time reset so browsers that saved the old 2.5M / 30k defaults pick up the new ones
+    if (localStorage.getItem('sc_defaultsVer') !== '2') { localStorage.removeItem('sc_rev'); localStorage.removeItem('sc_deal'); localStorage.setItem('sc_defaultsVer', '2'); }
+    var SC_OPPS = null, SC_LEADS = null, SC_STAGES = null, SC_OPPS_ERR = null, SC_LOADING = false;
+    // OFFER LOG SHEET: a GHL workflow appends one row per offer (Date, Opportunity, Contact, Stage, Pipeline, Source) to a Google Sheet.
+    // Publish it as CSV and paste the link here. Every row = one offer event, so re-offers count and nothing changes when the opp moves on.
+    var OFFERS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS7jmTrEDX17BLltPhep5dQGZ-8halaH3OXsvRtXOyYr4x2gGGd72cZBdjmAJ6u-RFy0iy6_BML0QFb/pub?gid=0&single=true&output=csv';
+    var SC_OFFER_LOG = null, SC_OFFER_LOG_ERR = null;
+    async function scLoadOfferLog(force) {
+      if (!OFFERS_CSV_URL) { SC_OFFER_LOG = null; return; }
+      if (SC_OFFER_LOG && !force) return;
+      try {
+        var resp = await fetch(OFFERS_CSV_URL + (OFFERS_CSV_URL.indexOf('?') >= 0 ? '&' : '?') + '_ts=' + Date.now(), { cache: 'no-store' });
+        if (!resp.ok) throw new Error('status ' + resp.status);
+        var rows = parseCSV(await resp.text()), hi = -1;
+        for (var i = 0; i < Math.min(rows.length, 12); i++) { var low = rows[i].map(function (c) { return (c || '').toLowerCase().trim(); }); if (low.some(function (c) { return c.indexOf('date') >= 0; }) && low.some(function (c) { return /opportunity|name|contact|address/.test(c); })) { hi = i; break; } }
+        if (hi === -1) throw new Error('no header row (need a Date column plus Opportunity / Contact)');
+        var H = rows[hi].map(function (c) { return (c || '').toLowerCase().trim(); }), col = function (re) { return H.findIndex(function (h) { return re.test(h); }); };
+        var iDate = col(/date/), iName = col(/opportunity|^name|deal/), iContact = col(/contact|seller/), iStage = col(/stage|type/), iAddr = col(/address|property/), iSrc = col(/source|channel/);
+        var out = [];
+        for (var r = hi + 1; r < rows.length; r++) { var row = rows[r]; if (!row || !row.some(function (c) { return (c || '').trim(); })) continue; var dt = parseLeadDate(iDate >= 0 ? row[iDate] : ''); if (!dt) continue; out.push({ _offerDate: dt, name: (iName >= 0 ? row[iName] : '') || (iAddr >= 0 ? row[iAddr] : '') || '', contact: (iContact >= 0 ? row[iContact] : '') || '', stage: (iStage >= 0 ? row[iStage] : '') || 'Offer', kind: /verbal/i.test(iStage >= 0 ? row[iStage] : '') ? 'verbal' : 'contract', address: (iAddr >= 0 ? row[iAddr] : '') || '', source: (iSrc >= 0 ? row[iSrc] : '') || '', value: 0, _raw: null }); }
+        // ONE offer per opportunity: if the same opp is logged again (Verbal -> Cash Offer -> Amendment...), keep only the FIRST row by date.
+        var normKey = function (o) { return String(o.name || o.contact || o.address || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+        out.sort(function (x, y) { return x._offerDate - y._offerDate; });
+        var seen = {}, deduped = [], dupCount = 0;
+        out.forEach(function (o) { var k = normKey(o); if (!k) { deduped.push(o); return; } if (seen[k]) { dupCount++; seen[k].laterStages = (seen[k].laterStages || []).concat(o.stage + ' ' + o._offerDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })); return; } seen[k] = o; deduped.push(o); });
+        deduped.rawRows = out.length; deduped.dupCount = dupCount;
+        SC_OFFER_LOG = deduped; SC_OFFER_LOG_ERR = null;   // empty log = connected with 0 offers (do not fall back to GHL guessing)
+      } catch (e) { SC_OFFER_LOG = null; SC_OFFER_LOG_ERR = e.message || String(e); }
+      if (document.getElementById('scResults')) scRecalc();
+    }
     function scG(k) { var v = parseFloat(localStorage.getItem('sc_' + k)); return isNaN(v) ? SC_KEYS[k] : v; }
     function scN(id, def) { var el = document.getElementById(id); if (!el) return def; var n = parseFloat(el.value); return isNaN(n) ? def : n; }
 
     function scTargets() {
-      var t = {}; Object.keys(SC_KEYS).forEach(function (k) { t[k] = scN('scL_' + k, scG(k)); localStorage.setItem('sc_' + k, t[k]); });
+      var t = {}; Object.keys(SC_KEYS).forEach(function (k) { var el = document.getElementById('scL_' + k); var n = el ? parseFloat(el.value) : NaN; if (el && !isNaN(n)) { t[k] = n; localStorage.setItem('sc_' + k, n); } else t[k] = el ? 0 : scG(k); });
       var closeF = t.close / 100, effF = t.eff / 100;
       t.costPerDeal = t.roas > 0 ? t.deal / t.roas : 0;
       t.costPerContract = t.costPerDeal * closeF;
@@ -3196,18 +3225,46 @@
 
     // ---- actuals for a period ----
     function scActuals(p) {
-      var a = { closings: 0, contracts: 0, revenue: 0, offers: null, leads: null, ad: 0, wonDeals: [], ucDeals: [], offerOpps: [] };
+      var a = { closings: 0, contracts: 0, revenue: 0, offers: null, offersVerbal: null, offersContract: null, get offersSigned() { return this.contracts; }, leads: null, ad: 0, wonDeals: [], ucDeals: [], offerOpps: [] };
       (DEALS || []).forEach(function (d) {
         if (d.status === 'Closed - Won' && scDateIn(scLocalDate(d.closeDate), p)) { a.closings++; a.revenue += (d.final || 0); a.wonDeals.push(d); }
         if (scDateIn(scLocalDate(d.ucDate), p)) { a.contracts++; a.ucDeals.push(d); }
       });
-      if ((SM3_LEADS && SM3_LEADS.length) || (FB_LEADS && FB_LEADS.length)) {
-        a.leads = 0;
+      a.leadOpps = []; a.leadsBySource = {}; a.leadsFrom = null;
+      if (SC_LEADS) {
+        a.leads = 0; a.leadsFrom = 'ghl';
+        SC_LEADS.forEach(function (l) { if (scDateIn(l._created, p)) { a.leads++; a.leadOpps.push(l); a.leadsBySource[l.source] = (a.leadsBySource[l.source] || 0) + 1; } });
+      } else if ((SM3_LEADS && SM3_LEADS.length) || (FB_LEADS && FB_LEADS.length)) {
+        a.leads = 0; a.leadsFrom = 'sheets';
         [SM3_LEADS || [], FB_LEADS || []].forEach(function (arr) { arr.forEach(function (l) { if (scDateIn(l.date, p)) a.leads++; }); });
       }
-      if (SC_OPPS) {
-        a.offers = 0;
-        SC_OPPS.forEach(function (o) { if (scDateIn(o._offerDate, p)) { a.offers++; a.offerOpps.push(o); } });
+      if (SC_OFFER_LOG) {
+        // Offer log = every offer event with its real date. No ledger cross-check needed: a logged offer is an offer regardless of what the deal did later.
+        a.offersVerbal = 0; a.offersContract = 0; a.offerOppsSkipped = []; a.offersFrom = 'log';
+        SC_OFFER_LOG.forEach(function (o) { if (scDateIn(o._offerDate, p)) { a.offerOpps.push(o); if (o.kind === 'verbal') a.offersVerbal++; else a.offersContract++; } });
+        a.offers = a.offersVerbal + a.offersContract;
+      } else if (SC_OPPS) {
+        a.offersFrom = 'ghl';
+        a.offersVerbal = 0; a.offersContract = 0; a.offerOppsSkipped = [];
+        // Once a deal is in the ledger (under contract, escrow, closed, lost) the ledger owns it - drop the matching GHL opp so it cannot also count as an open offer
+        var norm = function (x) { return String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim(); };
+        var ledger = (DEALS || []).map(function (d) {
+          var nm = norm(d.id), parts = nm.split(' ').filter(function (w) { return w.length > 2 && !/^(and|the|llc|jr|sr|mr|mrs|ms)$/.test(w); });
+          var ad = norm(d.address), am = ad.match(/^(\d+)\s+([a-z0-9]+)/);   // street number + first word of street
+          return { d: d, name: nm, parts: parts, street: am ? am[1] + ' ' + am[2] : null };
+        });
+        var inLedger = function (o) {
+          var hay = norm(o.name) + ' | ' + norm(o.contact) + ' | ' + norm(o.address);
+          for (var i = 0; i < ledger.length; i++) {
+            var L = ledger[i];
+            if (L.name && hay.indexOf(L.name) >= 0) return L.d;                                  // full seller name appears anywhere
+            if (L.parts.length >= 2 && L.parts.every(function (w) { return hay.indexOf(w) >= 0; })) return L.d;   // every name word appears (handles "Lawrenz, Thaija", middle names, etc.)
+            if (L.street && hay.indexOf(L.street) >= 0) return L.d;                              // "1709 flett" style address match
+          }
+          return null;
+        };
+        SC_OPPS.forEach(function (o) { if (!scDateIn(o._offerDate, p)) return; var dl = inLedger(o); if (dl) { a.offerOppsSkipped.push({ o: o, d: dl }); return; } a.offerOpps.push(o); if (o.kind === 'verbal') a.offersVerbal++; else a.offersContract++; });
+        a.offers = a.offersVerbal + a.offersContract + a.contracts;   // + every contract SIGNED in the period (Deal Ledger UC date) - those offers already converted
       }
       // Tiller ad spend, pro-rated by the days of each month inside the period
       if (EXPENSE_DATA && EXPENSE_DATA.categories) {
@@ -3241,28 +3298,49 @@
           var stages = (pl.stages || []).slice().sort(function (x, y) { return (x.position || 0) - (y.position || 0); });
           var firstOffer = -1;
           stages.forEach(function (st, i) { stageName[st.id] = pl.name + ' / ' + st.name; if (firstOffer < 0 && /offer made/i.test(st.name)) firstOffer = i; });
-          if (firstOffer >= 0 && /active leads/i.test(pl.name)) stages.forEach(function (st, i) { if (i >= firstOffer) offerStageIds[st.id] = st.name; });
+          if (/active leads/i.test(pl.name)) stages.forEach(function (st) { if (/offer made/i.test(st.name) && !/amendment|cancellation/i.test(st.name)) offerStageIds[st.id] = st.name; });   // Verbal + Offer Made (CONTRACT SENT) only. Under Contract / Closed come from the Deal Ledger by UC date
         });
         SC_STAGES = { offerStageIds: offerStageIds, stageName: stageName, pipelines: pipes.length, totalOpps: opps.length };
+        var buyerPipes = {}; pipes.forEach(function (pl) { if (/buyer/i.test(pl.name)) buyerPipes[pl.id] = true; });
+        var pipeName = {}; pipes.forEach(function (pl) { pipeName[pl.id] = pl.name; });
+        var srcOf = function (o) { var v = (o.source || (o.contact && o.contact.source) || '').trim(); if (!v && o.contact && Array.isArray(o.contact.tags)) v = o.contact.tags.join(', '); var l = v.toLowerCase(); if (/ppl|property lead|pay per lead/.test(l)) return 'PPL'; if (/facebook|fb|meta/.test(l)) return 'Facebook'; if (/sm3|google|ppc|adwords/.test(l)) return 'SM3 / Google'; return v || 'Unknown'; };
+        SC_LEADS = opps.filter(function (o) { return !buyerPipes[o.pipelineId]; }).map(function (o) { var dt = o.createdAt ? new Date(o.createdAt) : null; return { id: o.id, name: o.name, source: srcOf(o), pipeline: pipeName[o.pipelineId] || '', _created: (dt && !isNaN(dt)) ? dt : null, contact: (o.contact && (o.contact.name || o.contact.email)) || '' }; });
         SC_OPPS = opps.filter(function (o) { return offerStageIds[o.pipelineStageId]; }).map(function (o) {
           var ds = o.lastStageChangeAt || o.updatedAt || o.createdAt; var dt = ds ? new Date(ds) : null;
-          return { id: o.id, name: o.name, stage: offerStageIds[o.pipelineStageId], status: o.status, value: o.monetaryValue || 0, _offerDate: (dt && !isNaN(dt)) ? dt : null, contact: (o.contact && (o.contact.name || o.contact.email)) || '' };
+          var stName = offerStageIds[o.pipelineStageId];
+          var addrBits = []; if (o.contact) ['address1', 'address', 'city', 'fullAddress'].forEach(function (k) { if (o.contact[k]) addrBits.push(o.contact[k]); }); (o.customFields || []).forEach(function (f) { var v = f.fieldValueString || f.fieldValue || f.value; if (typeof v === 'string' && /\d+\s+\w+/.test(v)) addrBits.push(v); });
+          return { id: o.id, name: o.name, stage: stName, kind: /verbal/i.test(stName) ? 'verbal' : 'contract', status: o.status, value: o.monetaryValue || 0, _offerDate: (dt && !isNaN(dt)) ? dt : null, contact: (o.contact && [o.contact.name, o.contact.firstName, o.contact.lastName, o.contact.email].filter(Boolean).join(' ')) || '', address: addrBits.join(' | '), _raw: { updatedAt: o.updatedAt, lastStageChangeAt: o.lastStageChangeAt, createdAt: o.createdAt } };
         });
-      } catch (e) { SC_OPPS = null; SC_OPPS_ERR = e.message || String(e); }
+      } catch (e) { SC_OPPS = null; SC_LEADS = null; SC_OPPS_ERR = e.message || String(e); }
       SC_LOADING = false;
-      if (document.getElementById('scalingContent') && document.getElementById('scaling').classList.contains('active')) renderScalingTab(true);
+      if (document.getElementById('scResults')) scRecalc();
     }
-    window.scReloadOffers = function () { SC_OPPS = null; scLoadOpps(true); renderScalingTab(true); };
+    window.scReloadOffers = function () { SC_OPPS = null; SC_LEADS = null; scLoadOpps(true); scRecalc(); };
 
     // ---- drill-downs ----
     window.scDrill = function (kind, periodKey) {
+      if (kind === 'offersSigned') kind = 'contracts';
       var p = scPeriods()[periodKey], a = scActuals(p), box = document.getElementById('scDrill'); if (!box) return;
       var fmtD = function (d) { return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; };
-      var h = '<div class="section-title" style="background:#1B2A4A;display:flex;justify-content:space-between;"><span>' + kind.toUpperCase() + ' &middot; ' + p.label.toUpperCase() + ' (' + fmtD(p.from) + ' &ndash; ' + fmtD(p.to) + ')</span><span class="close-btn" onclick="document.getElementById(\'scDrill\').style.display=\'none\'">&times;</span></div><div class="section-body" style="max-height:360px;overflow:auto;">';
-      if (kind === 'offers') {
+      var kindLabel = { leads: 'New Leads (GHL)', offers: SC_OFFER_LOG ? 'Offers Made (offer log sheet)' : 'Offers Made (GHL open offers + signed contracts)', offersVerbal: 'Verbal Offers (GHL)', offersContract: 'Contracts Sent, unsigned (GHL)', contracts: 'Contracts Signed (Deal Ledger)', closings: 'Closings (Deal Ledger)' }[kind] || kind;
+      var h = '<div class="section-title" style="background:#1B2A4A;display:flex;justify-content:space-between;"><span>' + kindLabel.toUpperCase() + ' &middot; ' + p.label.toUpperCase() + ' (' + fmtD(p.from) + ' &ndash; ' + fmtD(p.to) + ')</span><span class="close-btn" onclick="document.getElementById(\'scDrill\').style.display=\'none\'">&times;</span></div><div class="section-body" style="max-height:360px;overflow:auto;">';
+      if (kind === 'leads') {
+        if (!SC_LEADS) h += '<div style="padding:16px;color:#888;">GHL not loaded &mdash; showing lead-sheet count only.</div>';
+        else {
+          var srcs = Object.keys(a.leadsBySource).sort(function (x, y) { return a.leadsBySource[y] - a.leadsBySource[x]; });
+          h += '<div style="padding:10px 0;display:flex;gap:10px;flex-wrap:wrap;">' + srcs.map(function (sn) { return '<span style="background:#E8F1FB;color:#1B4F8A;border-radius:12px;padding:4px 10px;font-size:12px;font-weight:700;">' + sn + ': ' + a.leadsBySource[sn] + '</span>'; }).join('') + '</div>';
+          h += '<table><thead><tr><th>Lead</th><th>Contact</th><th>Source</th><th>Pipeline</th><th>Created</th></tr></thead><tbody>';
+          a.leadOpps.sort(function (x, y) { return y._created - x._created; }).forEach(function (l) { h += '<tr><td>' + (l.name || '') + '</td><td>' + l.contact + '</td><td>' + l.source + '</td><td>' + l.pipeline + '</td><td>' + fmtD(l._created) + '</td></tr>'; });
+          h += '</tbody></table>' + (a.leadOpps.length ? '' : '<div style="padding:16px;color:#888;">No new opportunities in this period.</div>');
+        }
+      } else if (kind === 'offers' || kind === 'offersVerbal' || kind === 'offersContract') {
+        var want = kind === 'offersVerbal' ? 'verbal' : kind === 'offersContract' ? 'contract' : null;
+        a.offerOpps = a.offerOpps.filter(function (o) { return !want || o.kind === want; });
+        if (kind === 'offers' && !SC_OFFER_LOG) a.ucDeals.forEach(function (d) { a.offerOpps.push({ name: d.id + ' - ' + (d.address || ''), contact: '', stage: 'Contract signed (Deal Ledger)', _offerDate: scLocalDate(d.ucDate), value: d.contract || 0 }); });
+        var skippedNote = a.offerOppsSkipped.length ? '<div style="font-size:11px;color:#888;padding:6px 0 10px;">Not counted as GHL offers because they are already in the Deal Ledger (' + a.offerOppsSkipped.map(function (x) { return (x.o.name || '') + ' &rarr; ' + x.d.status + ' ' + formatDate(x.d.ucDate); }).join('; ') + ')</div>' : '';
         if (!SC_OPPS) h += '<div style="padding:16px;color:#888;">GHL opportunities not loaded.</div>';
-        else { h += '<table><thead><tr><th>Opportunity</th><th>Contact</th><th>Stage</th><th>Date</th><th style="text-align:right;">Value</th></tr></thead><tbody>';
-          a.offerOpps.sort(function (x, y) { return y._offerDate - x._offerDate; }).forEach(function (o) { h += '<tr><td>' + (o.name || '') + '</td><td>' + o.contact + '</td><td>' + o.stage + '</td><td>' + fmtD(o._offerDate) + '</td><td style="text-align:right;">' + (o.value ? fmt(o.value) : '&mdash;') + '</td></tr>'; });
+        else { h += skippedNote + '<table><thead><tr><th>Opportunity</th><th>Contact</th><th>Stage</th><th>Date</th><th style="text-align:right;">Value</th></tr></thead><tbody>';
+          a.offerOpps.sort(function (x, y) { return y._offerDate - x._offerDate; }).forEach(function (o) { var why = o._raw ? (o._raw.lastStageChangeAt ? 'entered stage' : o._raw.updatedAt ? 'last updated (no stage date)' : 'created') : (SC_OFFER_LOG && !/ledger/i.test(o.stage) ? 'offer log' : 'ledger UC date'); h += '<tr><td>' + (o.name || '') + (o.address ? '<div style="font-size:10px;color:#999;">' + o.address + '</div>' : '') + (o.laterStages ? '<div style="font-size:10px;color:#999;">later: ' + o.laterStages.join(', ') + ' (not counted again)</div>' : '') + '</td><td>' + o.contact + '</td><td>' + o.stage + '</td><td>' + fmtD(o._offerDate) + '<div style="font-size:10px;color:#999;">' + why + '</div></td><td style="text-align:right;">' + (o.value ? fmt(o.value) : '&mdash;') + '</td></tr>'; });
           h += '</tbody></table>' + (a.offerOpps.length ? '' : '<div style="padding:16px;color:#888;">No opportunities reached an offer stage in this period.</div>'); }
       } else {
         var rows = kind === 'closings' ? a.wonDeals : a.ucDeals;
@@ -3274,15 +3352,16 @@
     };
 
     // ---- render ----
-    const renderScalingTab = (keepScroll) => {
+    const renderScalingTab = () => {
       var c = document.getElementById('scalingContent'); if (!c) return;
       if (!SC_OPPS && !SC_LOADING && !SC_OPPS_ERR) scLoadOpps(false);
+      if (OFFERS_CSV_URL && !SC_OFFER_LOG && !SC_OFFER_LOG_ERR) scLoadOfferLog(false);
       var t = scTargets(), P = scPeriods(), r0 = function (n) { return Math.round(n || 0); };
       var numStyle = 'width:100%;padding:7px;border:1px solid #9DC3E6;background:#F3F8FD;border-radius:4px;font-size:15px;font-weight:800;color:#1B2A4A;text-align:center;';
-      var lever = function (label, key, val, step, hint, fmtFn) { return '<div class="kpi-card" style="border-left:4px solid #2E75B6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><input id="scL_' + key + '" type="number" step="' + step + '" value="' + val + '" oninput="renderScalingTab(true)" style="' + numStyle + '">' + (hint ? '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div>' : '') + '</div>'; };
+      var lever = function (label, key, val, step, hint, fmtFn) { return '<div style="background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #2E75B6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><input id="scL_' + key + '" type="number" step="' + step + '" value="' + val + '" oninput="scRecalc()" style="' + numStyle + '">' + (hint ? '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div>' : '') + '</div>'; };
       var secT = function (title, color, right) { return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (right || '') + '</div>'; };
 
-      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals</h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
+      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-09-30 b</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
 
       // 1. levers
       h += secT('1. Model Levers', '#1B2A4A', '<span style="font-size:11px;color:#999;">Same math as the Pod Scaling Model workbook. Saved in this browser.</span>');
@@ -3290,7 +3369,16 @@
       h += lever('Target Revenue / yr', 'rev', t.rev, 50000); h += lever('Avg Deal Size', 'deal', t.deal, 1000); h += lever('% Closed to Signed', 'close', t.close, 1, 'of contracts that close');
       h += lever('Offers per Contract', 'otc', t.otc, 0.5); h += lever('Target ROAS', 'roas', t.roas, 0.1); h += lever('Avg Price per Lead', 'cpl', t.cpl, 5);
       h += lever('Rep Quota / mo', 'quota', t.quota, 5000, 'closed revenue per rep'); h += lever('Team Efficiency %', 'eff', t.eff, 5);
-      h += '</div>';
+      h += '</div><div id="scResults"></div>';
+      c.innerHTML = h;
+      scRecalc();
+    };
+
+    window.scRecalc = function () {
+      var c = document.getElementById('scResults'); if (!c) return;
+      var t = scTargets(), P = scPeriods(), r0 = function (n) { return Math.round(n || 0); };
+      var secT = function (title, color, right) { return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (right || '') + '</div>'; };
+      var h = '';
       // derived strip
       var d1 = function (label, val, sub) { return '<div><div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.65);text-transform:uppercase;letter-spacing:1px;">' + label + '</div><div style="font-size:20px;font-weight:800;color:#FFD966;">' + val + '</div>' + (sub ? '<div style="font-size:11px;color:rgba(255,255,255,0.6);">' + sub + '</div>' : '') + '</div>'; };
       h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:10px;background:#1B2A4A;border-radius:10px;padding:12px 14px;">';
@@ -3301,14 +3389,18 @@
       // 2. scoreboard: week + month
       var actW = scActuals(P.week), actM = scActuals(P.month);
       var fmtD = function (d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
-      var oppsNote = SC_LOADING ? '<span style="color:#2E75B6;">Loading GHL opportunities&hellip;</span>' : SC_OPPS_ERR ? '<span style="color:#C00000;">GHL offers unavailable: ' + SC_OPPS_ERR + '</span> <a href="javascript:void(0)" onclick="scReloadOffers()" style="color:#2E75B6;font-weight:600;">retry</a>' : SC_OPPS ? 'GHL: ' + SC_STAGES.totalOpps.toLocaleString() + ' opportunities, ' + SC_OPPS.length.toLocaleString() + ' at an offer stage or later &middot; <a href="javascript:void(0)" onclick="scReloadOffers()" style="color:#2E75B6;font-weight:600;">&#8635; refresh</a>' : '';
+      var logNote = OFFERS_CSV_URL ? (SC_OFFER_LOG ? '<span style="color:#548235;font-weight:700;">Offer log connected: ' + SC_OFFER_LOG.length + ' offers</span>' + (SC_OFFER_LOG.dupCount ? ' <span style="color:#888;">(' + SC_OFFER_LOG.rawRows + ' rows, ' + SC_OFFER_LOG.dupCount + ' later stage moves not double-counted)</span>' : '') + ' &middot; <a href="javascript:void(0)" onclick="scLoadOfferLog(true)" style="color:#2E75B6;font-weight:600;">&#8635;</a> &middot; ' : SC_OFFER_LOG_ERR ? '<span style="color:#C00000;">Offer log sheet error: ' + SC_OFFER_LOG_ERR + '</span> &middot; ' : 'Loading offer log&hellip; &middot; ') : '<span style="color:#ED7D31;font-weight:700;">Offer log sheet not connected</span> &middot; ';
+      var oppsNote = logNote + (SC_LOADING ? '<span style="color:#2E75B6;">Loading GHL opportunities&hellip;</span>' : SC_OPPS_ERR ? '<span style="color:#C00000;">GHL offers unavailable: ' + SC_OPPS_ERR + '</span> <a href="javascript:void(0)" onclick="scReloadOffers()" style="color:#2E75B6;font-weight:600;">retry</a>' : SC_OPPS ? 'GHL: ' + SC_STAGES.totalOpps.toLocaleString() + ' opportunities, ' + SC_OPPS.length.toLocaleString() + ' currently in an offer stage &middot; <a href="javascript:void(0)" onclick="scReloadOffers()" style="color:#2E75B6;font-weight:600;">&#8635; refresh</a>' : '');
       h += secT('2. Scoreboard', '#548235', '<span style="font-size:11px;color:#999;">' + oppsNote + '</span>');
       var rows = [
-        { key: 'offers', label: 'Offers Made', src: 'GHL', fmtv: r0, drill: true },
+        { key: 'offers', label: 'Offers Made', src: SC_OFFER_LOG ? 'Offer log sheet (every offer, dated when made)' : 'GHL open offers + contracts signed (until the offer log sheet is connected)', fmtv: r0, drill: true },
+        { key: 'offersVerbal', label: SC_OFFER_LOG ? 'of which Verbal Offers' : 'of which Verbal Offers (open)', src: SC_OFFER_LOG ? 'Offer log rows marked Verbal' : 'GHL stage: Verbal Offer Made', fmtv: r0, sub: true, drill: true },
+        { key: 'offersContract', label: SC_OFFER_LOG ? 'of which Written Offers / Contracts Sent' : 'of which Contracts Sent (unsigned)', src: SC_OFFER_LOG ? 'Offer log rows' : 'GHL stages: Novation / Cash / Sub-to Offer Made (CONTRACT SENT)', fmtv: r0, sub: true, drill: true },
+        { key: 'offersSigned', label: 'of which Contracts Signed', src: 'Deal Ledger (UC date)', fmtv: r0, sub: true, drill: true, hideWhenLog: true },
         { key: 'contracts', label: 'Contracts Signed', src: 'Deal Ledger (UC date)', fmtv: r0, drill: true },
         { key: 'closings', label: 'Closings', src: 'Deal Ledger (Closed-Won)', fmtv: r0, drill: true },
         { key: 'revenue', label: 'Revenue (Final Profit)', src: 'Deal Ledger', fmtv: fmt, tkey: 'rev' },
-        { key: 'leads', label: 'Leads', src: 'SM3 + FB lead sheets', fmtv: r0 },
+        { key: 'leads', label: 'Leads', src: SC_LEADS ? 'GHL: new leads into the pipeline (SM3, Facebook, PPL)' : 'SM3 + FB lead sheets (GHL not loaded)', fmtv: r0, drill: true },
         { key: 'ad', label: 'Ad Spend', src: 'Tiller (pro-rated)', fmtv: fmt, cost: true }
       ];
       var tkeyOf = function (rw) { return rw.tkey || (rw.key === 'closings' ? 'deals' : rw.key); };
@@ -3316,6 +3408,8 @@
         var s = '<div style="background:white;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);overflow:hidden;"><div style="background:' + (pk === 'week' ? '#2E75B6' : '#548235') + ';color:white;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;"><b style="font-size:13px;text-transform:uppercase;letter-spacing:1px;">' + p.label + '</b><span style="font-size:11px;opacity:0.85;">' + fmtD(p.from) + ' &ndash; ' + fmtD(p.to) + ' &middot; ' + Math.round(p.elapsed * 100) + '% elapsed</span></div>';
         s += '<table style="width:100%;font-size:12px;"><thead><tr style="color:#888;font-size:10px;text-transform:uppercase;"><th style="text-align:left;padding:8px 12px;">Metric</th><th style="text-align:right;padding:8px;">Actual</th><th style="text-align:right;padding:8px;">Pace</th><th style="text-align:right;padding:8px;">Target</th><th style="padding:8px 12px;width:34%;">Progress</th></tr></thead><tbody>';
         rows.forEach(function (rw) {
+          if (rw.hideWhenLog && SC_OFFER_LOG) return;
+          if (rw.sub) { var av = act[rw.key]; s += '<tr style="cursor:pointer;" onclick="scDrill(\'' + rw.key + '\',\'' + pk + '\')"><td style="padding:4px 12px 4px 26px;"><div style="font-size:11px;color:#555;font-weight:600;">' + rw.label + '</div><div style="font-size:10px;color:#999;">' + rw.src + '</div></td><td style="text-align:right;padding:4px 8px;font-weight:700;color:#555;">' + (av === null || av === undefined ? '&mdash;' : rw.fmtv(av)) + '</td><td colspan="3"></td></tr>'; return; }
           var tk = tkeyOf(rw), target = tgt[tk], pace = target * p.elapsed, actual = act[rw.key];
           var na = actual === null || actual === undefined;
           var pct = target > 0 && !na ? actual / target : 0, pacePct = pace > 0 && !na ? actual / pace : 0;
@@ -3331,7 +3425,7 @@
         return s + '</tbody></table></div>';
       };
       h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">' + scoreTable('week', actW, t.week, P.week) + scoreTable('month', actM, t.month, P.month) + '</div>';
-      h += '<div style="font-size:11px;color:#999;margin-top:6px;">Pace = target &times; share of the period elapsed (the dark tick on each bar). Green = at/above pace, orange = 60&ndash;90%, red = below. Offers count GHL opportunities in the Active Leads pipeline that reached an &ldquo;Offer Made&rdquo; stage or later, dated by their last stage change. Leads exclude PPL (no lead sheet yet).</div>';
+      h += '<div style="font-size:11px;color:#999;margin-top:6px;">Pace = target &times; share of the period elapsed (the dark tick on each bar). Green = at/above pace, orange = 60&ndash;90%, red = below. Offers: with the offer log sheet connected, each opportunity counts ONCE, on the date of its first logged offer &mdash; later moves between offer stages (verbal &rarr; written, amendments) are ignored, and nothing else is counted. Until then, the fallback is GHL opportunities currently in an offer stage (dated by when they entered it) plus contracts signed in the period from the Deal Ledger; GHL keeps no stage history, so the fallback cannot see offers on opps that have since moved on. Leads = opportunities that entered GHL in the period (created date), i.e. what came into the New Leads workflow &mdash; counted by created date so a lead still counts even if it has since moved to a follow-up or dead pipeline. PPL, SM3 and Facebook are all included; click the row for the split by source.</div>';
       h += '<div id="scDrill" style="display:none;margin-top:14px;"></div>';
 
       // 3. per-rep targets
@@ -3359,16 +3453,13 @@
         var hs = hist(mode, n), tg = t[mode];
         var cell = function (rw, hrow) { var tk = tkeyOf(rw), actual = hrow.a[rw.key], target = tg[tk] * hrow.p.elapsed; if (actual === null || actual === undefined) return '<td style="text-align:center;color:#ccc;">&mdash;</td>'; var pct = target > 0 ? actual / target : 0; var ok = rw.cost ? pct <= 1.05 : pct >= 0.9; var bg = ok ? '#E8F5E9' : (rw.cost ? pct <= 1.25 : pct >= 0.6) ? '#FFF3E0' : '#FDECEA'; return '<td style="text-align:center;background:' + bg + ';font-weight:600;">' + rw.fmtv(actual) + '<div style="font-size:9px;color:#888;font-weight:500;">' + Math.round(pct * 100) + '%</div></td>'; };
         var s = '<div class="table-container"><table style="font-size:12px;"><thead><tr><th>Metric</th><th style="text-align:right;">Target / ' + (mode === 'week' ? 'wk' : 'mo') + '</th>' + hs.map(function (x) { return '<th style="text-align:center;">' + x.p.label + (x.p.elapsed < 1 ? '*' : '') + '</th>'; }).join('') + '</tr></thead><tbody>';
-        rows.forEach(function (rw) { s += '<tr><td style="font-weight:600;">' + rw.label + '</td><td style="text-align:right;color:#666;">' + rw.fmtv(tg[tkeyOf(rw)]) + '</td>' + hs.map(function (x) { return cell(rw, x); }).join('') + '</tr>'; });
+        rows.forEach(function (rw) { if (rw.sub) return; s += '<tr><td style="font-weight:600;">' + rw.label + '</td><td style="text-align:right;color:#666;">' + rw.fmtv(tg[tkeyOf(rw)]) + '</td>' + hs.map(function (x) { return cell(rw, x); }).join('') + '</tr>'; });
         return s + '</tbody></table></div><div style="font-size:11px;color:#999;margin-top:4px;">* current period &mdash; compared against pace, not the full target.</div>';
       };
       h += secT('4. Last 8 Weeks vs Target', '#1B2A4A') + histTable('week', 8);
       h += secT('5. Last 6 Months vs Target', '#1B2A4A') + histTable('month', 6);
 
-      var scrollY = keepScroll ? window.scrollY : null; var focusId = document.activeElement && document.activeElement.id;
       c.innerHTML = h;
-      if (focusId && document.getElementById(focusId)) { var el = document.getElementById(focusId); el.focus(); try { el.setSelectionRange && el.value && el.setSelectionRange(el.value.length, el.value.length); } catch (e) {} }
-      if (scrollY !== null) window.scrollTo(0, scrollY);
     };
 
     // ==================== HIRING PROJECTIONS (PLANNER + HIRE ROSTER) ====================
