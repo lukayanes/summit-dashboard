@@ -628,6 +628,7 @@
                 <th style="cursor: pointer;" onclick="sortLedgerTable('source')">Source <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('status')">Status <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('strategy')">Strategy <span class="sort-arrow"></span></th>
+                <th style="cursor: pointer;" onclick="sortLedgerTable('lostReason')">Lost Reason <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('ucDate')">UC Date <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer;" onclick="sortLedgerTable('closeDate')">Close Date <span class="sort-arrow"></span></th>
                 <th style="cursor: pointer; text-align: right;" onclick="sortLedgerTable('contract')">Contract Price <span class="sort-arrow"></span></th>
@@ -1096,6 +1097,7 @@
         const iFinal = colIdx('final profit');
         const iNotes = colIdx('notes');
         const iSource = colIdx('source'); // lead source (SM3/Google, Facebook, PPL, etc.)
+        const iLost = colIdx('lost reason') >= 0 ? colIdx('lost reason') : (colIdx('reason lost') >= 0 ? colIdx('reason lost') : colIdx('why lost')); // why a Closed-Lost deal fell through
 
         const deals = [];
         for (let i = headerIdx + 1; i < rows.length; i++) {
@@ -1135,6 +1137,7 @@
             status: r[iStatus] || '',
             strategy: r[iStrategy] || '',
             source: (iSource >= 0 ? (r[iSource] || '').trim() : ''),
+            lostReason: (iLost >= 0 ? (r[iLost] || '').trim() : ''),
             ucDate: ucDate,
             closeDate: closeDate,
             month: month,
@@ -1469,6 +1472,7 @@
               <th>Contract</th>
               <th>Days</th>
               <th>Profit</th>
+              <th>Lost Reason</th>
             </tr>
           </thead>
           <tbody>
@@ -1496,6 +1500,7 @@
             <td style="font-weight: 500;">${fmt(deal.contract)}</td>
             <td style="text-align: right;">${days}d</td>
             <td style="font-weight: 500; color: #10b981;">${profit ? fmt(profit) : '-'}</td>
+            <td style="font-size: 12px; color: #C00000;">${deal.lostReason || (deal.status.includes('Lost') ? '<span style="color:#bbb;">not set</span>' : '')}</td>
           </tr>
         `;
       });
@@ -1871,6 +1876,49 @@
       container.innerHTML = html;
       document.getElementById('execDrillDown').style.display = 'block';
     };
+    // Why deals are lost: by reason, and reason x strategy, for the Closed-Lost deals passed in (already scoped to the exec time frame)
+    const showLostAnalysis = (lost) => {
+      document.getElementById('execDrillDownTitle').innerText = 'CLOSED-LOST - WHY DEALS FELL THROUGH';
+      const container = document.getElementById('execDrillDownTable');
+      const reasonOf = d => (d.lostReason || '').trim() || 'Not set';
+      const stratOf = d => (d.strategy || '').trim() || 'Unknown';
+      const reasons = {}, strats = {}, matrix = {};
+      lost.forEach(d => {
+        const r = reasonOf(d), st = stratOf(d);
+        if (!reasons[r]) reasons[r] = { n: 0, value: 0 }; reasons[r].n++; reasons[r].value += (d.contract || 0);
+        if (!strats[st]) strats[st] = 0; strats[st]++;
+        matrix[r] = matrix[r] || {}; matrix[r][st] = (matrix[r][st] || 0) + 1;
+      });
+      const rNames = Object.keys(reasons).sort((a, b) => reasons[b].n - reasons[a].n);
+      const sNames = Object.keys(strats).sort((a, b) => strats[b] - strats[a]);
+      const allByStrat = {}; ALL_DEALS().forEach(d => { const st = stratOf(d); if (!allByStrat[st]) allByStrat[st] = { total: 0, lost: 0 }; allByStrat[st].total++; if (d.status === 'Closed - Lost') allByStrat[st].lost++; });
+      const colors = ['#C00000', '#ED7D31', '#FFC000', '#7030A0', '#2F9599', '#2E75B6', '#548235', '#999'];
+      const notSet = reasons['Not set'] ? reasons['Not set'].n : 0;
+
+      let html = '<div style="padding:12px;">';
+      html += '<div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;">';
+      html += '<div style="background:#FDECEA;border:1px solid #F5C6C2;border-radius:8px;padding:12px 20px;flex:1;min-width:140px;"><div style="font-size:10px;font-weight:700;color:#C00000;text-transform:uppercase;letter-spacing:0.5px;">Deals Lost</div><div style="font-size:24px;font-weight:800;color:#C00000;">' + lost.length + '</div></div>';
+      html += '<div style="background:#FFF8E1;border:1px solid #FFE082;border-radius:8px;padding:12px 20px;flex:1;min-width:140px;"><div style="font-size:10px;font-weight:700;color:#B8860B;text-transform:uppercase;letter-spacing:0.5px;">Contract Value Lost</div><div style="font-size:24px;font-weight:800;color:#B8860B;">' + fmt(lost.reduce((s, d) => s + (d.contract || 0), 0)) + '</div></div>';
+      html += '<div style="background:#E3F2FD;border:1px solid #90CAF9;border-radius:8px;padding:12px 20px;flex:1;min-width:140px;"><div style="font-size:10px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:0.5px;">Top Reason</div><div style="font-size:18px;font-weight:800;color:#1565C0;">' + (rNames.filter(r => r !== 'Not set')[0] || '&mdash;') + '</div></div>';
+      html += '</div>';
+      if (notSet) html += '<div style="font-size:11px;color:#C00000;margin-bottom:8px;">' + notSet + ' lost deal' + (notSet === 1 ? ' has' : 's have') + ' no Lost Reason filled in on the Deal Ledger sheet.</div>';
+
+      // Reason breakdown with bars
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">';
+      html += '<div><div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">By reason</div><table style="width:100%;font-size:12px;border-collapse:collapse;"><thead><tr style="background:#1B2A4A;color:white;"><th style="padding:8px 10px;text-align:left;">Reason</th><th style="padding:8px;text-align:right;">Deals</th><th style="padding:8px;text-align:right;">% of lost</th><th style="padding:8px;text-align:right;">Contract $</th><th style="padding:8px 10px;width:35%;"></th></tr></thead><tbody>';
+      rNames.forEach((r, i) => { const pct = lost.length ? reasons[r].n / lost.length : 0; const c = r === 'Not set' ? '#bbb' : colors[i % colors.length]; html += '<tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:8px 10px;font-weight:600;color:' + (r === 'Not set' ? '#999' : '#1B2A4A') + ';">' + r + '</td><td style="padding:8px;text-align:right;font-weight:700;">' + reasons[r].n + '</td><td style="padding:8px;text-align:right;">' + Math.round(pct * 100) + '%</td><td style="padding:8px;text-align:right;color:#666;">' + fmt(reasons[r].value) + '</td><td style="padding:8px 10px;"><div style="height:12px;background:#eef1f5;border-radius:6px;overflow:hidden;"><div style="width:' + Math.round(pct * 100) + '%;height:100%;background:' + c + ';"></div></div></td></tr>'; });
+      html += '</tbody></table></div>';
+      // Reason x strategy matrix
+      html += '<div><div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Reason by strategy</div><table style="width:100%;font-size:12px;border-collapse:collapse;"><thead><tr style="background:#1B2A4A;color:white;"><th style="padding:8px 10px;text-align:left;">Reason</th>' + sNames.map(st => '<th style="padding:8px;text-align:center;">' + st + '</th>').join('') + '<th style="padding:8px;text-align:right;">Total</th></tr></thead><tbody>';
+      rNames.forEach(r => { html += '<tr style="border-bottom:1px solid #f0f0f0;"><td style="padding:8px 10px;font-weight:600;color:' + (r === 'Not set' ? '#999' : '#1B2A4A') + ';">' + r + '</td>' + sNames.map(st => { const n = (matrix[r] && matrix[r][st]) || 0; const share = strats[st] ? n / strats[st] : 0; return '<td style="padding:8px;text-align:center;background:' + (n ? 'rgba(192,0,0,' + (0.08 + share * 0.45).toFixed(2) + ')' : 'transparent') + ';font-weight:' + (n ? '700' : '400') + ';color:' + (n ? '#1B2A4A' : '#ccc') + ';">' + (n || '&mdash;') + '</td>'; }).join('') + '<td style="padding:8px;text-align:right;font-weight:700;">' + reasons[r].n + '</td></tr>'; });
+      html += '<tr style="background:#f5f7fa;font-weight:700;"><td style="padding:8px 10px;">Lost / all deals of that strategy</td>' + sNames.map(st => { const a = allByStrat[st] || { total: 0, lost: 0 }; return '<td style="padding:8px;text-align:center;">' + strats[st] + ' <span style="font-weight:500;color:#888;">of ' + a.total + ' (' + (a.total ? Math.round(a.lost / a.total * 100) : 0) + '% lost all-time)</span></td>'; }).join('') + '<td style="padding:8px;text-align:right;">' + lost.length + '</td></tr>';
+      html += '</tbody></table></div></div>';
+
+      html += '<div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin:16px 0 6px;">The deals</div><div id="execLostDeals"></div></div>';
+      container.innerHTML = html;
+      renderDealTable(lost.slice().sort((a, b) => reasonOf(a).localeCompare(reasonOf(b))), 'execLostDeals');
+      document.getElementById('execDrillDown').style.display = 'block';
+    };
     const showRevenueBreakdown = () => showTillerBreakdown('income');
     const showMarketingBreakdown = () => showTillerBreakdown('marketing');
     // Avg Fee = average Final Profit across Closed-Won deals in the time frame (deals with a blank Final Profit are excluded)
@@ -2043,6 +2091,7 @@
             <td>${deal.source || '-'}</td>
             <td><span class="${statusClass}">${deal.status}</span></td>
             <td>${deal.strategy}</td>
+            <td style="font-size:12px;color:${deal.lostReason ? '#C00000' : '#bbb'};">${deal.lostReason || (deal.status.includes('Lost') ? '<span title="Add a reason in the Lost Reason column">not set</span>' : '-')}</td>
             <td>${formatDate(deal.ucDate)}</td>
             <td>${formatDate(deal.closeDate)}</td>
             <td style="font-weight: 500; text-align: right;">${fmt(deal.contract)}</td>
@@ -2393,7 +2442,7 @@
       kpis.appendChild(createKpiCard('Closed-Won', metrics.wonCount, '#548235',
         () => showDrillDown('exec', 'WON', metrics.won)));
       kpis.appendChild(createKpiCard('Closed-Lost', metrics.lostCount, '#C00000',
-        () => showDrillDown('exec', 'LOST', metrics.lost)));
+        () => showLostAnalysis(metrics.lost)));
       kpis.appendChild(createKpiCard('Win Rate', fmtPct(metrics.winRate), '#7030A0'));
       kpis.appendChild(createKpiCard('Close Rate', fmtPct(metrics.totalCount ? metrics.wonCount / metrics.totalCount : 0), '#2F9599'));
 
