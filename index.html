@@ -3235,7 +3235,12 @@
         out.forEach(function (o) {
           var k = normKey(o); if (!k) { deduped.push(o); return; }
           var prev = last[k];
-          if (prev && (o._offerDate - prev._offerDate) < DAY) { dupCount++; prev.laterStages = (prev.laterStages || []).concat(o.stage + ' ' + o._offerDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })); return; }
+          if (prev && (o._offerDate - prev._offerDate) < DAY) {
+            dupCount++; prev.laterStages = (prev.laterStages || []).concat(o.stage + ' ' + o._offerDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            if (o.kind === 'contract') { if (prev.kind === 'verbal') prev.hadVerbal = true; prev.kind = 'contract'; prev.stage = o.stage; }   // contract sent always wins over verbal
+            return;
+          }
+          if (o.kind === 'verbal') o.hadVerbal = true;
           if (prev) o.reoffer = true;   // same opp, 24h+ after its previous offer -> new offer
           last[k] = o; deduped.push(o);
         });
@@ -3300,8 +3305,10 @@
       if (SC_OFFER_LOG) {
         // Offer log = every offer event with its real date. No ledger cross-check needed: a logged offer is an offer regardless of what the deal did later.
         a.offersVerbal = 0; a.offersContract = 0; a.offerOppsSkipped = []; a.offersFrom = 'log';
-        SC_OFFER_LOG.forEach(function (o) { if (scDateIn(o._offerDate, p)) { a.offerOpps.push(o); if (o.kind === 'verbal') a.offersVerbal++; else a.offersContract++; } });
-        a.offers = a.offersVerbal + a.offersContract;
+        a.offersVerbalToContract = 0;
+        SC_OFFER_LOG.forEach(function (o) { if (scDateIn(o._offerDate, p)) { a.offerOpps.push(o); if (o.kind === 'verbal') a.offersVerbal++; else { a.offersContract++; if (o.hadVerbal) a.offersVerbalToContract++; } } });
+        a.offers = a.offersVerbal + a.offersContract;   // verbal-only + contracts sent (an offer that went verbal -> contract counts once, as a contract)
+        a.contractRate = a.offers ? a.offersContract / a.offers : null;
       } else if (SC_OPPS) {
         a.offersFrom = 'ghl';
         a.offersVerbal = 0; a.offersContract = 0; a.offerOppsSkipped = [];
@@ -3399,7 +3406,7 @@
         var skippedNote = a.offerOppsSkipped.length ? '<div style="font-size:11px;color:#888;padding:6px 0 10px;">Not counted as GHL offers because they are already in the Deal Ledger (' + a.offerOppsSkipped.map(function (x) { return (x.o.name || '') + ' &rarr; ' + x.d.status + ' ' + formatDate(x.d.ucDate); }).join('; ') + ')</div>' : '';
         if (!SC_OPPS) h += '<div style="padding:16px;color:#888;">GHL opportunities not loaded.</div>';
         else { h += skippedNote + '<table><thead><tr><th>Opportunity</th><th>Contact</th><th>Stage</th><th>Date</th><th style="text-align:right;">Value</th></tr></thead><tbody>';
-          a.offerOpps.sort(function (x, y) { return y._offerDate - x._offerDate; }).forEach(function (o) { var why = o._raw ? (o._raw.lastStageChangeAt ? 'entered stage' : o._raw.updatedAt ? 'last updated (no stage date)' : 'created') : (SC_OFFER_LOG && !/ledger/i.test(o.stage) ? 'offer log' : 'ledger UC date'); h += '<tr><td>' + (o.name || '') + (o.address ? '<div style="font-size:10px;color:#999;">' + o.address + '</div>' : '') + (o.laterStages ? '<div style="font-size:10px;color:#999;">same offer, later stage: ' + o.laterStages.join(', ') + '</div>' : '') + (o.reoffer ? '<div style="font-size:10px;color:#B8860B;font-weight:700;">re-offer (24h+ after a previous offer)</div>' : '') + '</td><td>' + o.contact + '</td><td>' + o.stage + '</td><td>' + fmtD(o._offerDate) + '<div style="font-size:10px;color:#999;">' + why + '</div></td><td style="text-align:right;">' + (o.value ? fmt(o.value) : '&mdash;') + '</td></tr>'; });
+          a.offerOpps.sort(function (x, y) { return y._offerDate - x._offerDate; }).forEach(function (o) { var why = o._raw ? (o._raw.lastStageChangeAt ? 'entered stage' : o._raw.updatedAt ? 'last updated (no stage date)' : 'created') : (SC_OFFER_LOG && !/ledger/i.test(o.stage) ? 'offer log' : 'ledger UC date'); h += '<tr><td>' + (o.name || '') + (o.address ? '<div style="font-size:10px;color:#999;">' + o.address + '</div>' : '') + (o.laterStages ? '<div style="font-size:10px;color:#999;">same offer, later stage: ' + o.laterStages.join(', ') + '</div>' : '') + (o.hadVerbal && o.kind === 'contract' ? '<div style="font-size:10px;color:#548235;font-weight:700;">verbal &rarr; contract sent</div>' : '') + (o.reoffer ? '<div style="font-size:10px;color:#B8860B;font-weight:700;">re-offer (24h+ after a previous offer)</div>' : '') + '</td><td>' + o.contact + '</td><td>' + o.stage + '</td><td>' + fmtD(o._offerDate) + '<div style="font-size:10px;color:#999;">' + why + '</div></td><td style="text-align:right;">' + (o.value ? fmt(o.value) : '&mdash;') + '</td></tr>'; });
           h += '</tbody></table>' + (a.offerOpps.length ? '' : '<div style="padding:16px;color:#888;">No opportunities reached an offer stage in this period.</div>'); }
       } else {
         var rows = kind === 'closings' ? a.wonDeals : a.ucDeals;
@@ -3420,7 +3427,7 @@
       var lever = function (label, key, val, step, hint, fmtFn) { return '<div style="background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #2E75B6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><input id="scL_' + key + '" type="number" step="' + step + '" value="' + val + '" oninput="scRecalc()" style="' + numStyle + '">' + (hint ? '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div>' : '') + '</div>'; };
       var secT = function (title, color, right) { return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (right || '') + '</div>'; };
 
-      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-10-07 a</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
+      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-10-07 c</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
 
       // 1. levers
       h += secT('1. Model Levers', '#1B2A4A', '<span style="font-size:11px;color:#999;">Same math as the Pod Scaling Model workbook. Saved in this browser.</span>');
@@ -3453,8 +3460,9 @@
       h += secT('2. Scoreboard', '#548235', '<span style="font-size:11px;color:#999;">' + oppsNote + '</span>');
       var rows = [
         { key: 'offers', label: 'Offers Made', src: SC_OFFER_LOG ? 'Offer log sheet (every offer, dated when made)' : 'GHL open offers + contracts signed (until the offer log sheet is connected)', fmtv: r0, drill: true },
-        { key: 'offersVerbal', label: SC_OFFER_LOG ? 'of which Verbal Offers' : 'of which Verbal Offers (open)', src: SC_OFFER_LOG ? 'Offer log rows marked Verbal' : 'GHL stage: Verbal Offer Made', fmtv: r0, sub: true, drill: true },
-        { key: 'offersContract', label: SC_OFFER_LOG ? 'of which Written Offers / Contracts Sent' : 'of which Contracts Sent (unsigned)', src: SC_OFFER_LOG ? 'Offer log rows' : 'GHL stages: Novation / Cash / Sub-to Offer Made (CONTRACT SENT)', fmtv: r0, sub: true, drill: true },
+        { key: 'offersContract', label: SC_OFFER_LOG ? 'of which reached Contract Sent' : 'of which Contracts Sent (unsigned)', src: SC_OFFER_LOG ? 'Any contract-sent row wins over verbal' : 'GHL stages: Novation / Cash / Sub-to Offer Made (CONTRACT SENT)', fmtv: r0, sub: true, drill: true },
+        { key: 'offersVerbal', label: SC_OFFER_LOG ? 'of which Verbal only (no contract yet)' : 'of which Verbal Offers (open)', src: SC_OFFER_LOG ? 'Offer log rows marked Verbal with no contract row' : 'GHL stage: Verbal Offer Made', fmtv: r0, sub: true, drill: true },
+        { key: 'contractRate', label: 'Contract-Sent Rate', src: 'contracts sent / offers made', fmtv: function (v) { return v === null || v === undefined ? '\u2014' : Math.round(v * 100) + '%'; }, sub: true, hideWhenNoLog: true },
         { key: 'offersSigned', label: 'of which Contracts Signed', src: 'Deal Ledger (UC date)', fmtv: r0, sub: true, drill: true, hideWhenLog: true },
         { key: 'contracts', label: 'Contracts Signed', src: 'Deal Ledger (UC date)', fmtv: r0, drill: true },
         { key: 'closings', label: 'Closings', src: 'Deal Ledger (Closed-Won)', fmtv: r0, drill: true },
@@ -3468,7 +3476,8 @@
         s += '<table style="width:100%;font-size:12px;"><thead><tr style="color:#888;font-size:10px;text-transform:uppercase;"><th style="text-align:left;padding:8px 12px;">Metric</th><th style="text-align:right;padding:8px;">Actual</th><th style="text-align:right;padding:8px;">Pace</th><th style="text-align:right;padding:8px;">Target</th><th style="padding:8px 12px;width:34%;">Progress</th></tr></thead><tbody>';
         rows.forEach(function (rw) {
           if (rw.hideWhenLog && SC_OFFER_LOG) return;
-          if (rw.sub) { var av = act[rw.key]; s += '<tr style="cursor:pointer;" onclick="scDrill(\'' + rw.key + '\',\'' + pk + '\')"><td style="padding:4px 12px 4px 26px;"><div style="font-size:11px;color:#555;font-weight:600;">' + rw.label + '</div><div style="font-size:10px;color:#999;">' + rw.src + '</div></td><td style="text-align:right;padding:4px 8px;font-weight:700;color:#555;">' + (av === null || av === undefined ? '&mdash;' : rw.fmtv(av)) + '</td><td colspan="3"></td></tr>'; return; }
+          if (rw.hideWhenNoLog && !SC_OFFER_LOG) return;
+          if (rw.sub) { var av = act[rw.key]; s += '<tr' + (rw.drill ? ' style="cursor:pointer;" onclick="scDrill(\'' + rw.key + '\',\'' + pk + '\')"' : '') + '><td style="padding:4px 12px 4px 26px;"><div style="font-size:11px;color:#555;font-weight:600;">' + rw.label + '</div><div style="font-size:10px;color:#999;">' + rw.src + '</div></td><td style="text-align:right;padding:4px 8px;font-weight:700;color:#555;">' + (av === null || av === undefined ? '&mdash;' : rw.fmtv(av)) + '</td><td colspan="3"></td></tr>'; return; }
           var tk = tkeyOf(rw), target = tgt[tk], pace = target * p.elapsed, actual = act[rw.key];
           var na = actual === null || actual === undefined;
           var pct = target > 0 && !na ? actual / target : 0, pacePct = pace > 0 && !na ? actual / pace : 0;
@@ -3483,8 +3492,19 @@
         });
         return s + '</tbody></table></div>';
       };
+      // Offers per Contract - the conversion ratio the model is built on, shown big for the week and the month
+      var ratioCard = function (pk, act, p) {
+        var opc = act.contracts > 0 && act.offers !== null ? act.offers / act.contracts : null;
+        var ok = opc !== null && opc <= t.otc; var color = opc === null ? '#999' : ok ? '#548235' : opc <= t.otc * 1.5 ? '#ED7D31' : '#C00000';
+        var rate = act.contractRate;
+        return '<div style="background:white;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-top:4px solid ' + (pk === 'week' ? '#2E75B6' : '#548235') + ';padding:14px 16px;display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:12px;align-items:center;">' +
+          '<div><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">' + p.label + ' &middot; Offers per Contract</div><div style="font-size:34px;font-weight:800;color:' + color + ';line-height:1.1;">' + (opc === null ? '&mdash;' : opc.toFixed(1)) + '<span style="font-size:14px;color:#999;font-weight:600;"> vs ' + t.otc.toFixed(1) + ' target</span></div><div style="font-size:11px;color:#888;">' + (act.offers === null ? 'offer log not loaded' : act.offers + ' offers &divide; ' + act.contracts + ' contract' + (act.contracts === 1 ? '' : 's') + ' signed' + (opc === null ? ' (no contracts yet)' : ok ? ' &middot; converting better than the model' : ' &middot; more offers per contract than the model assumes')) + '</div></div>' +
+          '<div style="border-left:1px solid #eee;padding-left:12px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">Contract-Sent Rate</div><div style="font-size:22px;font-weight:800;color:#1B2A4A;">' + (rate === null || rate === undefined ? '&mdash;' : Math.round(rate * 100) + '%') + '</div><div style="font-size:11px;color:#888;">' + (act.offersContract || 0) + ' of ' + (act.offers || 0) + ' offers went to paper</div></div>' +
+          '<div style="border-left:1px solid #eee;padding-left:12px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">Contract Sent &rarr; Signed</div><div style="font-size:22px;font-weight:800;color:#1B2A4A;">' + (act.offersContract ? Math.round(Math.min(1, act.contracts / act.offersContract) * 100) + '%' : '&mdash;') + '</div><div style="font-size:11px;color:#888;">' + act.contracts + ' signed of ' + (act.offersContract || 0) + ' sent</div></div></div>';
+      };
+      h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">' + ratioCard('week', actW, P.week) + ratioCard('month', actM, P.month) + '</div>';
       h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">' + scoreTable('week', actW, t.week, P.week) + scoreTable('month', actM, t.month, P.month) + '</div>';
-      h += '<div style="font-size:11px;color:#999;margin-top:6px;">Pace = target &times; share of the period elapsed (the dark tick on each bar). Green = at/above pace, orange = 60&ndash;90%, red = below. Offers: with the offer log sheet connected, an opportunity counts once per offer: rows for the same opp within 24 hours are one offer (a stage move), rows 24+ hours apart are separate offers (a new pitch). Nothing else is counted. Until then, the fallback is GHL opportunities currently in an offer stage (dated by when they entered it) plus contracts signed in the period from the Deal Ledger; GHL keeps no stage history, so the fallback cannot see offers on opps that have since moved on. Leads = opportunities that entered GHL in the period (created date), i.e. what came into the New Leads workflow &mdash; counted by created date so a lead still counts even if it has since moved to a follow-up or dead pipeline. PPL, SM3 and Facebook are all included; click the row for the split by source.</div>';
+      h += '<div style="font-size:11px;color:#999;margin-top:6px;">Pace = target &times; share of the period elapsed (the dark tick on each bar). Green = at/above pace, orange = 60&ndash;90%, red = below. Offers: with the offer log sheet connected, an opportunity counts once per offer: rows for the same opp within 24 hours are one offer (a stage move), rows 24+ hours apart are separate offers (a new pitch). If an offer has both a verbal and a contract-sent row it counts as a contract sent. Contract-Sent Rate = how many offers make it to paper. Until then, the fallback is GHL opportunities currently in an offer stage (dated by when they entered it) plus contracts signed in the period from the Deal Ledger; GHL keeps no stage history, so the fallback cannot see offers on opps that have since moved on. Leads = opportunities that entered GHL in the period (created date), i.e. what came into the New Leads workflow &mdash; counted by created date so a lead still counts even if it has since moved to a follow-up or dead pipeline. PPL, SM3 and Facebook are all included; click the row for the split by source.</div>';
       h += '<div id="scDrill" style="display:none;margin-top:14px;"></div>';
 
       // 3. per-rep targets
@@ -3512,7 +3532,8 @@
         var hs = hist(mode, n), tg = t[mode];
         var cell = function (rw, hrow) { var tk = tkeyOf(rw), actual = hrow.a[rw.key], target = tg[tk] * hrow.p.elapsed; if (actual === null || actual === undefined) return '<td style="text-align:center;color:#ccc;">&mdash;</td>'; var pct = target > 0 ? actual / target : 0; var ok = rw.cost ? pct <= 1.05 : pct >= 0.9; var bg = ok ? '#E8F5E9' : (rw.cost ? pct <= 1.25 : pct >= 0.6) ? '#FFF3E0' : '#FDECEA'; return '<td style="text-align:center;background:' + bg + ';font-weight:600;">' + rw.fmtv(actual) + '<div style="font-size:9px;color:#888;font-weight:500;">' + Math.round(pct * 100) + '%</div></td>'; };
         var s = '<div class="table-container"><table style="font-size:12px;"><thead><tr><th>Metric</th><th style="text-align:right;">Target / ' + (mode === 'week' ? 'wk' : 'mo') + '</th>' + hs.map(function (x) { return '<th style="text-align:center;">' + x.p.label + (x.p.elapsed < 1 ? '*' : '') + '</th>'; }).join('') + '</tr></thead><tbody>';
-        rows.forEach(function (rw) { if (rw.sub) return; s += '<tr><td style="font-weight:600;">' + rw.label + '</td><td style="text-align:right;color:#666;">' + rw.fmtv(tg[tkeyOf(rw)]) + '</td>' + hs.map(function (x) { return cell(rw, x); }).join('') + '</tr>'; });
+        rows.forEach(function (rw) { if (rw.sub) return; s += '<tr><td style="font-weight:600;">' + rw.label + '</td><td style="text-align:right;color:#666;">' + rw.fmtv(tg[tkeyOf(rw)]) + '</td>' + hs.map(function (x) { return cell(rw, x); }).join('') + '</tr>';
+          if (rw.key === 'contracts') s += '<tr style="background:#FFFBEA;"><td style="font-weight:600;">Offers per Contract <span style="font-weight:500;color:#888;font-size:10px;">lower is better</span></td><td style="text-align:right;color:#666;">' + t.otc.toFixed(1) + '</td>' + hs.map(function (x) { var a = x.a; if (a.offers === null || a.offers === undefined) return '<td style="text-align:center;color:#ccc;">&mdash;</td>'; if (!a.contracts) return '<td style="text-align:center;color:#999;">' + a.offers + ' / 0</td>'; var v = a.offers / a.contracts; var bg = v <= t.otc ? '#E8F5E9' : v <= t.otc * 1.5 ? '#FFF3E0' : '#FDECEA'; return '<td style="text-align:center;background:' + bg + ';font-weight:600;">' + v.toFixed(1) + '<div style="font-size:9px;color:#888;font-weight:500;">' + a.offers + ' / ' + a.contracts + '</div></td>'; }).join('') + '</tr>'; });
         return s + '</tbody></table></div><div style="font-size:11px;color:#999;margin-top:4px;">* current period &mdash; compared against pace, not the full target.</div>';
       };
       h += secT('4. Last 8 Weeks vs Target', '#1B2A4A') + histTable('week', 8);
