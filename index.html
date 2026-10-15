@@ -3207,8 +3207,7 @@
     // (Active Leads pipeline, stage "Offer Made" or later, dated by last stage change);
     // leads from the SM3 + Facebook lead sheets; ad spend from Tiller (pro-rated by day).
     var SC_KEYS = { rev: 1200000, deal: 20000, close: 35, otc: 6, roas: 3.5, quota: 65000, eff: 70, cpl: 180, adMo: 35000 };
-    function scMode() { return localStorage.getItem('sc_mode') || 'rev'; }   // 'rev' = plan from revenue target, 'ad' = plan from ad budget
-    window.scSetMode = function (m) { localStorage.setItem('sc_mode', m); renderScalingTab(); };
+    function scMode() { return 'ad'; }   // single model: Ad Spend / mo x ROAS = revenue
     // one-time reset so browsers that saved the old 2.5M / 30k defaults pick up the new ones
     if (localStorage.getItem('sc_defaultsVer') !== '2') { localStorage.removeItem('sc_rev'); localStorage.removeItem('sc_deal'); localStorage.setItem('sc_defaultsVer', '2'); }
     var SC_OPPS = null, SC_LEADS = null, SC_STAGES = null, SC_OPPS_ERR = null, SC_LOADING = false;
@@ -3432,17 +3431,19 @@
       var lever = function (label, key, val, step, hint, fmtFn) { return '<div style="background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #2E75B6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><input id="scL_' + key + '" type="number" step="' + step + '" value="' + val + '" oninput="scRecalc()" style="' + numStyle + '">' + (hint ? '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div>' : '') + '</div>'; };
       var secT = function (title, color, right) { return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (right || '') + '</div>'; };
 
-      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-10-14 a</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
+      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-10-15 c</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
 
       // 1. levers
-      var modeBtn = function (m, label) { var on = t.mode === m; return '<button type="button" onclick="scSetMode(\'' + m + '\')" style="padding:7px 14px;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;background:' + (on ? '#2E75B6' : 'transparent') + ';color:' + (on ? 'white' : '#555') + ';">' + label + '</button>'; };
-      h += secT('1. Model Levers', '#1B2A4A', '<div style="display:flex;align-items:center;gap:10px;"><span style="font-size:11px;color:#999;">Plan from:</span><div style="display:flex;gap:3px;background:#e8edf3;border-radius:6px;padding:3px;">' + modeBtn('rev', 'Revenue target') + modeBtn('ad', 'Ad budget') + '</div></div>');
-      h += '<div style="font-size:11px;color:#999;margin:-4px 0 8px;">' + (t.mode === 'ad' ? 'Ad budget mode: you set Ad Spend / mo, the model computes the revenue that spend supports at your ROAS, then deals, contracts, offers and leads from that.' : 'Revenue mode: you set the revenue goal, the model computes the ad spend needed at your ROAS, then deals, contracts, offers and leads.') + '</div>';
+      h += secT('1. Model Levers', '#1B2A4A', '<span style="font-size:11px;color:#999;">Ad spend &times; ROAS = revenue; everything else flows from there. Saved in this browser.</span>');
       h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">';
-      if (t.mode === 'ad') { h += lever('Ad Spend / mo', 'adMo', t.adMo, 1000, 'what you are actually spending'); h += '<div style="background:#F3F8FD;border-radius:8px;border-left:4px solid #9DC3E6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Revenue / yr (computed)</div><div style="font-size:18px;font-weight:800;color:#1B2A4A;text-align:center;padding:4px 0;">' + fmt(t.rev) + '</div><div style="font-size:11px;color:#999;margin-top:4px;">' + fmt(t.adMo) + ' &times; 12 &times; ' + t.roas + 'x ROAS</div></div>'; }
-      else h += lever('Target Revenue / yr', 'rev', t.rev, 50000); h += lever('Avg Deal Size', 'deal', t.deal, 1000); h += lever('% Closed to Signed', 'close', t.close, 1, 'of contracts that close');
-      h += lever('Offers per Contract', 'otc', t.otc, 0.5); h += lever('Target ROAS', 'roas', t.roas, 0.1); h += lever('Avg Price per Lead', 'cpl', t.cpl, 5);
+      var computedCard = function (label, val, sub) { return '<div style="background:#F3F8FD;border-radius:8px;border-left:4px solid #9DC3E6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><div style="font-size:18px;font-weight:800;color:#1B2A4A;text-align:center;padding:4px 0;">' + val + '</div><div style="font-size:11px;color:#999;margin-top:4px;">' + sub + '</div></div>'; };
+      // Left: Ad Spend / mo (the main lever). Right: Target ROAS and Target Revenue. Whichever of ad spend / revenue is not the lever is shown computed.
+      h += lever('Ad Spend / mo', 'adMo', t.adMo, 1000, 'what you are actually spending');
+      h += lever('Avg Deal Size', 'deal', t.deal, 1000); h += lever('% Closed to Signed', 'close', t.close, 1, 'of contracts that close');
+      h += lever('Offers per Contract', 'otc', t.otc, 0.5); h += lever('Avg Price per Lead', 'cpl', t.cpl, 5);
       h += lever('Rep Quota / mo', 'quota', t.quota, 5000, 'closed revenue per rep'); h += lever('Team Efficiency %', 'eff', t.eff, 5);
+      h += lever('Target ROAS', 'roas', t.roas, 0.1);
+      h += computedCard('Target Revenue / yr', fmt(t.rev), fmt(t.adMo) + ' &times; 12 &times; ' + t.roas + 'x ROAS');
       h += '</div><div id="scResults"></div>';
       c.innerHTML = h;
       scRecalc();
@@ -3457,7 +3458,7 @@
       var d1 = function (label, val, sub) { return '<div><div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.65);text-transform:uppercase;letter-spacing:1px;">' + label + '</div><div style="font-size:20px;font-weight:800;color:#FFD966;">' + val + '</div>' + (sub ? '<div style="font-size:11px;color:rgba(255,255,255,0.6);">' + sub + '</div>' : '') + '</div>'; };
       h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:10px;background:#1B2A4A;border-radius:10px;padding:12px 14px;">';
       h += d1('Deals / yr', r0(t.year.deals), fmt(t.deal) + ' avg') + d1('Contracts / yr', r0(t.year.contracts), t.close + '% close') + d1('Offers / yr', r0(t.year.offers), t.otc + ' per contract') + d1('Leads / yr', r0(t.year.leads), t.ltc.toFixed(1) + ' leads per contract');
-      h += d1(t.mode === 'ad' ? 'Ad Spend / yr (lever)' : 'Ad Spend / yr (needed)', fmt(t.year.ad), fmt(t.year.ad / 12) + '/mo &middot; ' + fmt(t.costPerDeal) + ' per deal') + d1('Acq Reps Needed', t.reps, t.repsUnrounded.toFixed(1) + ' unrounded');
+      h += d1('Ad Spend / yr', fmt(t.year.ad), fmt(t.year.ad / 12) + '/mo &middot; ' + fmt(t.costPerDeal) + ' per deal') + d1('Acq Reps Needed', t.reps, t.repsUnrounded.toFixed(1) + ' unrounded');
       h += '</div>';
 
       // 2. scoreboard: week + month
@@ -3515,15 +3516,6 @@
       h += '<div style="font-size:11px;color:#999;margin-top:6px;">Pace = target &times; share of the period elapsed (the dark tick on each bar). Green = at/above pace, orange = 60&ndash;90%, red = below. Offers: with the offer log sheet connected, an opportunity counts once per offer: rows for the same opp within 24 hours are one offer (a stage move), rows 24+ hours apart are separate offers (a new pitch). If an offer has both a verbal and a contract-sent row it counts as a contract sent. Contract-Sent Rate = how many offers make it to paper. Until then, the fallback is GHL opportunities currently in an offer stage (dated by when they entered it) plus contracts signed in the period from the Deal Ledger; GHL keeps no stage history, so the fallback cannot see offers on opps that have since moved on. Leads = opportunities that entered GHL in the period (created date), i.e. what came into the New Leads workflow &mdash; counted by created date so a lead still counts even if it has since moved to a follow-up or dead pipeline. PPL, SM3 and Facebook are all included; click the row for the split by source.</div>';
       h += '<div id="scDrill" style="display:none;margin-top:14px;"></div>';
 
-      // 3. per-rep targets
-      h += secT('3. Per Acq Rep (' + t.repsUnrounded.toFixed(1) + ' reps)', '#ED7D31');
-      var per = function (v) { return t.repsUnrounded > 0 ? v / t.repsUnrounded : 0; };
-      h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">';
-      [['Offers', 'offers', r0], ['Contracts', 'contracts', function (v) { return v.toFixed(1); }], ['Closings', 'deals', function (v) { return v.toFixed(2); }], ['Leads', 'leads', r0], ['Ad Spend', 'ad', fmt]].forEach(function (x) {
-        h += '<div class="kpi-card" style="border-left:4px solid #ED7D31;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">' + x[0] + ' per rep</div><div style="font-size:18px;font-weight:800;color:#1B2A4A;">' + x[2](per(t.week[x[1]])) + ' <span style="font-size:11px;color:#999;font-weight:600;">/ wk</span></div><div style="font-size:12px;color:#666;">' + x[2](per(t.month[x[1]])) + ' / mo</div></div>';
-      });
-      h += '</div>';
-
       // 4. history: last 8 weeks + last 6 months
       var hist = function (mode, n) {
         var out = [], today = new Date(); today.setHours(0, 0, 0, 0);
@@ -3544,6 +3536,14 @@
           if (rw.key === 'contracts') s += '<tr style="background:#FFFBEA;"><td style="font-weight:600;">Offers per Contract <span style="font-weight:500;color:#888;font-size:10px;">lower is better</span></td><td style="text-align:right;color:#666;">' + t.otc.toFixed(1) + '</td>' + hs.map(function (x) { var a = x.a; if (a.offers === null || a.offers === undefined) return '<td style="text-align:center;color:#ccc;">&mdash;</td>'; if (!a.contracts) return '<td style="text-align:center;color:#999;">' + a.offers + ' / 0</td>'; var v = a.offers / a.contracts; var bg = v <= t.otc ? '#E8F5E9' : v <= t.otc * 1.5 ? '#FFF3E0' : '#FDECEA'; return '<td style="text-align:center;background:' + bg + ';font-weight:600;">' + v.toFixed(1) + '<div style="font-size:9px;color:#888;font-weight:500;">' + a.offers + ' / ' + a.contracts + '</div></td>'; }).join('') + '</tr>'; });
         return s + '</tbody></table></div><div style="font-size:11px;color:#999;margin-top:4px;">* current period &mdash; compared against pace, not the full target.</div>';
       };
+      // 3. per-rep targets
+      h += secT('3. Per Acq Rep (' + t.repsUnrounded.toFixed(1) + ' reps)', '#ED7D31');
+      var per = function (v) { return t.repsUnrounded > 0 ? v / t.repsUnrounded : 0; };
+      h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;">';
+      [['Offers', 'offers', r0], ['Contracts', 'contracts', function (v) { return v.toFixed(1); }], ['Closings', 'deals', function (v) { return v.toFixed(2); }], ['Leads', 'leads', r0], ['Ad Spend', 'ad', fmt]].forEach(function (x) {
+        h += '<div class="kpi-card" style="border-left:4px solid #ED7D31;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">' + x[0] + ' per rep</div><div style="font-size:18px;font-weight:800;color:#1B2A4A;">' + x[2](per(t.week[x[1]])) + ' <span style="font-size:11px;color:#999;font-weight:600;">/ wk</span></div><div style="font-size:12px;color:#666;">' + x[2](per(t.month[x[1]])) + ' / mo</div></div>';
+      });
+      h += '</div>';
       h += secT('4. Last 8 Weeks vs Target', '#1B2A4A') + histTable('week', 8);
       h += secT('5. Last 6 Months vs Target', '#1B2A4A') + histTable('month', 6);
 
