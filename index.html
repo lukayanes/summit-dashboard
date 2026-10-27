@@ -3431,7 +3431,7 @@
       var lever = function (label, key, val, step, hint, fmtFn) { return '<div style="background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #2E75B6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><input id="scL_' + key + '" type="number" step="' + step + '" value="' + val + '" oninput="scRecalc()" style="' + numStyle + '">' + (hint ? '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div>' : '') + '</div>'; };
       var secT = function (title, color, right) { return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (right || '') + '</div>'; };
 
-      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-10-26 f</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
+      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-10-26 k</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
 
       // 1. levers
       h += secT('1. Model Levers', '#1B2A4A', '<span style="font-size:11px;color:#999;">Ad spend &times; ROAS = revenue; everything else flows from there. Saved in this browser.</span>');
@@ -3572,7 +3572,7 @@
     //   Left in business = revenue - expenses  -> builds cash in bank
     //   Owners draw = at each quarter end, cash above the reserve is drawn and split 3 ways (same rule as Financials tab)
     //   Each owner gets paid = commission (5% of revenue, capped) + 1/3 of each quarterly draw
-    //   Roster = one dispo rep (Jan 2027, frees Luka to acquisitions) + an optional acq rep after Q1
+    //   Roster = one dispo rep (Jan 2027, moves Luka to acquisitions with his own ad spend) + optional acq reps after Q1 (each with their own ad spend, commission only)
     // Tiller is the source of truth: channel ad spend (last completed month), other expenses, and cash in bank
     // reload from Tiller every time the tab opens. Edits to those are what-ifs for the session.
     var HP_MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -3694,7 +3694,7 @@
       Array.prototype.forEach.call(document.querySelectorAll('[data-hp-pat]'), function (b) { var on = b.getAttribute('data-hp-pat') === v; b.style.background = on ? '#2E75B6' : 'transparent'; b.style.color = on ? 'white' : '#666'; });
       computeHiring();
     };
-    var HP_BUILD = '2026-10-26 c';   // shown in the tab header so you can tell which version is live
+    var HP_BUILD = '2026-10-26 h';   // shown in the tab header so you can tell which version is live
     window.hpToggleApplyQ = function (on) { localStorage.setItem('hp6_applyQ', on ? '1' : '0'); hpRerenderKeepingLevers(); };
     window.hpToggleUsePipe = function (on) { localStorage.setItem('hp6_usePipe', on ? '1' : '0'); computeHiring(); };
     // Editing the TOTAL ad spend scales the three channels proportionally (keeps your channel mix)
@@ -3716,17 +3716,17 @@
       var dsp = (Array.isArray(raw) ? raw.filter(function (h) { return h.type === 'dispo'; })[0] : null) || {};
       var acq = (Array.isArray(raw) ? raw.filter(function (h) { return h.type === 'acq'; })[0] : null) || {};
       HP_HIRES = [
-        { type: 'dispo', start: pick(dsp.start, 'Jan 2027'), comm: num(dsp.comm, 17.5), base: num(dsp.base, 0), freesOwner: dsp.freesOwner !== false, ownerAd: num(dsp.ownerAd, 14000), ownerRoas: num(dsp.ownerRoas, 3) },
-        { type: 'acq', on: !!acq.on, start: pick(acq.start, 'Apr 2027'), ad: num(acq.ad, 14000), roas: num(acq.roas, 3), comm: num(acq.comm, 7.5), base: num(acq.base, 2500), commOnly: num(acq.commOnly, 10) }
+        { type: 'dispo', start: pick(dsp.start, 'Jan 2027'), comm: num(dsp.comm, 10), base: num(dsp.base, 0), hold: dsp.hold !== false, target: num(dsp.target, 160000), freesOwner: dsp.freesOwner !== false, ownerAd: num(dsp.ownerAd, 14000), ownerRoas: num(dsp.ownerRoas, 3) },
+        { type: 'acq', on: !!acq.on, start: pick(acq.start, 'Apr 2027'), ad: num(acq.ad, 14000), roas: num(acq.roas, 3), comm: num(acq.comm, acq.commOnly !== undefined ? acq.commOnly : 10), count: Math.max(1, Math.round(num(acq.count, 1))) }
       ];
       return HP_HIRES;
     }
     function hpSaveHires() { localStorage.setItem('hp7_hires', JSON.stringify(HP_HIRES || [])); }
     window.hpHireField = function (i, field, val) {
       hpLoadHires(); if (!HP_HIRES[i]) return;
-      if (field === 'freesOwner' || field === 'on') { HP_HIRES[i][field] = !!val; hpSaveHires(); hpRerenderKeepingLevers(); return; }
-      if (field === 'start') HP_HIRES[i].start = val; else { var n = parseFloat(val); HP_HIRES[i][field] = isNaN(n) ? 0 : n; }
-      hpSaveHires(); computeHiring();
+      if (field === 'on' || field === 'freesOwner' || field === 'hold') { HP_HIRES[i][field] = !!val; hpSaveHires(); hpRerenderKeepingLevers(); return; }
+      if (field === 'start') HP_HIRES[i].start = val; else { var n = parseFloat(val); HP_HIRES[i][field] = isNaN(n) ? 0 : n; if (field === 'count') HP_HIRES[i].count = Math.max(1, Math.round(HP_HIRES[i].count || 1)); }
+      hpSaveHires(); if (field === 'count') hpRerenderKeepingLevers(); else computeHiring();
     };
     // Re-render (e.g. after toggling a hire) but keep the current in-session lever values
     var HP_SESSION = null;
@@ -3743,10 +3743,10 @@
       var fin = hpFinancialsDraw();
       var opts = hpMonths(36); var hires = hpLoadHires(); var ses = HP_SESSION || {};
       var has = function (v) { return v !== null && v !== undefined && !isNaN(v); };
-      var planDefaults = { sm3: { spend: 25000, roas: 3 }, fb: { spend: 10000, roas: 3 } };
+      var planDefaults = { sm3: { spend: 31000, roas: 2.8 }, fb: { spend: 1500, roas: 4.3 } };   // planning defaults; Tiller actuals are one click away on each lever
       var d = {
         horizon: hpG('horizon', 12), ownerComm: has(ses.ownerComm) ? ses.ownerComm : hpG('ownerComm', 15),
-        otherExp: has(ses.otherExp) ? ses.otherExp : (ref.otherOpex !== null ? r0(ref.otherOpex) : 2000),   // ALWAYS from Tiller on load
+        otherExp: has(ses.otherExp) ? ses.otherExp : 6000,   // planning default; Tiller 3-mo / 6-mo averages are links under the lever
         pattern: hpG('pattern', 'steady'), swing: has(ses.swing) ? ses.swing : hpG('swing', 60),
         reserve: has(ses.reserve) ? ses.reserve : hpG('reserve', 165000),
         applyQ: hpG('applyQ', '1') === '1',
@@ -3756,8 +3756,8 @@
       };
       HP_CH.forEach(function (c) {
         var live = ref.ch[c.key] || {};
-        d[c.key + 'Spend'] = has(ses[c.key + 'Spend']) ? ses[c.key + 'Spend'] : ((live.spend !== null && live.spend !== undefined) ? r0(live.spend) : planDefaults[c.key].spend); // ALWAYS from Tiller on load
-        d[c.key + 'Roas'] = has(ses[c.key + 'Roas']) ? ses[c.key + 'Roas'] : hpG(c.key + 'Roas', live.roas ? +live.roas.toFixed(2) : planDefaults[c.key].roas);
+        d[c.key + 'Spend'] = has(ses[c.key + 'Spend']) ? ses[c.key + 'Spend'] : planDefaults[c.key].spend;   // planning default; click the Tiller link on the lever to use actuals
+        d[c.key + 'Roas'] = has(ses[c.key + 'Roas']) ? ses[c.key + 'Roas'] : hpG(c.key + 'Roas8', planDefaults[c.key].roas);
       });
 
       var numStyle = 'width:100%;padding:7px;border:1px solid #9DC3E6;background:#F3F8FD;border-radius:4px;font-size:16px;font-weight:800;color:#1B2A4A;text-align:center;';
@@ -3781,10 +3781,10 @@
 
       var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:22px;margin-bottom:8px;color:white;">';
       h += '<h2 style="margin:0 0 4px 0;font-size:22px;font-weight:700;letter-spacing:0.5px;">Hiring &amp; Growth Planner <span style="font-size:10px;font-weight:600;opacity:0.55;letter-spacing:0.5px;margin-left:8px;">build ' + HP_BUILD + '</span></h2>';
-      h += '<p style="margin:0;font-size:13px;opacity:0.75;">Ad spend, other expenses and cash reload from Tiller every time you open this tab' + (ref.lastMonth ? ' (spend = ' + ref.lastMonth + ' actuals)' : '') + '; draw settings reload from the Financials tab. Move any lever for a what-if; hit <a href="javascript:void(0)" onclick="hpResetTiller()" style="color:#FFD966;font-weight:700;">reset</a> to snap back.</p></div>';
+      h += '<p style="margin:0;font-size:13px;opacity:0.75;">Spend, ROAS and other expenses start at your planning defaults (SM3 $31k @ 2.8x, Facebook $1.5k @ 4.3x, other $6k); each lever has a link to swap in the Tiller actual. Cash and draw settings come from Tiller / the Financials tab. Hit <a href="javascript:void(0)" onclick="hpResetTiller()" style="color:#FFD966;font-weight:700;">reset</a> to snap back to defaults.</p></div>';
 
       // REVENUE
-      h += secT('1. Revenue &mdash; Ad Spend &amp; ROAS by Channel', '#1B2A4A', '<span style="font-size:11px;color:#999;font-weight:500;">Spend = ' + (ref.lastMonth || 'last month') + ' actuals from Tiller &middot; ROAS = all-time revenue by Source &divide; spend</span>');
+      h += secT('1. Revenue &mdash; Ad Spend &amp; ROAS by Channel', '#1B2A4A', '<span style="font-size:11px;color:#999;font-weight:500;">Planning defaults &middot; links under each lever swap in ' + (ref.lastMonth || 'last month') + ' Tiller spend or all-time ROAS by Source</span>');
       h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;">';
       HP_CH.forEach(function (c) {
         var live = ref.ch[c.key] || {};
@@ -3873,16 +3873,21 @@
       h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;">';
       // Dispo rep card
       h += '<div style="' + panel('#7030A0') + '"><div style="font-size:13px;font-weight:800;color:#7030A0;margin-bottom:10px;">Dispo Rep</div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">';
-      h += '<div><div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:3px;">Start Month</div>' + selStart(0, dsp.start) + '</div>' + fld(0, 'Commission % of Revenue', 'comm', dsp.comm, 0.5, 0, 50) + fld(0, 'Base Salary / mo', 'base', dsp.base, 250) + '</div>';
+      h += '<div><div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:3px;">Start Month</div>' + selStart(0, dsp.start) + '</div>' + (dsp.hold ? '<div><div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:3px;">Target Pay / yr</div><input type="number" value="' + dsp.target + '" step="5000" min="0" oninput="hpHireField(0,\'target\',this.value)" style="' + smallIn + '"></div>' : fld(0, 'Commission % of Revenue', 'comm', dsp.comm, 0.5, 0, 50)) + fld(0, 'Base Salary / mo', 'base', dsp.base, 250) + '</div>';
+      h += '<div style="margin-top:10px;padding:10px;border-radius:8px;background:' + (dsp.hold ? '#F5F0FA' : '#f7f7f7') + ';border:1px dashed ' + (dsp.hold ? '#7030A0' : '#ddd') + ';">' +
+        '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:#333;cursor:pointer;font-weight:700;"><input type="checkbox"' + (dsp.hold ? ' checked' : '') + ' onchange="hpHireField(0,\'hold\',this.checked)" style="margin-top:2px;">' +
+        '<span>Hold his pay near the target: his commission % is set from the target and scales down as acq reps add revenue <span style="font-weight:500;color:#666;">(unchecked = flat % of all revenue)</span></span></label>' +
+        '<div id="hpDispoPct" style="font-size:11px;color:#555;margin-top:6px;"></div></div>';
       h += '<div style="margin-top:10px;padding:10px;border-radius:8px;background:' + (dsp.freesOwner ? '#F3F9EE' : '#f7f7f7') + ';border:1px dashed ' + (dsp.freesOwner ? '#548235' : '#ddd') + ';">' +
         '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;color:#333;cursor:pointer;font-weight:700;"><input type="checkbox"' + (dsp.freesOwner ? ' checked' : '') + ' onchange="hpHireField(0,\'freesOwner\',this.checked)" style="margin-top:2px;">' +
-        '<span>When this rep starts, the owner doing dispo today (Luka) moves to acquisitions <span style="font-weight:500;color:#666;">(no extra pay &mdash; owners are already paid by commission + draw)</span></span></label>';
-      if (dsp.freesOwner) h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">' + fld(0, 'Owner&rsquo;s Acq Ad Spend / mo', 'ownerAd', dsp.ownerAd, 500) + fld(0, 'ROAS on That Spend', 'ownerRoas', dsp.ownerRoas, 0.1, 0, 10) + '</div><div style="font-size:11px;color:#888;margin-top:6px;">Adds ' + fmt(dsp.ownerAd) + '/mo of ad spend and ' + fmt(dsp.ownerAd * dsp.ownerRoas) + '/mo of revenue from ' + dsp.start + ' on.</div>';
+        '<span>When this rep starts, Luka moves from dispo to acquisitions and we add his ad spend <span style="font-weight:500;color:#666;">(no extra pay &mdash; owners are already paid by commission + draw)</span></span></label>';
+      if (dsp.freesOwner) h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">' + fld(0, 'Luka&rsquo;s Acq Ad Spend / mo', 'ownerAd', dsp.ownerAd, 500) + fld(0, 'ROAS on That Spend', 'ownerRoas', dsp.ownerRoas, 0.1, 0, 10) + '</div><div style="font-size:11px;color:#888;margin-top:6px;">Adds ' + fmt(dsp.ownerAd) + '/mo of ad spend and ' + fmt(dsp.ownerAd * dsp.ownerRoas) + '/mo of revenue from ' + dsp.start + ' on.</div>';
       h += '</div><div id="hpDispoPay" style="margin-top:12px;"></div></div>';
       // Acq rep card (toggle)
-      h += '<div style="' + panel('#ED7D31') + (acq.on ? '' : 'opacity:0.75;') + '"><label style="display:flex;gap:8px;align-items:center;font-size:13px;font-weight:800;color:#ED7D31;margin-bottom:10px;cursor:pointer;"><input type="checkbox"' + (acq.on ? ' checked' : '') + ' onchange="hpHireField(1,\'on\',this.checked)">Hire an Acq Rep after Q1 <span style="font-weight:500;color:#888;font-size:11px;">(projection in block C below)</span></label><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">';
-      h += '<div><div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:3px;">Start Month</div>' + selStart(1, acq.start) + '</div>' + fld(1, 'Ad Spend / mo', 'ad', acq.ad, 500) + fld(1, 'ROAS on Their Spend', 'roas', acq.roas, 0.1, 0, 10) + fld(1, 'Commission % of Their Revenue', 'comm', acq.comm, 0.5, 0, 50) + fld(1, 'Base Salary / mo', 'base', acq.base, 250) + fld(1, 'Commission-Only % (no base)', 'commOnly', acq.commOnly, 0.5, 0, 50) + '</div>';
-      h += '<div style="font-size:11px;color:#888;margin-top:8px;">Gets their own leads from their ' + fmt(acq.ad) + '/mo of ad spend (&asymp; ' + fmt(acq.ad * acq.roas) + '/mo of revenue at ' + acq.roas + 'x) and earns only on that, not on company-wide revenue. Two pay plans compared below: base + ' + acq.comm + '%, or commission-only at ' + acq.commOnly + '%.</div></div>';
+      h += '<div style="' + panel('#ED7D31') + (acq.on ? '' : 'opacity:0.75;') + '"><label style="display:flex;gap:8px;align-items:center;font-size:13px;font-weight:800;color:#ED7D31;margin-bottom:10px;cursor:pointer;"><input type="checkbox"' + (acq.on ? ' checked' : '') + ' onchange="hpHireField(1,\'on\',this.checked)">Hire Acq Reps after Q1 <span style="font-weight:500;color:#888;font-size:11px;">(projection in block C below)</span></label><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">';
+      h += fld(1, 'How Many Acq Reps', 'count', acq.count, 1, 1, 10);
+      h += '<div><div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.8px;margin-bottom:3px;">Start Month</div>' + selStart(1, acq.start) + '</div>' + fld(1, 'Ad Spend / mo', 'ad', acq.ad, 500) + fld(1, 'ROAS on Their Spend', 'roas', acq.roas, 0.1, 0, 10) + fld(1, 'Commission % of Their Revenue', 'comm', acq.comm, 0.5, 0, 50) + '</div>';
+      h += '<div style="font-size:11px;color:#888;margin-top:8px;">Each rep gets their own leads from their ' + fmt(acq.ad) + '/mo of ad spend (&asymp; ' + fmt(acq.ad * acq.roas) + '/mo of revenue at ' + acq.roas + 'x) and earns only on that, not on company-wide revenue. Commission only, no base: ' + acq.comm + '% of that revenue.</div></div>';
       h += '</div>';
 
       h += '<div id="hpResults"></div>';
@@ -3897,7 +3902,7 @@
       var applyQ = (localStorage.getItem('hp6_applyQ') || '1') === '1';
       var v = {
         horizon: Math.max(3, Math.round(hpN('hpHorizon', 12))), ownerComm: hpN('hpL_ownerComm', 15) / 100, ownerCap: Math.max(0, hpN('hpL_ownerCap', 2500)),
-        otherExp: hpN('hpL_otherExp', 2000),
+        otherExp: hpN('hpL_otherExp', 6000),
         startCash: applyQ ? (fin.eoq - Math.max(0, fin.draw)) : cashToday,
         pattern: localStorage.getItem('hp6_pattern') || 'steady', swing: Math.max(0, Math.min(100, hpN('hpL_swing', 60))) / 100,
         reserve: Math.max(0, hpN('hpL_reserve', 165000)), ch: {},
@@ -3906,8 +3911,8 @@
       };
       HP_CH.forEach(function (c) { v.ch[c.key] = { spend: hpN('hpL_' + c.key + 'Spend', 0), roas: hpN('hpL_' + c.key + 'Roas', 0) }; });
       // Persist only the assumption levers. Spend, other expenses and the start balance reload from Tiller / Financials.
-      var keys = ['ownerComm', 'ownerCap', 'swing', 'growth', 'ucPct', 'reserve']; HP_CH.forEach(function (c) { keys.push(c.key + 'Roas'); });
-      keys.forEach(function (k) { var el = document.getElementById('hpL_' + k); if (el) localStorage.setItem('hp6_' + k, el.value); });
+      var keys = ['ownerComm', 'ownerCap', 'swing', 'growth', 'ucPct', 'reserve']; keys.forEach(function (k) { var el = document.getElementById('hpL_' + k); if (el) localStorage.setItem('hp6_' + k, el.value); });
+      HP_CH.forEach(function (c) { var el = document.getElementById('hpL_' + c.key + 'Roas'); if (el) localStorage.setItem('hp6_' + c.key + 'Roas8', el.value); });
       var hz = document.getElementById('hpHorizon'); if (hz) localStorage.setItem('hp6_horizon', hz.value);
       var pw = document.getElementById('hpPipeWin'); if (pw) localStorage.setItem('hp6_pipeWin', pw.value);
 
@@ -3933,34 +3938,45 @@
       if (chips && ref.pattern && ref.pattern.length) chips.innerHTML = HP_MN.map(function (m, i) { var p = ref.pattern[i]; if (p === null || p === undefined) return ''; var eff = 1 + (p - 1) * v.swing; return '<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;margin:2px 3px 0 0;background:' + (eff >= 1 ? '#E8F1FB' : '#FBECEC') + ';color:' + (eff >= 1 ? '#1B4F8A' : '#8A1B1B') + ';">' + m + ' ' + eff.toFixed(2) + 'x</span>'; }).join('');
 
       // Month-by-month model. withAcq = include the acq rep (if switched on).
-      function run(withAcq) {
+      function run(withAcq, pcts) {
         var rows = [], cum = v.startCash;
+        var pctFor = function (hasA) { return pcts ? (hasA ? pcts.withReps : pcts.before) : dsp.comm; };
         months.forEach(function (m, i) {
           var mult = multFor(m), gf = growthFor(i);
           var baseAd = 0, baseRev = 0;
           HP_CH.forEach(function (c) { baseAd += v.ch[c.key].spend; baseRev += v.ch[c.key].spend * v.ch[c.key].roas * mult * gf; });
           var hasD = i >= dIdx, hasA = withAcq && acq.on && i >= aIdx;
-          var ownerAcqAd = (hasD && dsp.freesOwner) ? dsp.ownerAd : 0, ownerAcqRev = ownerAcqAd * dsp.ownerRoas * mult * gf;
-          var acqAd = hasA ? acq.ad : 0, acqRev = acqAd * acq.roas * mult * gf;
-          var ad = baseAd + ownerAcqAd + acqAd, modeled = baseRev + ownerAcqRev + acqRev, rev = modeled, src = 'model';
+          var nReps = hasA ? Math.max(1, Math.round(acq.count || 1)) : 0;
+          var lukaAd = (hasD && dsp.freesOwner) ? dsp.ownerAd : 0, lukaRev = lukaAd * dsp.ownerRoas * mult * gf;   // Luka to acquisitions when the dispo rep starts
+          var acqAd = acq.ad * nReps, acqRev = acqAd * acq.roas * mult * gf;
+          var ad = baseAd + lukaAd + acqAd, modeled = baseRev + lukaRev + acqRev, rev = modeled, src = 'model';
           if (v.usePipe) {
             var known = pipeFor(m, i);
             if (i < v.pipeWin) { rev = known; src = 'pipe'; }
             else if (known > modeled) { rev = known; src = 'pipe'; }
-            if (src === 'pipe') acqRev = modeled > 0 ? acqRev * rev / modeled : 0;
+            if (src === 'pipe') { var scl = modeled > 0 ? rev / modeled : 0; acqRev *= scl; lukaRev *= scl; }
           }
-          var aPay = hasA ? acq.base + acqRev * acq.comm / 100 : 0;
-          var dPay = hasD ? dsp.base + rev * dsp.comm / 100 : 0;
+          var aPay = hasA ? acqRev * acq.comm / 100 : 0;   // commission only, on their own leads
+          var dPct = pctFor(hasA), dPay = hasD ? dsp.base + rev * dPct / 100 : 0;
           var ocFull = rev * v.ownerComm, oc = v.ownerCap > 0 ? Math.min(ocFull, v.ownerCap * HP_OWNERS) : ocFull;
           var net = rev - ad - v.otherExp - oc - dPay - aPay; cum += net;
           var q = hpQKey(m), draw = 0;
           if (q.isEnd) { draw = Math.max(0, cum - v.reserve); cum -= draw; }
-          rows.push({ m: m, isQ: q.isEnd, nPipe: src === 'pipe' ? 1 : 0, rev: rev, ad: ad, acqAd: acqAd, acqRev: acqRev, exp: v.otherExp, oc: oc, dPay: dPay, aPay: aPay, net: net, draw: draw, cum: cum, hasD: hasD, hasA: hasA });
+          rows.push({ m: m, isQ: q.isEnd, nPipe: src === 'pipe' ? 1 : 0, rev: rev, ad: ad, acqAd: acqAd, acqRev: acqRev, lukaAd: lukaAd, lukaRev: lukaRev, exp: v.otherExp, oc: oc, dPay: dPay, aPay: aPay, net: net, draw: draw, cum: cum, hasD: hasD, hasA: hasA });
         });
+        rows.pcts = pcts || { before: dsp.comm, withReps: dsp.comm };
+        // Hold-the-target mode: solve the % separately for months before the acq reps and months with them,
+        // so (avg monthly pay - base) x 12 = target in each phase; then rerun with those percentages
+        if (dsp.hold && !pcts) {
+          var solve = function (filt) { var dm = rows.filter(filt), avgRev = dm.length ? dm.reduce(function (a, r) { return a + r.rev; }, 0) / dm.length : 0; return avgRev > 0 ? Math.max(0, (dsp.target / 12 - dsp.base) / avgRev * 100) : null; };
+          var p0 = solve(function (r) { return r.hasD && !r.hasA; }), p1 = solve(function (r) { return r.hasD && r.hasA; });
+          if (p0 === null) p0 = p1 === null ? dsp.comm : p1; if (p1 === null) p1 = p0;
+          return run(withAcq, { before: p0, withReps: p1 });
+        }
         return rows;
       }
       var byQ = function (rs) {
-        var g = {}, order = [], sumKeys = ['rev', 'ad', 'acqAd', 'acqRev', 'exp', 'oc', 'dPay', 'aPay', 'net', 'draw', 'nPipe'];
+        var g = {}, order = [], sumKeys = ['rev', 'ad', 'acqAd', 'acqRev', 'lukaAd', 'lukaRev', 'exp', 'oc', 'dPay', 'aPay', 'net', 'draw', 'nPipe'];
         rs.forEach(function (r) {
           var q = hpQKey(r.m);
           if (!g[q.key]) { var o = { m: q.label, n: 0, hasD: false, hasA: false }; sumKeys.forEach(function (k) { o[k] = 0; }); g[q.key] = o; order.push(q.key); }
@@ -3976,6 +3992,7 @@
       var secT = function (t, c, sub) { return '<div style="margin:24px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + c + ';text-transform:uppercase;letter-spacing:1px;">' + t + '</div>' + (sub ? '<div style="font-size:11px;color:#999;margin-top:2px;">' + sub + '</div>' : '') + '</div>'; };
       var grid = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:12px;';
 
+      var nAcqWord = acq.on ? (Math.max(1, Math.round(acq.count || 1)) === 1 ? '1 acq rep' : Math.round(acq.count) + ' acq reps') : 'no acq reps';
       var rows = run(false), qs = byQ(rows);            // current plan: dispo rep only
       var rowsA = run(true), qsA = byQ(rowsA);          // with the acq rep (same as rows when the acq rep is off)
       var dRows = rows.filter(function (r) { return r.hasD; });
@@ -3988,12 +4005,20 @@
       if (!dRows.length) dp += '<div style="font-size:12px;color:#888;margin-top:6px;">Start month is outside the ' + v.horizon + '-month projection.</div>';
       else {
         dp += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;">' +
-          '<div><div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;">Per month (avg)</div><div style="font-size:24px;font-weight:800;color:#7030A0;">' + fmt(dAvg) + '</div><div style="font-size:10px;color:#999;">' + dsp.comm + '% of ' + fmt(dRevAvg) + ' avg revenue' + (dsp.base ? ' + ' + fmt(dsp.base) + ' base' : '') + '</div></div>' +
+          '<div><div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;">Per month (avg)</div><div style="font-size:24px;font-weight:800;color:#7030A0;">' + fmt(dAvg) + '</div><div style="font-size:10px;color:#999;">' + rows.pcts.before.toFixed(1) + '% of ' + fmt(dRevAvg) + ' avg revenue' + (dsp.base ? ' + ' + fmt(dsp.base) + ' base' : '') + '</div></div>' +
           '<div><div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;">Annualized</div><div style="font-size:24px;font-weight:800;color:#7030A0;">' + fmt(dAvg * 12) + '</div><div style="font-size:10px;color:#999;">avg month &times; 12</div></div></div>';
-        if (acq.on && aIdx < months.length) { var dA = rowsA.filter(function (r) { return r.hasD; }), dAvgA = dA.length ? sum(dA, 'dPay') / dA.length : 0; dp += '<div style="font-size:11px;color:#888;margin-top:6px;">With the acq rep&rsquo;s extra revenue: <b>' + fmt(dAvgA) + '/mo</b> &middot; ' + fmt(dAvgA * 12) + '/yr</div>'; }
+        if (acq.on && aIdx < months.length) { var dA = rowsA.filter(function (r) { return r.hasD; }), dAvgA = dA.length ? sum(dA, 'dPay') / dA.length : 0; dp += '<div style="font-size:11px;color:#888;margin-top:6px;">With ' + nAcqWord + ' from ' + acq.start + ': <b>' + fmt(dAvgA) + '/mo</b> &middot; ' + fmt(dAvgA * 12) + '/yr' + (dsp.hold ? ' (blend of both %s)' : '') + '</div>'; }
       }
       dp += '</div>';
       setT('hpDispoPay', dp);
+      if (dsp.hold) {
+        var pctLine = '<b>' + rows.pcts.before.toFixed(1) + '%</b> with the dispo rep' + (dsp.freesOwner ? ' + Luka on acq' : '') + ' (' + fmt(dRevAvg) + '/mo revenue)';
+        if (acq.on && aIdx < months.length) {
+          var fullTeam = rowsA.filter(function (r) { return r.hasD && r.hasA; }), ftRev = fullTeam.length ? sum(fullTeam, 'rev') / fullTeam.length : 0;
+          pctLine += ' &nbsp;&rarr;&nbsp; <b>' + rowsA.pcts.withReps.toFixed(1) + '%</b> from ' + acq.start + ' with ' + nAcqWord + ' (' + fmt(ftRev) + '/mo)';
+        }
+        setT('hpDispoPct', 'Commission % to land ' + fmt(dsp.target) + '/yr: ' + pctLine);
+      }
 
       // ---- B. Owner draw, quarter by quarter (dispo rep only) ----
       var fullQ = qs.filter(function (q) { return q.isQ; }), drawEach = sum(qs, 'draw') / HP_OWNERS, commEach = sum(qs, 'oc') / HP_OWNERS;
@@ -4008,37 +4033,63 @@
       if (fullQ.length) s += '<div style="margin:10px 0;">' + fullQ.map(function (q) { return '<span style="display:inline-block;padding:4px 10px;border-radius:12px;font-size:11px;font-weight:700;margin:2px 6px 2px 0;background:' + (q.draw > 0 ? '#FFF6D6' : '#f0f0f0') + ';color:' + (q.draw > 0 ? '#7A5A00' : '#999') + ';">' + q.m + ': ' + fmt(q.draw / HP_OWNERS) + ' each <span style="font-weight:500;">(' + fmt(q.draw) + ')</span></span>'; }).join('') + '</div>';
 
       // ---- C. Acq rep after Q1 ----
-      s += secT('C. Hiring an Acq Rep ' + acq.start, '#ED7D31', acq.on ? 'Same model with the acq rep added from ' + acq.start + ': ' + fmt(acq.ad) + '/mo ad spend at ' + acq.roas + 'x, paid ' + fmt(acq.base) + '/mo base + ' + acq.comm + '% of the revenue they generate. Compared with the dispo-only plan above.' : 'Switch on <b>Hire an Acq Rep after Q1</b> in section 4 to see this projection.');
+      var nA = acq.on ? Math.max(1, Math.round(acq.count || 1)) : 0, repWord = nA === 1 ? 'Acq Rep' : nA + ' Acq Reps';
+      s += secT('C. Hiring ' + (nA ? repWord : 'an Acq Rep') + ' ' + acq.start, '#ED7D31', acq.on ? 'Each rep gets their own ' + fmt(acq.ad) + '/mo of ad spend at ' + acq.roas + 'x and earns ' + acq.comm + '% of the revenue it produces &mdash; commission only, no base.' : 'Switch on <b>Hire Acq Reps after Q1</b> in section 4 to see this projection.');
       if (acq.on && aIdx < months.length) {
         var aRows = rowsA.filter(function (r) { return r.hasA; });
         var eachA = (sum(qsA, 'draw') + sum(qsA, 'oc')) / HP_OWNERS, eachD = drawEach + commEach;
         var lastA = rowsA[rowsA.length - 1], last0 = rows[rows.length - 1];
-        var aRevMo = aRows.length ? sum(aRows, 'acqRev') / aRows.length : 0;   // revenue from THEIR ad spend only (avg month)
-        var commMo = aRevMo * acq.comm / 100, planMo = acq.base + commMo, coMo = aRevMo * acq.commOnly / 100;
+        var aRevMo = (aRows.length ? sum(aRows, 'acqRev') / aRows.length : 0) / nA;   // revenue from ONE rep's ad spend (avg month)
+        var commMo = aRevMo * acq.comm / 100;
         s += '<div style="' + grid + '">';
-        s += card('Their leads &rarr; revenue', fmt(aRevMo) + '/mo', '#548235', fmt(acq.ad) + ' ad spend &times; ' + acq.roas + 'x &middot; ' + fmt(aRevMo * 12) + '/yr');
-        s += card('Each owner paid, total', fmt(eachA), pos(eachA - eachD), fmtSigned(eachA - eachD) + ' vs dispo-only over ' + v.horizon + ' mo (base + ' + acq.comm + '% plan)');
+        s += card('Each rep&rsquo;s leads &rarr; revenue', fmt(aRevMo) + '/mo', '#548235', fmt(acq.ad) + ' ad spend &times; ' + acq.roas + 'x &middot; ' + fmt(aRevMo * 12) + '/yr' + (nA > 1 ? ' &middot; all ' + nA + ': ' + fmt(aRevMo * nA) + '/mo' : ''));
+        s += card('Each owner paid, total', fmt(eachA), pos(eachA - eachD), fmtSigned(eachA - eachD) + ' vs dispo-only over ' + v.horizon + ' mo');
         s += card('Cash in bank at ' + months[months.length - 1], fmt(lastA.cum), pos(lastA.cum - v.reserve), fmtSigned(lastA.cum - last0.cum) + ' vs dispo-only');
         s += '</div>';
         var pr = function (label, mo, opt) { opt = opt || {}; return '<tr style="' + (opt.bold ? 'background:#f5f7fa;font-weight:700;' : '') + '"><td style="' + (opt.indent ? 'padding-left:22px;color:#666;' : 'font-weight:600;') + '">' + label + '</td><td style="text-align:right;">' + fmt(mo) + '</td><td style="text-align:right;">' + fmt(mo * 3) + '</td><td style="text-align:right;font-weight:700;">' + fmt(mo * 12) + '</td></tr>'; };
         var hdr = function (t, c) { return '<tr style="background:' + c + ';"><td colspan="4" style="font-size:11px;font-weight:800;color:white;text-transform:uppercase;letter-spacing:1px;">' + t + '</td></tr>'; };
         s += '<div class="table-container" style="margin-top:12px;"><table><thead><tr><th>Acq rep pay &amp; cost <span style="font-weight:500;color:#999;font-size:11px;">(average month once they start)</span></th><th style="text-align:right;">Per Month</th><th style="text-align:right;">Per Quarter</th><th style="text-align:right;">Per Year</th></tr></thead><tbody>';
-        s += hdr('Plan 1 &mdash; base ' + fmt(acq.base) + ' + ' + acq.comm + '% of their revenue', '#ED7D31');
-        s += pr('Base salary', acq.base, { indent: true });
         s += pr('Commission (' + acq.comm + '% &times; ' + fmt(aRevMo) + ')', commMo, { indent: true });
-        s += pr('Rep makes', planMo, { bold: true });
-        s += pr('Their ad spend', acq.ad, { indent: true });
-        s += pr('We spend on them (pay + ads)', planMo + acq.ad, { bold: true });
-        s += pr('Left for the business from their deals', aRevMo - planMo - acq.ad, { indent: true });
-        s += hdr('Plan 2 &mdash; commission only, ' + acq.commOnly + '% of their revenue, no base', '#B8860B');
-        s += pr('Commission (' + acq.commOnly + '% &times; ' + fmt(aRevMo) + ')', coMo, { indent: true });
-        s += pr('Rep makes', coMo, { bold: true });
-        s += pr('Their ad spend', acq.ad, { indent: true });
-        s += pr('We spend on them (pay + ads)', coMo + acq.ad, { bold: true });
-        s += pr('Left for the business from their deals', aRevMo - coMo - acq.ad, { indent: true });
+        s += pr('Each rep makes', commMo, { bold: true });
+        s += pr('Their ad spend (each)', acq.ad, { indent: true });
+        s += pr('We spend per rep (pay + ads)', commMo + acq.ad, { bold: true });
+        s += pr('Left for the business from each rep&rsquo;s deals', aRevMo - commMo - acq.ad, { indent: true });
+        if (nA > 1) { s += pr('All ' + nA + ' reps make', commMo * nA, { bold: true }); s += pr('We spend on all ' + nA + ' (pay + ads)', (commMo + acq.ad) * nA, { bold: true }); }
         s += '</tbody></table></div>';
-        s += '<div style="font-size:11px;color:#999;margin-top:6px;">The rep only earns on revenue from their own ' + fmt(acq.ad) + '/mo of ad spend, not on the company-wide number; owners keep their commission on everything. Plan 2 vs Plan 1 for the rep: ' + fmtSigned(coMo - planMo) + '/mo &middot; ' + fmtSigned((coMo - planMo) * 12) + '/yr.' + (usePattern ? ' Historical pattern is on, so their revenue (and commission) moves month to month; the figures above are the average.' : '') + '</div>';
+        s += '<div style="font-size:11px;color:#999;margin-top:6px;">A rep only earns on revenue from their own ' + fmt(acq.ad) + '/mo of ad spend, not on the company-wide number; owners keep their commission on everything.' + (usePattern ? ' Historical pattern is on, so their revenue (and commission) moves month to month; the figures above are the average.' : '') + '</div>';
       } else if (acq.on) s += '<div style="font-size:12px;color:#888;">Start month ' + acq.start + ' is outside the ' + v.horizon + '-month projection &mdash; raise Months to Project in section 2.</div>';
+
+      // ---- D. Company picture: everything above, as big numbers ----
+      var full = rowsA.filter(function (r) { return r.hasD && (!acq.on || r.hasA); });   // months with the whole team in place
+      if (!full.length) full = rowsA;
+      var teamFrom = full[0].m, nF = full.length;
+      var g = function (k) { return sum(full, k) / nF; };
+      var revMo = g('rev'), adMo = g('ad'), othMo = g('exp'), ocMo = g('oc'), dPayMo = g('dPay'), aPayMo = g('aPay');
+      var expMo = adMo + othMo + ocMo + dPayMo + aPayMo, netMo = revMo - expMo;
+      var burnX = Math.max(0, hpN('hpL_burnX', 3.5)); localStorage.setItem('hp6_burnX', burnX);
+      var reserveD = expMo * burnX;
+      // Draw simulation: same monthly net as the model, draws against the burn-based reserve at each quarter end
+      var cumD = v.startCash, drawsD = [];
+      rowsA.forEach(function (r) { cumD += r.net; if (r.isQ) { var dr = Math.max(0, cumD - reserveD); cumD -= dr; drawsD.push({ m: hpQKey(r.m).label, draw: dr }); } });
+      var drawYr = drawsD.reduce(function (a, x) { return a + x.draw; }, 0) * (drawsD.length ? 4 / drawsD.length : 0);   // annualized from the quarter-ends in the window
+      var steadyDraw = Math.max(0, netMo * 3);   // once the reserve is full, each quarter's draw = 3 months of net
+      var big = function (label, mo, color, hint) { return '<div class="kpi-card" style="border-left:4px solid ' + color + ';"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><div style="font-size:26px;font-weight:800;color:' + color + ';line-height:1.1;">' + fmt(mo * 12) + '<span style="font-size:11px;color:#999;font-weight:600;"> / yr</span></div><div style="font-size:13px;color:#444;margin-top:6px;"><b>' + fmt(mo) + '</b> / mo &nbsp;&middot;&nbsp; <b>' + fmt(mo * 3) + '</b> / qtr</div>' + (hint ? '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div>' : '') + '</div>'; };
+      s += secT('D. Company Picture &mdash; with everything above in place', '#1B2A4A', 'Average month from ' + teamFrom + ' (' + nF + ' mo with the full team: dispo rep' + (dsp.freesOwner ? ' + Luka on acq' : '') + (nA ? ' + ' + repWord.toLowerCase() : '') + '), then &times; 3 and &times; 12.');
+      s += '<div style="' + grid + '">';
+      s += big('Gross revenue', revMo, '#548235', 'base channels ' + fmt(revMo - g('acqRev') - g('lukaRev')) + (g('lukaRev') > 0 ? ' + Luka acq ' + fmt(g('lukaRev')) : '') + (nA ? ' + acq reps ' + fmt(g('acqRev')) : ''));
+      s += big('Total expenses', expMo, '#C00000', 'ads ' + fmt(adMo) + (g('lukaAd') > 0 ? ' (incl. Luka ' + fmt(g('lukaAd')) + ')' : '') + ' &middot; other ' + fmt(othMo) + ' &middot; owners ' + fmt(ocMo) + ' &middot; dispo ' + fmt(dPayMo) + (nA ? ' &middot; acq ' + fmt(aPayMo) : ''));
+      s += big('Net (stays in the business)', netMo, pos(netMo), 'gross &minus; expenses &middot; ' + (revMo > 0 ? Math.round(netMo / revMo * 100) : 0) + '% margin');
+      s += '</div><div style="' + grid + 'margin-top:12px;">';
+      s += big('Dispo rep makes', dPayMo, '#7030A0', (dsp.hold ? 'held near ' + fmt(dsp.target) + '/yr target &middot; ' : '') + (nA ? rowsA.pcts.withReps : rowsA.pcts.before).toFixed(1) + '% of revenue' + (dsp.base ? ' + ' + fmt(dsp.base) + ' base' : ''));
+      if (nA) s += big('Each acq rep makes', aPayMo / nA, '#ED7D31', 'commission only, ' + acq.comm + '% of their own leads' + (nA > 1 ? ' &middot; all ' + nA + ': ' + fmt(aPayMo) + '/mo' : ''));
+      s += big('Each owner takes', ocMo / HP_OWNERS, '#2E75B6', (v.ownerCap > 0 ? 'capped commission, ' + fmt(v.ownerCap) + '/mo max' : 'commission, no cap') + ' &middot; draws on top');
+      s += '</div>';
+      s += '<div class="kpi-card" style="border-left:4px solid #B8860B;margin-top:12px;"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">Owner draw &middot; reserve = <input id="hpL_burnX" type="number" min="0" max="12" step="0.5" value="' + burnX + '" oninput="computeHiring()" style="width:56px;padding:3px;border:1px solid #ddd;border-radius:4px;font-weight:700;text-align:center;"> months of burn</div><div style="font-size:11px;color:#999;">burn = total expenses ' + fmt(expMo) + '/mo &rarr; reserve <b>' + fmt(reserveD) + '</b> stays in the bank; each quarter end, cash above it is split 3 ways</div></div>';
+      s += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:12px;margin-top:10px;">';
+      s += '<div><div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;">Each owner, per quarter (once reserve is full)</div><div style="font-size:24px;font-weight:800;color:#B8860B;">' + fmt(steadyDraw / HP_OWNERS) + '</div><div style="font-size:10px;color:#999;">3 months of net &divide; 3 owners</div></div>';
+      s += '<div><div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;">Each owner, per year</div><div style="font-size:24px;font-weight:800;color:#B8860B;">' + fmt(steadyDraw * 4 / HP_OWNERS) + '</div><div style="font-size:10px;color:#999;">+ ' + fmt(ocMo / HP_OWNERS * 12) + ' commission = <b>' + fmt(steadyDraw * 4 / HP_OWNERS + ocMo / HP_OWNERS * 12) + '</b> total</div></div>';
+      s += '<div><div style="font-size:9px;font-weight:700;color:#888;text-transform:uppercase;">Projected draws, each owner</div><div style="margin-top:4px;">' + (drawsD.length ? drawsD.map(function (x) { return '<span style="display:inline-block;padding:3px 8px;border-radius:12px;font-size:11px;font-weight:700;margin:2px 4px 2px 0;background:' + (x.draw > 0 ? '#FFF6D6' : '#f0f0f0') + ';color:' + (x.draw > 0 ? '#7A5A00' : '#999') + ';">' + x.m + ' ' + fmt(x.draw / HP_OWNERS) + '</span>'; }).join('') : '<span style="font-size:11px;color:#999;">no quarter-ends in window</span>') + '</div><div style="font-size:10px;color:#999;margin-top:2px;">from ' + fmt(v.startCash) + ' start cash; early quarters fill the reserve first</div></div>';
+      s += '</div></div>';
       resEl.innerHTML = s;
     };
 
