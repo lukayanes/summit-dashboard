@@ -3431,7 +3431,7 @@
       var lever = function (label, key, val, step, hint, fmtFn) { return '<div style="background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #2E75B6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><input id="scL_' + key + '" type="number" step="' + step + '" value="' + val + '" oninput="scRecalc()" style="' + numStyle + '">' + (hint ? '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div>' : '') + '</div>'; };
       var secT = function (title, color, right) { return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (right || '') + '</div>'; };
 
-      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-10-26 k</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
+      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-10-27 a</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
 
       // 1. levers
       h += secT('1. Model Levers', '#1B2A4A', '<span style="font-size:11px;color:#999;">Ad spend &times; ROAS = revenue; everything else flows from there. Saved in this browser.</span>');
@@ -13269,7 +13269,10 @@
 
       if (failedAddresses.length > 0) {
         console.warn('Failed to geocode ' + failedAddresses.length + ' addresses:', failedAddresses);
-        statsEl.innerHTML = deals.length + ' deals &middot; ' + bounds.length + ' mapped &middot; <span style="color:#C62828;cursor:pointer;" title="' + failedAddresses.join('\n').replace(/"/g, '&quot;') + '">' + failedAddresses.length + ' unmapped ⚠</span>';
+        var failList = failedAddresses.map(function (a) { var d = deals.filter(function (x) { return x.address === a; })[0]; return '<li><b>' + ((d && d.id) || '') + '</b> &mdash; ' + (a || '(no address)') + '</li>'; }).join('');
+        statsEl.innerHTML = deals.length + ' deals &middot; ' + bounds.length + ' mapped &middot; <span style="color:#C62828;cursor:pointer;text-decoration:underline;" onclick="var l=document.getElementById(\'dealMapFailList\'); l.style.display = l.style.display===\'none\' ? \'block\' : \'none\';">' + failedAddresses.length + ' unmapped ⚠</span>' +
+          '<ul id="dealMapFailList" style="display:none;position:absolute;right:0;z-index:1000;background:white;border:1px solid #ddd;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,0.15);padding:10px 14px 10px 26px;margin:6px 0 0;font-size:12px;color:#333;text-align:left;max-width:420px;">' + failList + '<li style="list-style:none;margin-left:-16px;color:#888;font-size:11px;margin-top:4px;">Fix the address in the Google Sheet and reload to map it.</li></ul>';
+        statsEl.style.position = 'relative';
         return;
       }
 
