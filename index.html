@@ -707,7 +707,7 @@
           </div>
         </div>
         <div>
-          <div class="section-title" style="background-color: #548235;">Win Rate by Strategy</div>
+          <div class="section-title" style="background-color: #548235;">Win Rate by Strategy <span style="font-weight:400;font-size:11px;opacity:0.8;">(won &divide; won + lost)</span></div>
           <div class="section-body">
             <div class="chart-container">
               <canvas id="strategyWinRateChart"></canvas>
@@ -1212,7 +1212,7 @@
         // a recurring marketing expense, so it counts toward total marketing
         // spend for ROAS purposes. We accept several common spellings so the
         // dashboard doesn't break if the Tiller label is tweaked.
-        const marketingCats = ['ad spend', 'google ad spend', 'facebook ad spend', 'tik tok ad spend', 'sms marketing', 'investor lift', 'sm3 marketing', 'sm3 management', 'sm3', 'sm3 fee', 'sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
+        const marketingCats = ['ad spend', 'google ad spend', 'facebook ad spend', 'tik tok ad spend', 'sms marketing', 'investor lift', 'content launch', 'sm3 marketing', 'sm3 management', 'sm3', 'sm3 fee', 'sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
 
         const sectionNames = ['income', 'marketing & lead gen', 'software & tools', 'deal costs', 'operations'];
         let currentSection = '';
@@ -1242,6 +1242,7 @@
             }
             if (catLower === 'sms marketing') monthlyTotals[mc.label].smsMarketing += val;
             if (catLower === 'investor lift') monthlyTotals[mc.label].investorLift += val;
+            if (catLower === 'content launch') monthlyTotals[mc.label].contentLaunch = (monthlyTotals[mc.label].contentLaunch || 0) + val;
 
             if (type.toLowerCase() === 'expense') monthlyTotals[mc.label].totalExpense += val;
             if (type.toLowerCase() === 'income') monthlyTotals[mc.label].totalIncome += val;
@@ -1550,7 +1551,7 @@
         totalCount: DEALS.length,
         wonCount: won.length,
         lostCount: lost.length,
-        winRate: DEALS.length > 0 ? won.length / DEALS.length : 0,
+        winRate: (won.length + lost.length) > 0 ? won.length / (won.length + lost.length) : 0,   // decided deals only (open UC / escrow / listed excluded)
         wonValue,
         avgFee: Math.round(avgFee),
         largest,
@@ -1662,7 +1663,7 @@
           won: Math.round(wonCredit * 10) / 10,
           lost: Math.round(lostCredit * 10) / 10,
           active: Math.round(activeCredit * 10) / 10,
-          winRate: totalCredit > 0 ? wonCredit / totalCredit : 0,
+          winRate: (wonCredit + lostCredit) > 0 ? wonCredit / (wonCredit + lostCredit) : 0,
           revenue: Math.round(revenueCredit),
           deals: relatedDeals
         };
@@ -1821,7 +1822,7 @@
         document.getElementById('execDrillDown').style.display = 'block';
         return;
       }
-      const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
+      const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift', 'content launch','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
       const matches = (name, mv) => isMkt ? mktCats.includes(name.toLowerCase()) : (mv._type || '').toLowerCase() === 'income';
       // share of the month inside the window (1 = whole month, 0 = none)
       const share = (month) => {
@@ -2443,8 +2444,7 @@
         () => showDrillDown('exec', 'WON', metrics.won)));
       kpis.appendChild(createKpiCard('Closed-Lost', metrics.lostCount, '#C00000',
         () => showLostAnalysis(metrics.lost)));
-      kpis.appendChild(createKpiCard('Win Rate', fmtPct(metrics.winRate), '#7030A0'));
-      kpis.appendChild(createKpiCard('Close Rate', fmtPct(metrics.totalCount ? metrics.wonCount / metrics.totalCount : 0), '#2F9599'));
+      kpis.appendChild(createKpiCard('Win Rate', fmtPct(metrics.winRate), '#7030A0'));   // Won / (Won + Lost)
 
       // KPI Row 2
       let kpis2 = document.getElementById('execKPIs2');
@@ -2472,7 +2472,7 @@
       kpis2.appendChild(createKpiCard('Avg Contract', fmt(avgContract), '#2F9599'));
 
       // ROAS from Tiller (matches Financials & Marketing ROI tabs), same window
-      const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
+      const mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift', 'content launch','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
       const tillerMarketing = execTillerSum((n) => mktCats.includes(n.toLowerCase()), -1);
       const tillerROAS = tillerMarketing > 0 ? ((tillerRevenue || metrics.wonValue) / tillerMarketing).toFixed(1) + 'x' : '-';
       kpis2.appendChild(createKpiCard(inRange ? 'Marketing Spend (in range)' : 'Total Marketing Spend', fmt(tillerMarketing), '#B8860B',
@@ -2516,7 +2516,7 @@
           labels: strategies.map(s => s.name),
           datasets: [{
             label: 'Win Rate %',
-            data: strategies.map(s => s.total > 0 ? (s.won / s.total * 100) : 0),
+            data: strategies.map(s => (s.won + s.lost) > 0 ? (s.won / (s.won + s.lost) * 100) : 0),
             backgroundColor: '#548235'
           }]
         },
@@ -3338,7 +3338,7 @@
       }
       // Tiller ad spend, pro-rated by the days of each month inside the period
       if (EXPENSE_DATA && EXPENSE_DATA.categories) {
-        var mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee','ppl','ppl leads','pay per lead','pay-per-lead','ppl lead gen','ppl marketing','property leads (ppl)','property leads'];
+        var mktCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift', 'content launch','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee','ppl','ppl leads','pay per lead','pay-per-lead','ppl lead gen','ppl marketing','property leads (ppl)','property leads'];
         Object.keys(EXPENSE_DATA.categories).forEach(function (cn) {
           if (!mktCats.includes(cn.toLowerCase())) return;
           var mv = EXPENSE_DATA.categories[cn];
@@ -3431,7 +3431,7 @@
       var lever = function (label, key, val, step, hint, fmtFn) { return '<div style="background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #2E75B6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><input id="scL_' + key + '" type="number" step="' + step + '" value="' + val + '" oninput="scRecalc()" style="' + numStyle + '">' + (hint ? '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div>' : '') + '</div>'; };
       var secT = function (title, color, right) { return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (right || '') + '</div>'; };
 
-      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-10-27 a</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
+      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-10-30 a</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
 
       // 1. levers
       h += secT('1. Model Levers', '#1B2A4A', '<span style="font-size:11px;color:#999;">Ad spend &times; ROAS = revenue; everything else flows from there. Saved in this browser.</span>');
@@ -3593,7 +3593,7 @@
       });
       if (EXPENSE_DATA && EXPENSE_DATA.monthlyTotals) {
         var now = new Date(), curStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        var allMkt = HP_CH.reduce(function (a, c) { return a.concat(c.cats); }, ['ad spend','tik tok ad spend','sms marketing','investor lift','property leads (ppl)','property leads']);
+        var allMkt = HP_CH.reduce(function (a, c) { return a.concat(c.cats); }, ['ad spend','tik tok ad spend','sms marketing','investor lift', 'content launch','property leads (ppl)','property leads']);
         var allLabs = (EXPENSE_DATA.monthLabels || []).map(function (l) { return { l: l, d: monthLabelToDate(l) }; })
           .filter(function (x) { return x.d && x.d < curStart; })
           .filter(function (x) { var t = EXPENSE_DATA.monthlyTotals[x.l]; return t && ((t.totalIncome || 0) !== 0 || (t.totalExpense || 0) !== 0); })
@@ -4121,7 +4121,7 @@
         monthlyIncomeExpense[m] = { income: 0, expense: 0, marketing: 0, commission: 0, opex: 0 };
       });
 
-      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift', 'content launch','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
 
       Object.entries(categories).forEach(([catName, monthlyData]) => {
         const isIncome = (monthlyData._type || '').toLowerCase() === 'income';
@@ -4636,7 +4636,7 @@
       const monthLabels = EXPENSE_DATA.monthLabels;
       // SM3 runs our Google Ads — their management fee counts as marketing spend.
       // We accept several common Tiller labels so the dashboard is robust.
-      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift', 'content launch','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
 
       // ── Build monthly data from Tiller ──
       let totalIncome = 0, totalMarketing = 0;
@@ -4741,7 +4741,7 @@
 
       // ── Monthly Detail Table ──
       html += `<div style="margin-bottom:24px;"><div class="section-title" style="background-color:#1B2A4A;">Monthly Marketing Performance</div><div class="section-body"><div class="table-container">`;
-      html += `<table><thead><tr><th>Month</th><th>Ad Spend</th><th>Google Ads</th><th>SM3 (Google Ads Mgmt)</th><th>Facebook Ads</th><th>TikTok</th><th>SMS</th><th>Investor Lift</th><th>Property Leads</th><th>Revenue</th><th>ROAS</th><th>ROI %</th></tr></thead><tbody>`;
+      html += `<table><thead><tr><th>Month</th><th>Ad Spend</th><th>Google Ads</th><th>SM3 (Google Ads Mgmt)</th><th>Facebook Ads</th><th>TikTok</th><th>SMS</th><th>Investor Lift</th><th>Content Launch</th><th>Property Leads</th><th>Revenue</th><th>ROAS</th><th>ROI %</th></tr></thead><tbody>`;
 
       // Helper to pull a channel value out of d.channels by matching any of
       // several name variants (case-insensitive). SM3 in particular shows up
@@ -4774,6 +4774,7 @@
           <td>${fmt(d.channels['Tik Tok Ad Spend'] || 0)}</td>
           <td>${fmt(d.channels['SMS Marketing'] || 0)}</td>
           <td>${fmt(d.channels['Investor Lift'] || 0)}</td>
+          <td style="color:#C2185B;">${fmt(channelMatch(d.channels, ['content launch']))}</td>
           <td style="color:#1565C0;">${fmt(pplVal)}</td>
           <td style="color:#548235;font-weight:600;">${fmt(d.income)}</td>
           <td>${mRoas}</td>
@@ -4785,7 +4786,7 @@
       const tRoi = tTotalMkt > 0 ? ((tTotalInc - tTotalMkt) / tTotalMkt * 100).toFixed(0) + '%' : '-';
       // Totals row — keep all channel cells empty to match the existing
       // styling; the channel columns roll up into the total Ad Spend cell.
-      html += `<tr style="background:#f0f0f0;font-weight:700;"><td>TOTAL</td><td>${fmt(tTotalMkt)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td style="color:#548235;">${fmt(tTotalInc)}</td><td>${tRoas}</td><td>${tRoi}</td></tr>`;
+      html += `<tr style="background:#f0f0f0;font-weight:700;"><td>TOTAL</td><td>${fmt(tTotalMkt)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td style="color:#548235;">${fmt(tTotalInc)}</td><td>${tRoas}</td><td>${tRoi}</td></tr>`;
       html += `</tbody></table></div></div></div>`;
 
       // ── Quarterly Table ──
@@ -5415,7 +5416,7 @@
       const categories = EXPENSE_DATA.categories;
       const monthLabels = EXPENSE_DATA.monthLabels;
       const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
+      const marketingCats = ['ad spend','google ad spend','facebook ad spend','tik tok ad spend','sms marketing','investor lift', 'content launch','sm3 marketing','sm3 management','sm3','sm3 fee','sm3 management fee', 'ppl', 'ppl leads', 'pay per lead', 'pay-per-lead', 'ppl lead gen', 'ppl marketing', 'property leads (ppl)', 'property leads'];
 
       // ── Build monthly actuals from Tiller ──
       const monthlyActuals = {};
