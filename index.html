@@ -783,9 +783,9 @@
     <!-- PROJECTIONS TAB -->
     <div id="projections" class="tab-content">
       <div class="mb-4 bg-white rounded-lg shadow-md p-3" style="display:flex;align-items:center;gap:12px;">
-        <label style="font-size:12px;font-weight:600;color:#666;white-space:nowrap;">GHL Worker URL</label>
-        <input type="text" id="projWorkerUrl" value="https://summit-ghl-dashboard-api.aubrey.workers.dev" style="flex:1;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
-        <button onclick="connectProjWorker()" id="projConnectBtn" style="padding:8px 18px;background-color:#7030A0;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:13px;white-space:nowrap;">Connect GHL</button>
+        <label style="font-size:12px;font-weight:600;color:#666;white-space:nowrap;">Leo Worker URL</label>
+        <input type="text" id="projWorkerUrl" value="https://leo-dashboard-worker-js.aubrey.workers.dev" style="flex:1;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:13px;">
+        <button onclick="connectProjWorker()" id="projConnectBtn" style="padding:8px 18px;background-color:#7030A0;color:white;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:13px;white-space:nowrap;">Connect Leo</button>
         <span id="projConnectStatus" style="font-size:11px;color:#999;"></span>
       </div>
       <div id="projectionsContent"></div>
@@ -2105,7 +2105,7 @@
     };
 
     // ==================== PIPELINE FLOW FUNCTIONS ====================
-    let pipelineWorkerUrl = 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+    let pipelineWorkerUrl = 'https://leo-dashboard-worker-js.aubrey.workers.dev';
 
     const connectPipelineWorker = async () => {
       pipelineWorkerUrl = document.getElementById('pipelineWorkerUrl').value.trim();
@@ -2164,7 +2164,7 @@
       }
 
       if (allPipelines.length === 0) {
-        content.innerHTML = '<div style="padding:20px;text-align:center;color:#666;">No pipelines found. Check your GHL Worker connection.</div>';
+        content.innerHTML = '<div style="padding:20px;text-align:center;color:#666;">No pipelines found. Check your Leo Worker connection.</div>';
         return;
       }
 
@@ -3211,43 +3211,30 @@
     // one-time reset so browsers that saved the old 2.5M / 30k defaults pick up the new ones
     if (localStorage.getItem('sc_defaultsVer') !== '2') { localStorage.removeItem('sc_rev'); localStorage.removeItem('sc_deal'); localStorage.setItem('sc_defaultsVer', '2'); }
     var SC_OPPS = null, SC_LEADS = null, SC_STAGES = null, SC_OPPS_ERR = null, SC_LOADING = false;
-    // OFFER LOG SHEET: a GHL workflow appends one row per offer (Date, Opportunity, Contact, Stage, Pipeline, Source) to a Google Sheet.
-    // Publish it as CSV and paste the link here. Every row = one offer event, so re-offers count and nothing changes when the opp moves on.
-    var OFFERS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS7jmTrEDX17BLltPhep5dQGZ-8halaH3OXsvRtXOyYr4x2gGGd72cZBdjmAJ6u-RFy0iy6_BML0QFb/pub?gid=0&single=true&output=csv';
-    var SC_OFFER_LOG = null, SC_OFFER_LOG_ERR = null;
+    // OFFERS: straight from Leo (Reports > Drill). "offers" = offer made, "sent" = contract sent, each dated when it happened.
+    // A lead that got a contract sent counts once, as a contract (its offer date is kept as hadVerbal). Offer-only = made an offer, no contract sent yet.
+    var SC_OFFER_LOG = null, SC_OFFER_LOG_ERR = null, SC_OFFERS_LOADING = false;
     async function scLoadOfferLog(force) {
-      if (!OFFERS_CSV_URL) { SC_OFFER_LOG = null; return; }
       if (SC_OFFER_LOG && !force) return;
+      if (SC_OFFERS_LOADING) return;
+      SC_OFFERS_LOADING = true;
+      var base = (typeof pipelineWorkerUrl !== 'undefined' && pipelineWorkerUrl) ? pipelineWorkerUrl : 'https://leo-dashboard-worker-js.aubrey.workers.dev';
+      var ymd = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+      var now = new Date(), from = new Date(now.getFullYear(), now.getMonth() - 12, 1);
       try {
-        var resp = await fetch(OFFERS_CSV_URL + (OFFERS_CSV_URL.indexOf('?') >= 0 ? '&' : '?') + '_ts=' + Date.now(), { cache: 'no-store' });
+        var resp = await fetch(base + '/api/leo/offers?from=' + ymd(from) + '&to=' + ymd(now), { cache: 'no-store' });
         if (!resp.ok) throw new Error('status ' + resp.status);
-        var rows = parseCSV(await resp.text()), hi = -1;
-        for (var i = 0; i < Math.min(rows.length, 12); i++) { var low = rows[i].map(function (c) { return (c || '').toLowerCase().trim(); }); if (low.some(function (c) { return c.indexOf('date') >= 0; }) && low.some(function (c) { return /opportunity|name|contact|address/.test(c); })) { hi = i; break; } }
-        if (hi === -1) throw new Error('no header row (need a Date column plus Opportunity / Contact)');
-        var H = rows[hi].map(function (c) { return (c || '').toLowerCase().trim(); }), col = function (re) { return H.findIndex(function (h) { return re.test(h); }); };
-        var iDate = col(/date/), iName = col(/opportunity|^name|deal/), iContact = col(/contact|seller/), iStage = col(/stage|type/), iAddr = col(/address|property/), iSrc = col(/source|channel/);
-        var out = [];
-        for (var r = hi + 1; r < rows.length; r++) { var row = rows[r]; if (!row || !row.some(function (c) { return (c || '').trim(); })) continue; var dt = parseLeadDate(iDate >= 0 ? row[iDate] : ''); if (!dt) continue; out.push({ _offerDate: dt, name: (iName >= 0 ? row[iName] : '') || (iAddr >= 0 ? row[iAddr] : '') || '', contact: (iContact >= 0 ? row[iContact] : '') || '', stage: (iStage >= 0 ? row[iStage] : '') || 'Offer', kind: /verbal/i.test(iStage >= 0 ? row[iStage] : '') ? 'verbal' : 'contract', address: (iAddr >= 0 ? row[iAddr] : '') || '', source: (iSrc >= 0 ? row[iSrc] : '') || '', value: 0, _raw: null }); }
-        // ONE offer per opportunity: if the same opp is logged again (Verbal -> Cash Offer -> Amendment...), keep only the FIRST row by date.
-        var normKey = function (o) { return String(o.name || o.contact || o.address || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(function (w) { return w && ['and','the','llc','fl','ppl'].indexOf(w) < 0; }).sort().join(' '); };   // word-order insensitive
+        var data = await resp.json(); if (data.error) throw new Error(data.error);
+        var mk = function (r, kind) { var dt = r.at ? new Date(r.at) : null; return { leadId: r.lead_id, _offerDate: (dt && !isNaN(dt)) ? dt : null, name: r.name || '', contact: r.name || '', address: r.address || '', stage: kind === 'contract' ? 'Contract Sent' : 'Offer Made', kind: kind, source: r.channel || '', rep: r.rep || '', dealType: r.deal_type || '', value: r.amount || 0, _raw: r }; };
+        var byLead = {}, out = [];
+        (data.sent || []).forEach(function (r) { var o = mk(r, 'contract'); if (!o._offerDate) return; byLead[r.lead_id] = o; out.push(o); });
+        (data.offers || []).forEach(function (r) { var o = mk(r, 'verbal'); if (!o._offerDate) return; var c = byLead[r.lead_id]; if (c) { c.hadVerbal = true; c.laterStages = (c.laterStages || []).concat('Offer made ' + o._offerDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })); if (o._offerDate < c._offerDate) c._offerMadeDate = o._offerDate; return; } o.hadVerbal = true; byLead[r.lead_id] = o; out.push(o); });
         out.sort(function (x, y) { return x._offerDate - y._offerDate; });
-        // Same opportunity logged again within 24 hours = the same offer moving stages (not counted). More than 24 hours later = a new pitch, counted as a separate offer.
-        var last = {}, deduped = [], dupCount = 0, DAY = 24 * 60 * 60 * 1000;
-        out.forEach(function (o) {
-          var k = normKey(o); if (!k) { deduped.push(o); return; }
-          var prev = last[k];
-          if (prev && (o._offerDate - prev._offerDate) < DAY) {
-            dupCount++; prev.laterStages = (prev.laterStages || []).concat(o.stage + ' ' + o._offerDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-            if (o.kind === 'contract') { if (prev.kind === 'verbal') prev.hadVerbal = true; prev.kind = 'contract'; prev.stage = o.stage; }   // contract sent always wins over verbal
-            return;
-          }
-          if (o.kind === 'verbal') o.hadVerbal = true;
-          if (prev) o.reoffer = true;   // same opp, 24h+ after its previous offer -> new offer
-          last[k] = o; deduped.push(o);
-        });
-        deduped.rawRows = out.length; deduped.dupCount = dupCount;
-        SC_OFFER_LOG = deduped; SC_OFFER_LOG_ERR = null;   // empty log = connected with 0 offers (do not fall back to GHL guessing)
+        out.rawRows = (data.offers || []).length + (data.sent || []).length; out.dupCount = out.rawRows - out.length;
+        out.truncated = !!(data.offersTruncated || data.sentTruncated);
+        SC_OFFER_LOG = out; SC_OFFER_LOG_ERR = null;
       } catch (e) { SC_OFFER_LOG = null; SC_OFFER_LOG_ERR = e.message || String(e); }
+      SC_OFFERS_LOADING = false;
       if (document.getElementById('scResults')) scRecalc();
     }
     function scG(k) { var v = parseFloat(localStorage.getItem('sc_' + k)); return isNaN(v) ? SC_KEYS[k] : v; }
@@ -3358,7 +3345,7 @@
     async function scLoadOpps(force) {
       if (SC_LOADING) return; if (SC_OPPS && !force) return;
       SC_LOADING = true; SC_OPPS_ERR = null;
-      var base = (typeof pipelineWorkerUrl !== 'undefined' && pipelineWorkerUrl) ? pipelineWorkerUrl : 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+      var base = (typeof pipelineWorkerUrl !== 'undefined' && pipelineWorkerUrl) ? pipelineWorkerUrl : 'https://leo-dashboard-worker-js.aubrey.workers.dev';
       try {
         var res = await Promise.all([fetch(base + '/api/pipelines').then(function (r) { return r.json(); }), fetch(base + '/api/opportunities').then(function (r) { return r.json(); })]);
         var pipes = res[0].pipelines || [], opps = res[1].opportunities || [];
@@ -3367,8 +3354,8 @@
         pipes.forEach(function (pl) {
           var stages = (pl.stages || []).slice().sort(function (x, y) { return (x.position || 0) - (y.position || 0); });
           var firstOffer = -1;
-          stages.forEach(function (st, i) { stageName[st.id] = pl.name + ' / ' + st.name; if (firstOffer < 0 && /offer made/i.test(st.name)) firstOffer = i; });
-          if (/active leads/i.test(pl.name)) stages.forEach(function (st) { if (/offer made/i.test(st.name) && !/amendment|cancellation/i.test(st.name)) offerStageIds[st.id] = st.name; });   // Verbal + Offer Made (CONTRACT SENT) only. Under Contract / Closed come from the Deal Ledger by UC date
+          stages.forEach(function (st, i) { stageName[st.id] = pl.name + ' / ' + st.name; if (firstOffer < 0 && /offers? made/i.test(st.name)) firstOffer = i; });
+          if (/active leads/i.test(pl.name)) stages.forEach(function (st) { if (/offers? made/i.test(st.name) && !/amendment|cancellation/i.test(st.name)) offerStageIds[st.id] = st.name; });   // Verbal + Offer Made (CONTRACT SENT) only. Under Contract / Closed come from the Deal Ledger by UC date
         });
         SC_STAGES = { offerStageIds: offerStageIds, stageName: stageName, pipelines: pipes.length, totalOpps: opps.length };
         var buyerPipes = {}; pipes.forEach(function (pl) { if (/buyer/i.test(pl.name)) buyerPipes[pl.id] = true; });
@@ -3392,10 +3379,10 @@
       if (kind === 'offersSigned') kind = 'contracts';
       var p = scPeriods()[periodKey], a = scActuals(p), box = document.getElementById('scDrill'); if (!box) return;
       var fmtD = function (d) { return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; };
-      var kindLabel = { leads: 'New Leads (GHL)', offers: SC_OFFER_LOG ? 'Offers Made (offer log sheet)' : 'Offers Made (GHL open offers + signed contracts)', offersVerbal: 'Verbal Offers (GHL)', offersContract: 'Contracts Sent, unsigned (GHL)', contracts: 'Contracts Signed (Deal Ledger)', closings: 'Closings (Deal Ledger)' }[kind] || kind;
+      var kindLabel = { leads: 'New Leads (Leo)', offers: SC_OFFER_LOG ? 'Offers Made (Leo)' : 'Offers Made (Leo open offers + signed contracts)', offersVerbal: 'Offer Made, No Contract Sent (Leo)', offersContract: 'Contracts Sent (Leo)', contracts: 'Contracts Signed (Deal Ledger)', closings: 'Closings (Deal Ledger)' }[kind] || kind;
       var h = '<div class="section-title" style="background:#1B2A4A;display:flex;justify-content:space-between;"><span>' + kindLabel.toUpperCase() + ' &middot; ' + p.label.toUpperCase() + ' (' + fmtD(p.from) + ' &ndash; ' + fmtD(p.to) + ')</span><span class="close-btn" onclick="document.getElementById(\'scDrill\').style.display=\'none\'">&times;</span></div><div class="section-body" style="max-height:360px;overflow:auto;">';
       if (kind === 'leads') {
-        if (!SC_LEADS) h += '<div style="padding:16px;color:#888;">GHL not loaded &mdash; showing lead-sheet count only.</div>';
+        if (!SC_LEADS) h += '<div style="padding:16px;color:#888;">Leo not loaded &mdash; showing lead-sheet count only.</div>';
         else {
           var srcs = Object.keys(a.leadsBySource).sort(function (x, y) { return a.leadsBySource[y] - a.leadsBySource[x]; });
           h += '<div style="padding:10px 0;display:flex;gap:10px;flex-wrap:wrap;">' + srcs.map(function (sn) { return '<span style="background:#E8F1FB;color:#1B4F8A;border-radius:12px;padding:4px 10px;font-size:12px;font-weight:700;">' + sn + ': ' + a.leadsBySource[sn] + '</span>'; }).join('') + '</div>';
@@ -3407,10 +3394,10 @@
         var want = kind === 'offersVerbal' ? 'verbal' : kind === 'offersContract' ? 'contract' : null;
         a.offerOpps = a.offerOpps.filter(function (o) { return !want || o.kind === want; });
         if (kind === 'offers' && !SC_OFFER_LOG) a.ucDeals.forEach(function (d) { a.offerOpps.push({ name: d.id + ' - ' + (d.address || ''), contact: '', stage: 'Contract signed (Deal Ledger)', _offerDate: scLocalDate(d.ucDate), value: d.contract || 0 }); });
-        var skippedNote = a.offerOppsSkipped.length ? '<div style="font-size:11px;color:#888;padding:6px 0 10px;">Not counted as GHL offers because they are already in the Deal Ledger (' + a.offerOppsSkipped.map(function (x) { return (x.o.name || '') + ' &rarr; ' + x.d.status + ' ' + formatDate(x.d.ucDate); }).join('; ') + ')</div>' : '';
-        if (!SC_OPPS) h += '<div style="padding:16px;color:#888;">GHL opportunities not loaded.</div>';
+        var skippedNote = a.offerOppsSkipped.length ? '<div style="font-size:11px;color:#888;padding:6px 0 10px;">Not counted as Leo offers because they are already in the Deal Ledger (' + a.offerOppsSkipped.map(function (x) { return (x.o.name || '') + ' &rarr; ' + x.d.status + ' ' + formatDate(x.d.ucDate); }).join('; ') + ')</div>' : '';
+        if (!SC_OPPS) h += '<div style="padding:16px;color:#888;">Leo leads not loaded.</div>';
         else { h += skippedNote + '<table><thead><tr><th>Opportunity</th><th>Contact</th><th>Stage</th><th>Date</th><th style="text-align:right;">Value</th></tr></thead><tbody>';
-          a.offerOpps.sort(function (x, y) { return y._offerDate - x._offerDate; }).forEach(function (o) { var why = o._raw ? (o._raw.lastStageChangeAt ? 'entered stage' : o._raw.updatedAt ? 'last updated (no stage date)' : 'created') : (SC_OFFER_LOG && !/ledger/i.test(o.stage) ? 'offer log' : 'ledger UC date'); h += '<tr><td>' + (o.name || '') + (o.address ? '<div style="font-size:10px;color:#999;">' + o.address + '</div>' : '') + (o.laterStages ? '<div style="font-size:10px;color:#999;">same offer, later stage: ' + o.laterStages.join(', ') + '</div>' : '') + (o.hadVerbal && o.kind === 'contract' ? '<div style="font-size:10px;color:#548235;font-weight:700;">verbal &rarr; contract sent</div>' : '') + (o.reoffer ? '<div style="font-size:10px;color:#B8860B;font-weight:700;">re-offer (24h+ after a previous offer)</div>' : '') + '</td><td>' + o.contact + '</td><td>' + o.stage + '</td><td>' + fmtD(o._offerDate) + '<div style="font-size:10px;color:#999;">' + why + '</div></td><td style="text-align:right;">' + (o.value ? fmt(o.value) : '&mdash;') + '</td></tr>'; });
+          a.offerOpps.sort(function (x, y) { return y._offerDate - x._offerDate; }).forEach(function (o) { var why = o._raw ? (o._raw.lastStageChangeAt ? 'entered stage' : o._raw.updatedAt ? 'last updated (no stage date)' : 'created') : (SC_OFFER_LOG && !/ledger/i.test(o.stage) ? 'Leo' : 'ledger UC date'); h += '<tr><td>' + (o.name || '') + (o.address ? '<div style="font-size:10px;color:#999;">' + o.address + '</div>' : '') + (o.laterStages ? '<div style="font-size:10px;color:#999;">same offer, later stage: ' + o.laterStages.join(', ') + '</div>' : '') + (o.hadVerbal && o.kind === 'contract' ? '<div style="font-size:10px;color:#548235;font-weight:700;">verbal &rarr; contract sent</div>' : '') + (o.reoffer ? '<div style="font-size:10px;color:#B8860B;font-weight:700;">re-offer (24h+ after a previous offer)</div>' : '') + '</td><td>' + o.contact + '</td><td>' + o.stage + '</td><td>' + fmtD(o._offerDate) + '<div style="font-size:10px;color:#999;">' + why + '</div></td><td style="text-align:right;">' + (o.value ? fmt(o.value) : '&mdash;') + '</td></tr>'; });
           h += '</tbody></table>' + (a.offerOpps.length ? '' : '<div style="padding:16px;color:#888;">No opportunities reached an offer stage in this period.</div>'); }
       } else {
         var rows = kind === 'closings' ? a.wonDeals : a.ucDeals;
@@ -3425,13 +3412,13 @@
     const renderScalingTab = () => {
       var c = document.getElementById('scalingContent'); if (!c) return;
       if (!SC_OPPS && !SC_LOADING && !SC_OPPS_ERR) scLoadOpps(false);
-      if (OFFERS_CSV_URL && !SC_OFFER_LOG && !SC_OFFER_LOG_ERR) scLoadOfferLog(false);
+      if (!SC_OFFER_LOG && !SC_OFFER_LOG_ERR) scLoadOfferLog(false);
       var t = scTargets(), P = scPeriods(), r0 = function (n) { return Math.round(n || 0); };
       var numStyle = 'width:100%;padding:7px;border:1px solid #9DC3E6;background:#F3F8FD;border-radius:4px;font-size:15px;font-weight:800;color:#1B2A4A;text-align:center;';
       var lever = function (label, key, val, step, hint, fmtFn) { return '<div style="background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #2E75B6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><input id="scL_' + key + '" type="number" step="' + step + '" value="' + val + '" oninput="scRecalc()" style="' + numStyle + '">' + (hint ? '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div>' : '') + '</div>'; };
       var secT = function (title, color, right) { return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (right || '') + '</div>'; };
 
-      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-10-30 a</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from GHL; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
+      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-11-02 c</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from Leo; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
 
       // 1. levers
       h += secT('1. Model Levers', '#1B2A4A', '<span style="font-size:11px;color:#999;">Ad spend &times; ROAS = revenue; everything else flows from there. Saved in this browser.</span>');
@@ -3464,20 +3451,20 @@
       // 2. scoreboard: week + month
       var actW = scActuals(P.week), actM = scActuals(P.month);
       var fmtD = function (d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
-      var logNote = OFFERS_CSV_URL ? (SC_OFFER_LOG ? '<span style="color:#548235;font-weight:700;">Offer log connected: ' + SC_OFFER_LOG.length + ' offers</span>' + (SC_OFFER_LOG.dupCount ? ' <span style="color:#888;">(' + SC_OFFER_LOG.rawRows + ' rows, ' + SC_OFFER_LOG.dupCount + ' same-day stage moves not double-counted; re-offers 24h+ later count again)</span>' : '') + ' &middot; <a href="javascript:void(0)" onclick="scLoadOfferLog(true)" style="color:#2E75B6;font-weight:600;">&#8635;</a> &middot; ' : SC_OFFER_LOG_ERR ? '<span style="color:#C00000;">Offer log sheet error: ' + SC_OFFER_LOG_ERR + '</span> &middot; ' : 'Loading offer log&hellip; &middot; ') : '<span style="color:#ED7D31;font-weight:700;">Offer log sheet not connected</span> &middot; ';
-      var oppsNote = logNote + (SC_LOADING ? '<span style="color:#2E75B6;">Loading GHL opportunities&hellip;</span>' : SC_OPPS_ERR ? '<span style="color:#C00000;">GHL offers unavailable: ' + SC_OPPS_ERR + '</span> <a href="javascript:void(0)" onclick="scReloadOffers()" style="color:#2E75B6;font-weight:600;">retry</a>' : SC_OPPS ? 'GHL: ' + SC_STAGES.totalOpps.toLocaleString() + ' opportunities, ' + SC_OPPS.length.toLocaleString() + ' currently in an offer stage &middot; <a href="javascript:void(0)" onclick="scReloadOffers()" style="color:#2E75B6;font-weight:600;">&#8635; refresh</a>' : '');
+      var logNote = SC_OFFER_LOG ? '<span style="color:#548235;font-weight:700;">Leo offers loaded: ' + SC_OFFER_LOG.length + ' in the last 12 months</span>' + (SC_OFFER_LOG.truncated ? ' <span style="color:#C00000;">(report capped at 500 rows &mdash; older months may be missing)</span>' : '') + ' &middot; <a href="javascript:void(0)" onclick="scLoadOfferLog(true)" style="color:#2E75B6;font-weight:600;">&#8635;</a> &middot; ' : SC_OFFER_LOG_ERR ? '<span style="color:#C00000;">Leo offers error: ' + SC_OFFER_LOG_ERR + '</span> &middot; ' : 'Loading Leo offers&hellip; &middot; ';
+      var oppsNote = logNote + (SC_LOADING ? '<span style="color:#2E75B6;">Loading Leo leads&hellip;</span>' : SC_OPPS_ERR ? '<span style="color:#C00000;">Leo offers unavailable: ' + SC_OPPS_ERR + '</span> <a href="javascript:void(0)" onclick="scReloadOffers()" style="color:#2E75B6;font-weight:600;">retry</a>' : SC_OPPS ? 'Leo: ' + SC_STAGES.totalOpps.toLocaleString() + ' opportunities, ' + SC_OPPS.length.toLocaleString() + ' currently in an offer stage &middot; <a href="javascript:void(0)" onclick="scReloadOffers()" style="color:#2E75B6;font-weight:600;">&#8635; refresh</a>' : '');
       h += secT('2. Scoreboard', '#548235', '<span style="font-size:11px;color:#999;">' + oppsNote + '</span>');
       var rows = [
-        { key: 'offers', label: 'Offers Made', src: SC_OFFER_LOG ? 'Offer log sheet (every offer, dated when made)' : 'GHL open offers + contracts signed (until the offer log sheet is connected)', fmtv: r0, drill: true },
-        { key: 'offersContract', label: SC_OFFER_LOG ? 'of which reached Contract Sent' : 'of which Contracts Sent (unsigned)', src: SC_OFFER_LOG ? 'Any contract-sent row wins over verbal' : 'GHL stages: Novation / Cash / Sub-to Offer Made (CONTRACT SENT)', fmtv: r0, sub: true, drill: true },
-        { key: 'offersVerbal', label: SC_OFFER_LOG ? 'of which Verbal only (no contract yet)' : 'of which Verbal Offers (open)', src: SC_OFFER_LOG ? 'Offer log rows marked Verbal with no contract row' : 'GHL stage: Verbal Offer Made', fmtv: r0, sub: true, drill: true },
+        { key: 'offers', label: 'Offers Made', src: SC_OFFER_LOG ? 'Leo reports: offers made + contracts sent, dated when they happened (a lead counts once)' : 'Leo Offers Made stage + contracts signed (reports unavailable)', fmtv: r0, drill: true },
+        { key: 'offersContract', label: SC_OFFER_LOG ? 'of which Contract Sent' : 'of which in Offers Made (unsigned)', src: SC_OFFER_LOG ? 'Leo: contract sent (wins over an earlier offer on the same lead)' : 'Leo stage: Offers Made', fmtv: r0, sub: true, drill: true },
+        { key: 'offersVerbal', label: SC_OFFER_LOG ? 'of which Offer only (no contract sent yet)' : 'of which Verbal Offers (open)', src: SC_OFFER_LOG ? 'Leo: offer made, no contract sent' : 'Leo has no verbal stage', fmtv: r0, sub: true, drill: true },
         { key: 'contractRate', label: 'Contract-Sent Rate', src: 'contracts sent / offers made', fmtv: function (v) { return v === null || v === undefined ? '\u2014' : Math.round(v * 100) + '%'; }, sub: true, hideWhenNoLog: true },
         { key: 'offersSigned', label: 'of which Contracts Signed', src: 'Deal Ledger (UC date)', fmtv: r0, sub: true, drill: true, hideWhenLog: true },
         { key: 'contracts', label: 'Contracts Signed', src: 'Deal Ledger (UC date)', fmtv: r0, drill: true },
         { key: 'closings', label: 'Closings', src: 'Deal Ledger (Closed-Won)', fmtv: r0, drill: true },
         { key: 'revenue', label: 'Revenue (Final Profit)', src: 'Deal Ledger', fmtv: fmt, tkey: 'rev' },
         { key: 'revProj', label: 'Projected Revenue (at current activity)', src: 'where the period lands if activity holds', fmtv: fmt, proj: true },
-        { key: 'leads', label: 'Leads', src: SC_LEADS ? 'GHL: new leads into the pipeline (SM3, Facebook, PPL)' : 'SM3 + FB lead sheets (GHL not loaded)', fmtv: r0, drill: true },
+        { key: 'leads', label: 'Leads', src: SC_LEADS ? 'Leo: new leads into the pipeline (SM3, Meta, PPL)' : 'SM3 + FB lead sheets (Leo not loaded)', fmtv: r0, drill: true },
         { key: 'ad', label: 'Ad Spend', src: 'Tiller (pro-rated)', fmtv: fmt, cost: true }
       ];
       var tkeyOf = function (rw) { return rw.tkey || (rw.key === 'closings' ? 'deals' : rw.key); };
@@ -3521,13 +3508,13 @@
         var ok = opc !== null && opc <= t.otc; var color = opc === null ? '#999' : ok ? '#548235' : opc <= t.otc * 1.5 ? '#ED7D31' : '#C00000';
         var rate = act.contractRate;
         return '<div style="background:white;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-top:4px solid ' + (pk === 'week' ? '#2E75B6' : '#548235') + ';padding:14px 16px;display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:12px;align-items:center;">' +
-          '<div><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">' + p.label + ' &middot; Offers per Contract</div><div style="font-size:34px;font-weight:800;color:' + color + ';line-height:1.1;">' + (opc === null ? '&mdash;' : opc.toFixed(1)) + '<span style="font-size:14px;color:#999;font-weight:600;"> vs ' + t.otc.toFixed(1) + ' target</span></div><div style="font-size:11px;color:#888;">' + (act.offers === null ? 'offer log not loaded' : act.offers + ' offers &divide; ' + act.contracts + ' contract' + (act.contracts === 1 ? '' : 's') + ' signed' + (opc === null ? ' (no contracts yet)' : ok ? ' &middot; converting better than the model' : ' &middot; more offers per contract than the model assumes')) + '</div></div>' +
+          '<div><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">' + p.label + ' &middot; Offers per Contract</div><div style="font-size:34px;font-weight:800;color:' + color + ';line-height:1.1;">' + (opc === null ? '&mdash;' : opc.toFixed(1)) + '<span style="font-size:14px;color:#999;font-weight:600;"> vs ' + t.otc.toFixed(1) + ' target</span></div><div style="font-size:11px;color:#888;">' + (act.offers === null ? 'Leo offers not loaded' : act.offers + ' offers &divide; ' + act.contracts + ' contract' + (act.contracts === 1 ? '' : 's') + ' signed' + (opc === null ? ' (no contracts yet)' : ok ? ' &middot; converting better than the model' : ' &middot; more offers per contract than the model assumes')) + '</div></div>' +
           '<div style="border-left:1px solid #eee;padding-left:12px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">Contract-Sent Rate</div><div style="font-size:22px;font-weight:800;color:#1B2A4A;">' + (rate === null || rate === undefined ? '&mdash;' : Math.round(rate * 100) + '%') + '</div><div style="font-size:11px;color:#888;">' + (act.offersContract || 0) + ' of ' + (act.offers || 0) + ' offers went to paper</div></div>' +
           '<div style="border-left:1px solid #eee;padding-left:12px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;">Contract Sent &rarr; Signed</div><div style="font-size:22px;font-weight:800;color:#1B2A4A;">' + (act.offersContract ? Math.round(Math.min(1, act.contracts / act.offersContract) * 100) + '%' : '&mdash;') + '</div><div style="font-size:11px;color:#888;">' + act.contracts + ' signed of ' + (act.offersContract || 0) + ' sent</div></div></div>';
       };
       h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">' + ratioCard('week', actW, P.week) + ratioCard('month', actM, P.month) + '</div>';
       h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">' + scoreTable('week', actW, t.week, P.week) + scoreTable('month', actM, t.month, P.month) + '</div>';
-      h += '<div style="font-size:11px;color:#999;margin-top:6px;">Pace = target &times; share of the period elapsed (the dark tick on each bar). Green = at/above pace, orange = 60&ndash;90%, red = below. Offers: with the offer log sheet connected, an opportunity counts once per offer: rows for the same opp within 24 hours are one offer (a stage move), rows 24+ hours apart are separate offers (a new pitch). If an offer has both a verbal and a contract-sent row it counts as a contract sent. Contract-Sent Rate = how many offers make it to paper. Until then, the fallback is GHL opportunities currently in an offer stage (dated by when they entered it) plus contracts signed in the period from the Deal Ledger; GHL keeps no stage history, so the fallback cannot see offers on opps that have since moved on. Leads = opportunities that entered GHL in the period (created date), i.e. what came into the New Leads workflow &mdash; counted by created date so a lead still counts even if it has since moved to a follow-up or dead pipeline. PPL, SM3 and Facebook are all included; click the row for the split by source.</div>';
+      h += '<div style="font-size:11px;color:#999;margin-top:6px;">Pace = target &times; share of the period elapsed (the dark tick on each bar). Green = at/above pace, orange = 60&ndash;90%, red = below. Offers come from Leo&rsquo;s reports: a lead counts once, as a contract sent if one went out, otherwise as an offer made. If an offer has both a verbal and a contract-sent row it counts as a contract sent. Contract-Sent Rate = how many offers make it to paper. Until then, the fallback is Leo opportunities currently in an offer stage (dated by when they entered it) plus contracts signed in the period from the Deal Ledger; Leo keeps no stage history, so the fallback cannot see offers on opps that have since moved on. Leads = opportunities that entered Leo in the period (created date), i.e. what came into the New Leads workflow &mdash; counted by created date so a lead still counts even if it has since moved to a follow-up or dead pipeline. PPL, SM3 and Facebook are all included; click the row for the split by source.</div>';
       h += '<div id="scDrill" style="display:none;margin-top:14px;"></div>';
 
       // 4. history: last 8 weeks + last 6 months
@@ -4998,7 +4985,7 @@
       } catch (e) {
         if (statusEl) { statusEl.textContent = 'Error: ' + e.message; statusEl.style.color = '#C00000'; }
       }
-      btn.textContent = 'Connect GHL';
+      btn.textContent = 'Connect Leo';
       btn.disabled = false;
     };
 
@@ -5186,11 +5173,11 @@
       // ── Row 3: Lead Source Acquisition Metrics (from GHL) ──
       html += `<div id="calcLeadSources" style="background:#f0f7ff;border-radius:8px;padding:16px;margin-bottom:20px;border:1px solid #cce0ff;">`;
       html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">`;
-      html += `<span style="font-size:12px;font-weight:700;color:#2E75B6;text-transform:uppercase;letter-spacing:1px;">Lead-to-Contract Ratios (from GHL)</span>`;
+      html += `<span style="font-size:12px;font-weight:700;color:#2E75B6;text-transform:uppercase;letter-spacing:1px;">Lead-to-Contract Ratios (from Leo)</span>`;
       html += `<span style="font-size:10px;color:#999;">How many leads to get 1 contract</span>`;
       html += `</div>`;
       html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;" id="calcLeadSourceCards">`;
-      html += `<div style="text-align:center;padding:10px;background:white;border-radius:6px;"><div class="spinner" style="width:20px;height:20px;border-width:2px;margin:0 auto;"></div><div style="font-size:10px;color:#999;margin-top:4px;">Loading GHL data...</div></div>`;
+      html += `<div style="text-align:center;padding:10px;background:white;border-radius:6px;"><div class="spinner" style="width:20px;height:20px;border-width:2px;margin:0 auto;"></div><div style="font-size:10px;color:#999;margin-top:4px;">Loading Leo data...</div></div>`;
       html += `</div></div>`;
 
       // ── Row 4: Projected Output KPIs ──
@@ -5358,7 +5345,7 @@
       const container = document.getElementById('calcLeadSourceCards');
       if (!container) return;
       if (!ghlData || !ghlData.sources) {
-        container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:8px;color:#999;font-size:12px;">Connect GHL Worker to see lead source data</div>`;
+        container.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:8px;color:#999;font-size:12px;">Connect the Leo Worker to see lead source data</div>`;
         return;
       }
 
@@ -6324,7 +6311,7 @@
           var zillowSearchUrl = 'https://www.zillow.com/homes/' + encodeURIComponent(deal.address) + '_rb/';
           html += '<div>';
           html += '<div style="font-size:15px;font-weight:700;color:#1B2A4A;">' + deal.address + ' <a href="' + zillowSearchUrl + '" target="_blank" style="color:#2E75B6;font-size:11px;text-decoration:none;" title="View on Zillow" onclick="event.stopPropagation();">🏠 Zillow</a></div>';
-          html += '<div style="font-size:12px;color:#999;margin-top:2px;">' + deal.id + ' &middot; ' + deal.market + (deal.meta && Object.keys(deal.meta).length > 0 ? ' &middot; <span style="color:#2E75B6;font-weight:600;">GHL DATA ✓</span>' : '') + '</div>';
+          html += '<div style="font-size:12px;color:#999;margin-top:2px;">' + deal.id + ' &middot; ' + deal.market + (deal.meta && Object.keys(deal.meta).length > 0 ? ' &middot; <span style="color:#2E75B6;font-weight:600;">Leo DATA ✓</span>' : '') + '</div>';
           html += '</div>';
 
           // Strategy badge
@@ -6357,7 +6344,7 @@
             // GHL webhook data summary (if parsed from column R)
             if (deal.meta && Object.keys(deal.meta).length > 0) {
               html += '<div style="background:#E3F2FD;border:1px solid #BBDEFB;border-radius:8px;padding:12px 16px;margin-bottom:16px;">';
-              html += '<div style="font-size:11px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">📡 Auto-filled from GHL Webhook</div>';
+              html += '<div style="font-size:11px;font-weight:700;color:#1565C0;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">📡 Auto-filled from CRM Webhook</div>';
               html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
               Object.entries(deal.meta).forEach(function(entry) {
                 var mk = entry[0]; var mv = String(entry[1]).replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -6465,7 +6452,7 @@
             html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
             html += '<div>';
             html += '<div style="font-size:14px;font-weight:700;color:#E65100;">📸 Seller Property Photos</div>';
-            html += '<div style="font-size:11px;color:#666;margin-top:2px;">Photos sent by the seller via GHL. Stored automatically when sellers text photos.</div>';
+            html += '<div style="font-size:11px;color:#666;margin-top:2px;">Photos sent by the seller via the CRM. Stored automatically when sellers text photos.</div>';
             html += '</div>';
             html += '<div style="display:flex;gap:6px;">';
             html += '<button onclick="loadSellerPhotos(\'' + safeAddr + '\', \'' + deal.address.replace(/'/g, "\\'") + '\')" id="sellerPhotoBtn_' + safeAddr + '" style="padding:6px 16px;background:#E65100;color:white;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Load Photos</button>';
@@ -6579,12 +6566,12 @@
       container.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;">Loading seller photos...</div>';
       if (btn) { btn.disabled = true; btn.textContent = 'Loading...'; }
       try {
-        var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        var workerUrl = pipelineWorkerUrl || 'https://leo-dashboard-worker-js.aubrey.workers.dev';
         var resp = await fetch(workerUrl + '/api/photos/by-address?address=' + encodeURIComponent(address));
         var data = await resp.json();
         if (btn) { btn.disabled = false; btn.textContent = 'Reload'; }
         if (!data.found || !data.photos || data.photos.length === 0) {
-          container.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;text-align:center;">No seller photos found for this property. Photos will appear here once a seller texts them via GHL.</div>';
+          container.innerHTML = '<div style="color:#999;font-size:12px;padding:8px;text-align:center;">No seller photos found for this property. Photos will appear here once a seller texts them via Leo.</div>';
           return;
         }
         var html = '';
@@ -6612,7 +6599,7 @@
     function manualAddSellerPhoto(safeAddr, address) {
       var photoUrl = prompt('Paste the photo URL (e.g. https://storage.googleapis.com/...):');
       if (!photoUrl || !photoUrl.startsWith('http')) return;
-      var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+      var workerUrl = pipelineWorkerUrl || 'https://leo-dashboard-worker-js.aubrey.workers.dev';
       fetch(workerUrl + '/api/photos/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -6999,7 +6986,7 @@
       var container = document.getElementById('pdfPhotoSelector');
       if (container) container.innerHTML = '<div style="padding:12px;text-align:center;color:#1565C0;font-size:13px;">⏳ Fetching photos from Zillow...</div>';
       try {
-        var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        var workerUrl = pipelineWorkerUrl || 'https://leo-dashboard-worker-js.aubrey.workers.dev';
         // Try cache first
         var zData = zillowDataCache[address];
         if (!zData) {
@@ -7145,7 +7132,7 @@
       var container = document.getElementById('pdfPhotoSelector');
       if (!container) return;
       try {
-        var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        var workerUrl = pipelineWorkerUrl || 'https://leo-dashboard-worker-js.aubrey.workers.dev';
         var normalizedAddr = address.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim().replace(/ /g, '_');
         var resp = await fetch(workerUrl + '/api/photos/by-address?address=' + encodeURIComponent(address));
         var data = await resp.json();
@@ -8466,7 +8453,7 @@
       btn.style.opacity = '0.6';
 
       try {
-        const workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        const workerUrl = pipelineWorkerUrl || 'https://leo-dashboard-worker-js.aubrey.workers.dev';
         const resp = await fetch(workerUrl + '/api/zillow/lookup?address=' + encodeURIComponent(address));
 
         if (!resp.ok) {
@@ -8521,7 +8508,7 @@
       container.innerHTML = '<div style="padding:12px;text-align:center;color:#1565C0;font-size:13px;">⏳ Fetching rent data from Rentometer...</div>';
 
       try {
-        var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        var workerUrl = pipelineWorkerUrl || 'https://leo-dashboard-worker-js.aubrey.workers.dev';
         var resp = await fetch(workerUrl + '/api/rentometer/summary?address=' + encodeURIComponent(address) + '&bedrooms=' + (bedrooms || 3));
 
         if (!resp.ok) {
@@ -8658,7 +8645,7 @@
       container.innerHTML = '<div style="text-align:center;padding:12px;color:#666;font-size:12px;">⏳ Finding investor-friendly listing agents...</div>';
 
       try {
-        var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        var workerUrl = pipelineWorkerUrl || 'https://leo-dashboard-worker-js.aubrey.workers.dev';
         var resp = await fetch(workerUrl + '/api/zillow/listing-agents?address=' + encodeURIComponent(address));
         var data = await resp.json();
         if (btn) { btn.disabled = false; btn.textContent = 'Find Agents'; }
@@ -9107,7 +9094,7 @@
       if (btn) { btn.disabled = true; btn.textContent = 'Finding comps...'; }
       resultsDiv.innerHTML = '<div style="text-align:center;padding:40px;color:#666;"><div style="font-size:32px;margin-bottom:8px;">⏳</div>Searching for recently sold properties near:<br><strong>' + address + '</strong><br><span style="font-size:12px;">Last ' + days + ' days · ' + radius + ' mi radius · Searching Redfin + Zillow + Realtor.com</span><br><span style="font-size:11px;color:#999;">This may take 10-20 seconds</span></div>';
 
-      var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+      var workerUrl = pipelineWorkerUrl || 'https://leo-dashboard-worker-js.aubrey.workers.dev';
       fetch(workerUrl + '/api/zillow/find-comps?address=' + encodeURIComponent(address) + '&days=' + days + '&radius=' + radius)
         .then(function(r) { return r.json(); })
         .then(function(data) {
@@ -10349,7 +10336,7 @@
       var loader = document.getElementById('subjPhotoLoader');
       if (loader) loader.innerHTML = '<span style="color:#666;font-size:12px;">Loading photos...</span>';
       try {
-        var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        var workerUrl = pipelineWorkerUrl || 'https://leo-dashboard-worker-js.aubrey.workers.dev';
         var resp = await fetch(workerUrl + '/api/zillow/photos?zpid=' + zpid);
         var result = await resp.json();
         var photos = result.photos || [];
@@ -10366,7 +10353,7 @@
       // Also fetch Realtor.com photos + permalink for the subject. Photos get merged into
       // the gallery (with dedup), permalink updates the subject's RC↗ link target.
       try {
-        var workerUrl2 = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        var workerUrl2 = pipelineWorkerUrl || 'https://leo-dashboard-worker-js.aubrey.workers.dev';
         var subj = (arvCalcState.data && arvCalcState.data.subject) ? arvCalcState.data.subject : null;
         if (subj) {
           var subjAddr = subj.address || '';
@@ -10435,7 +10422,7 @@
 
       photoDiv.innerHTML = '<div style="text-align:center;padding:12px;color:#1565C0;font-size:12px;">⏳ Loading photos from all sources...</div>';
 
-      var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+      var workerUrl = pipelineWorkerUrl || 'https://leo-dashboard-worker-js.aubrey.workers.dev';
       var zillowPhotos = [];
       var realtorPhotos = [];
       var redfinPhotos = [];
@@ -11561,7 +11548,7 @@
     // ==================== SELLER PHOTO UPLOAD (Shared via Cloudflare KV) ====================
     var sellerPhotos = {};
     var sellerPhotosLoaded = false;
-    var photoWorkerUrl = 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+    var photoWorkerUrl = 'https://leo-dashboard-worker-js.aubrey.workers.dev';
 
     // Load all team photos from worker KV on startup
     async function loadAllSellerPhotos() {
@@ -11905,7 +11892,7 @@
       if (!sellerPhotosData) {
         container.innerHTML = '<div style="text-align:center;padding:40px;color:#999;font-size:14px;">Loading seller photos...</div>';
         try {
-          var workerUrl = pipelineWorkerUrl || 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+          var workerUrl = pipelineWorkerUrl || 'https://leo-dashboard-worker-js.aubrey.workers.dev';
           var resp = await fetch(workerUrl + '/api/photos/list-properties');
           var listData = await resp.json();
           sellerPhotosData = { properties: [] };
@@ -11934,7 +11921,7 @@
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">';
       html += '<div>';
       html += '<h2 style="font-size:22px;font-weight:700;color:#1B2A4A;margin:0;">Seller Photos</h2>';
-      html += '<p style="font-size:13px;color:#666;margin:4px 0 0;">Property photos sent by sellers via GHL. Tagged contacts are auto-scraped for image attachments.</p>';
+      html += '<p style="font-size:13px;color:#666;margin:4px 0 0;">Property photos sent by sellers via the CRM. Tagged contacts are auto-scraped for image attachments.</p>';
       html += '</div>';
       html += '<div style="display:flex;gap:8px;align-items:center;">';
       if (totalPhotos > 0) {
@@ -11959,7 +11946,7 @@
         html += '<div style="text-align:center;padding:60px 20px;color:#999;">';
         html += '<div style="font-size:48px;margin-bottom:12px;">📸</div>';
         html += '<div style="font-size:16px;font-weight:600;">No seller photos yet</div>';
-        html += '<div style="font-size:13px;margin-top:4px;">Photos will appear here when sellers send them via GHL and the contact is tagged.</div>';
+        html += '<div style="font-size:13px;margin-top:4px;">Photos will appear here when sellers send them via the CRM and the contact is tagged.</div>';
         html += '</div>';
       } else {
         // Sort: most photos first
@@ -12100,7 +12087,7 @@
       }
       var workerUrl = (typeof pipelineWorkerUrl !== 'undefined' && pipelineWorkerUrl)
         ? pipelineWorkerUrl
-        : 'https://summit-ghl-dashboard-api.aubrey.workers.dev';
+        : 'https://leo-dashboard-worker-js.aubrey.workers.dev';
       var proxyUrl = workerUrl + '/api/photos/proxy?url=' + encodeURIComponent(rawUrl);
       try {
         var resp = await fetch(proxyUrl, { mode: 'cors', credentials: 'omit' });
@@ -13362,7 +13349,7 @@
       // GHL meta data if present
       if (deal.meta && Object.keys(deal.meta).length > 0) {
         popup += '<div style="margin-top:10px;padding-top:10px;border-top:1px solid #eee;">';
-        popup += '<div style="font-size:10px;font-weight:600;color:#2E75B6;text-transform:uppercase;margin-bottom:4px;">GHL Data</div>';
+        popup += '<div style="font-size:10px;font-weight:600;color:#2E75B6;text-transform:uppercase;margin-bottom:4px;">CRM Data</div>';
         popup += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:11px;">';
         if (deal.loanBalance) popup += '<div><span style="color:#999;">Loan Bal:</span> ' + fmt(deal.loanBalance) + '</div>';
         if (deal.piti) popup += '<div><span style="color:#999;">PITI:</span> ' + fmt(deal.piti) + '</div>';
@@ -13393,7 +13380,7 @@
       btn.textContent = 'Loading...';
       btn.disabled = true;
       try {
-        var resp = await fetch('https://summit-ghl-dashboard-api.aubrey.workers.dev/api/zillow/find-comps?address=' + encodeURIComponent(address));
+        var resp = await fetch('https://leo-dashboard-worker-js.aubrey.workers.dev/api/zillow/find-comps?address=' + encodeURIComponent(address));
         var data = await resp.json();
         var photos = [];
         if (data && data.subject && data.subject.photos) {
