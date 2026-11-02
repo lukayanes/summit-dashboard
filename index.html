@@ -3211,29 +3211,63 @@
     // one-time reset so browsers that saved the old 2.5M / 30k defaults pick up the new ones
     if (localStorage.getItem('sc_defaultsVer') !== '2') { localStorage.removeItem('sc_rev'); localStorage.removeItem('sc_deal'); localStorage.setItem('sc_defaultsVer', '2'); }
     var SC_OPPS = null, SC_LEADS = null, SC_STAGES = null, SC_OPPS_ERR = null, SC_LOADING = false;
-    // OFFERS: straight from Leo (Reports > Drill). "offers" = offer made, "sent" = contract sent, each dated when it happened.
-    // A lead that got a contract sent counts once, as a contract (its offer date is kept as hadVerbal). Offer-only = made an offer, no contract sent yet.
+    // OFFERS: two sources stitched at a cutoff date.
+    //   Before SC_LEO_CUTOFF : the old GHL offer log sheet (one row per offer event; Verbal / Contract Sent)
+    //   From   SC_LEO_CUTOFF : Leo (Reports > Drill): "offers" = offer made, "sent" = contract sent, each dated when it happened.
+    // A lead that got a contract sent counts once, as a contract (hadVerbal if it was offered first). Offer-only = offer made, no contract sent yet.
+    var SC_LEO_CUTOFF = new Date(2026, 10, 1);   // Nov 1, 2026 - Leo is the only source from here on
+    var OFFERS_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS7jmTrEDX17BLltPhep5dQGZ-8halaH3OXsvRtXOyYr4x2gGGd72cZBdjmAJ6u-RFy0iy6_BML0QFb/pub?gid=0&single=true&output=csv';   // legacy GHL offer log (history only)
     var SC_OFFER_LOG = null, SC_OFFER_LOG_ERR = null, SC_OFFERS_LOADING = false;
+    async function scLoadLegacyOfferLog() {
+      if (!OFFERS_CSV_URL) return [];
+      var resp = await fetch(OFFERS_CSV_URL + (OFFERS_CSV_URL.indexOf('?') >= 0 ? '&' : '?') + '_ts=' + Date.now(), { cache: 'no-store' });
+      if (!resp.ok) throw new Error('offer log sheet status ' + resp.status);
+      var rows = parseCSV(await resp.text()), hi = -1;
+      for (var i = 0; i < Math.min(rows.length, 12); i++) { var low = rows[i].map(function (c) { return (c || '').toLowerCase().trim(); }); if (low.some(function (c) { return c.indexOf('date') >= 0; }) && low.some(function (c) { return /opportunity|name|contact|address/.test(c); })) { hi = i; break; } }
+      if (hi === -1) throw new Error('offer log sheet: no header row');
+      var H = rows[hi].map(function (c) { return (c || '').toLowerCase().trim(); }), col = function (re) { return H.findIndex(function (h) { return re.test(h); }); };
+      var iDate = col(/date/), iName = col(/opportunity|^name|deal/), iContact = col(/contact|seller/), iStage = col(/stage|type/), iAddr = col(/address|property/), iSrc = col(/source|channel/);
+      var out = [];
+      for (var r = hi + 1; r < rows.length; r++) { var row = rows[r]; if (!row || !row.some(function (c) { return (c || '').trim(); })) continue; var dt = parseLeadDate(iDate >= 0 ? row[iDate] : ''); if (!dt || dt >= SC_LEO_CUTOFF) continue; out.push({ _offerDate: dt, name: (iName >= 0 ? row[iName] : '') || (iAddr >= 0 ? row[iAddr] : '') || '', contact: (iContact >= 0 ? row[iContact] : '') || '', stage: (iStage >= 0 ? row[iStage] : '') || 'Offer', kind: /verbal/i.test(iStage >= 0 ? row[iStage] : '') ? 'verbal' : 'contract', address: (iAddr >= 0 ? row[iAddr] : '') || '', source: (iSrc >= 0 ? row[iSrc] : '') || '', value: 0, from: 'log', _raw: null }); }
+      // ONE offer per opportunity: same opp logged again within 24h = a stage move (contract wins over verbal); 24h+ later = a new offer
+      var normKey = function (o) { return String(o.name || o.contact || o.address || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(function (w) { return w && ['and','the','llc','fl','ppl'].indexOf(w) < 0; }).sort().join(' '); };
+      out.sort(function (x, y) { return x._offerDate - y._offerDate; });
+      var last = {}, deduped = [], DAY = 24 * 60 * 60 * 1000;
+      out.forEach(function (o) {
+        var k = normKey(o); if (!k) { deduped.push(o); return; }
+        var prev = last[k];
+        if (prev && (o._offerDate - prev._offerDate) < DAY) { prev.laterStages = (prev.laterStages || []).concat(o.stage + ' ' + o._offerDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })); if (o.kind === 'contract') { if (prev.kind === 'verbal') prev.hadVerbal = true; prev.kind = 'contract'; prev.stage = o.stage; } return; }
+        if (o.kind === 'verbal') o.hadVerbal = true;
+        if (prev) o.reoffer = true;
+        last[k] = o; deduped.push(o);
+      });
+      return deduped;
+    }
+    async function scLoadLeoOffers() {
+      var base = (typeof pipelineWorkerUrl !== 'undefined' && pipelineWorkerUrl) ? pipelineWorkerUrl : 'https://leo-dashboard-worker-js.aubrey.workers.dev';
+      var ymd = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+      var resp = await fetch(base + '/api/leo/offers?from=' + ymd(SC_LEO_CUTOFF) + '&to=' + ymd(new Date()), { cache: 'no-store' });
+      if (!resp.ok) throw new Error('Leo offers status ' + resp.status);
+      var data = await resp.json(); if (data.error) throw new Error(data.error);
+      var mk = function (r, kind) { var dt = r.at ? new Date(r.at) : null; return { leadId: r.lead_id, _offerDate: (dt && !isNaN(dt)) ? dt : null, name: r.name || '', contact: r.name || '', address: r.address || '', stage: kind === 'contract' ? 'Contract Sent' : 'Offer Made', kind: kind, source: r.channel || '', rep: r.rep || '', dealType: r.deal_type || '', value: r.amount || 0, from: 'leo', _raw: r }; };
+      var byLead = {}, out = [];
+      (data.sent || []).forEach(function (r) { var o = mk(r, 'contract'); if (!o._offerDate || o._offerDate < SC_LEO_CUTOFF) return; byLead[r.lead_id] = o; out.push(o); });
+      (data.offers || []).forEach(function (r) { var o = mk(r, 'verbal'); if (!o._offerDate || o._offerDate < SC_LEO_CUTOFF) return; var c = byLead[r.lead_id]; if (c) { c.hadVerbal = true; c.laterStages = (c.laterStages || []).concat('Offer made ' + o._offerDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })); return; } o.hadVerbal = true; byLead[r.lead_id] = o; out.push(o); });
+      out.truncated = !!(data.offersTruncated || data.sentTruncated);
+      return out;
+    }
     async function scLoadOfferLog(force) {
       if (SC_OFFER_LOG && !force) return;
       if (SC_OFFERS_LOADING) return;
       SC_OFFERS_LOADING = true;
-      var base = (typeof pipelineWorkerUrl !== 'undefined' && pipelineWorkerUrl) ? pipelineWorkerUrl : 'https://leo-dashboard-worker-js.aubrey.workers.dev';
-      var ymd = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
-      var now = new Date(), from = new Date(now.getFullYear(), now.getMonth() - 12, 1);
-      try {
-        var resp = await fetch(base + '/api/leo/offers?from=' + ymd(from) + '&to=' + ymd(now), { cache: 'no-store' });
-        if (!resp.ok) throw new Error('status ' + resp.status);
-        var data = await resp.json(); if (data.error) throw new Error(data.error);
-        var mk = function (r, kind) { var dt = r.at ? new Date(r.at) : null; return { leadId: r.lead_id, _offerDate: (dt && !isNaN(dt)) ? dt : null, name: r.name || '', contact: r.name || '', address: r.address || '', stage: kind === 'contract' ? 'Contract Sent' : 'Offer Made', kind: kind, source: r.channel || '', rep: r.rep || '', dealType: r.deal_type || '', value: r.amount || 0, _raw: r }; };
-        var byLead = {}, out = [];
-        (data.sent || []).forEach(function (r) { var o = mk(r, 'contract'); if (!o._offerDate) return; byLead[r.lead_id] = o; out.push(o); });
-        (data.offers || []).forEach(function (r) { var o = mk(r, 'verbal'); if (!o._offerDate) return; var c = byLead[r.lead_id]; if (c) { c.hadVerbal = true; c.laterStages = (c.laterStages || []).concat('Offer made ' + o._offerDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })); if (o._offerDate < c._offerDate) c._offerMadeDate = o._offerDate; return; } o.hadVerbal = true; byLead[r.lead_id] = o; out.push(o); });
-        out.sort(function (x, y) { return x._offerDate - y._offerDate; });
-        out.rawRows = (data.offers || []).length + (data.sent || []).length; out.dupCount = out.rawRows - out.length;
-        out.truncated = !!(data.offersTruncated || data.sentTruncated);
+      var res = await Promise.all([scLoadLegacyOfferLog().then(function (x) { return { ok: true, v: x }; }, function (e) { return { ok: false, e: e }; }), scLoadLeoOffers().then(function (x) { return { ok: true, v: x }; }, function (e) { return { ok: false, e: e }; })]);
+      if (!res[1].ok) { SC_OFFER_LOG = null; SC_OFFER_LOG_ERR = res[1].e.message || String(res[1].e); }
+      else {
+        var legacy = res[0].ok ? res[0].v : [], leo = res[1].v;
+        var out = legacy.concat(leo).sort(function (x, y) { return x._offerDate - y._offerDate; });
+        out.legacyCount = legacy.length; out.leoCount = leo.length; out.truncated = leo.truncated; out.legacyErr = res[0].ok ? null : (res[0].e.message || String(res[0].e));
         SC_OFFER_LOG = out; SC_OFFER_LOG_ERR = null;
-      } catch (e) { SC_OFFER_LOG = null; SC_OFFER_LOG_ERR = e.message || String(e); }
+      }
       SC_OFFERS_LOADING = false;
       if (document.getElementById('scResults')) scRecalc();
     }
@@ -3379,7 +3413,7 @@
       if (kind === 'offersSigned') kind = 'contracts';
       var p = scPeriods()[periodKey], a = scActuals(p), box = document.getElementById('scDrill'); if (!box) return;
       var fmtD = function (d) { return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; };
-      var kindLabel = { leads: 'New Leads (Leo)', offers: SC_OFFER_LOG ? 'Offers Made (Leo)' : 'Offers Made (Leo open offers + signed contracts)', offersVerbal: 'Offer Made, No Contract Sent (Leo)', offersContract: 'Contracts Sent (Leo)', contracts: 'Contracts Signed (Deal Ledger)', closings: 'Closings (Deal Ledger)' }[kind] || kind;
+      var kindLabel = { leads: 'New Leads (Leo)', offers: SC_OFFER_LOG ? 'Offers Made (Leo / offer log)' : 'Offers Made (Leo open offers + signed contracts)', offersVerbal: 'Offer Made, No Contract Sent (Leo)', offersContract: 'Contracts Sent (Leo)', contracts: 'Contracts Signed (Deal Ledger)', closings: 'Closings (Deal Ledger)' }[kind] || kind;
       var h = '<div class="section-title" style="background:#1B2A4A;display:flex;justify-content:space-between;"><span>' + kindLabel.toUpperCase() + ' &middot; ' + p.label.toUpperCase() + ' (' + fmtD(p.from) + ' &ndash; ' + fmtD(p.to) + ')</span><span class="close-btn" onclick="document.getElementById(\'scDrill\').style.display=\'none\'">&times;</span></div><div class="section-body" style="max-height:360px;overflow:auto;">';
       if (kind === 'leads') {
         if (!SC_LEADS) h += '<div style="padding:16px;color:#888;">Leo not loaded &mdash; showing lead-sheet count only.</div>';
@@ -3397,7 +3431,7 @@
         var skippedNote = a.offerOppsSkipped.length ? '<div style="font-size:11px;color:#888;padding:6px 0 10px;">Not counted as Leo offers because they are already in the Deal Ledger (' + a.offerOppsSkipped.map(function (x) { return (x.o.name || '') + ' &rarr; ' + x.d.status + ' ' + formatDate(x.d.ucDate); }).join('; ') + ')</div>' : '';
         if (!SC_OPPS) h += '<div style="padding:16px;color:#888;">Leo leads not loaded.</div>';
         else { h += skippedNote + '<table><thead><tr><th>Opportunity</th><th>Contact</th><th>Stage</th><th>Date</th><th style="text-align:right;">Value</th></tr></thead><tbody>';
-          a.offerOpps.sort(function (x, y) { return y._offerDate - x._offerDate; }).forEach(function (o) { var why = o._raw ? (o._raw.lastStageChangeAt ? 'entered stage' : o._raw.updatedAt ? 'last updated (no stage date)' : 'created') : (SC_OFFER_LOG && !/ledger/i.test(o.stage) ? 'Leo' : 'ledger UC date'); h += '<tr><td>' + (o.name || '') + (o.address ? '<div style="font-size:10px;color:#999;">' + o.address + '</div>' : '') + (o.laterStages ? '<div style="font-size:10px;color:#999;">same offer, later stage: ' + o.laterStages.join(', ') + '</div>' : '') + (o.hadVerbal && o.kind === 'contract' ? '<div style="font-size:10px;color:#548235;font-weight:700;">verbal &rarr; contract sent</div>' : '') + (o.reoffer ? '<div style="font-size:10px;color:#B8860B;font-weight:700;">re-offer (24h+ after a previous offer)</div>' : '') + '</td><td>' + o.contact + '</td><td>' + o.stage + '</td><td>' + fmtD(o._offerDate) + '<div style="font-size:10px;color:#999;">' + why + '</div></td><td style="text-align:right;">' + (o.value ? fmt(o.value) : '&mdash;') + '</td></tr>'; });
+          a.offerOpps.sort(function (x, y) { return y._offerDate - x._offerDate; }).forEach(function (o) { var why = o._raw ? (o._raw.lastStageChangeAt ? 'entered stage' : o._raw.updatedAt ? 'last updated (no stage date)' : 'created') : (SC_OFFER_LOG && !/ledger/i.test(o.stage) ? (o.from === 'leo' ? 'Leo' : 'offer log') : 'ledger UC date'); h += '<tr><td>' + (o.name || '') + (o.address ? '<div style="font-size:10px;color:#999;">' + o.address + '</div>' : '') + (o.laterStages ? '<div style="font-size:10px;color:#999;">same offer, later stage: ' + o.laterStages.join(', ') + '</div>' : '') + (o.hadVerbal && o.kind === 'contract' ? '<div style="font-size:10px;color:#548235;font-weight:700;">verbal &rarr; contract sent</div>' : '') + (o.reoffer ? '<div style="font-size:10px;color:#B8860B;font-weight:700;">re-offer (24h+ after a previous offer)</div>' : '') + '</td><td>' + o.contact + '</td><td>' + o.stage + '</td><td>' + fmtD(o._offerDate) + '<div style="font-size:10px;color:#999;">' + why + '</div></td><td style="text-align:right;">' + (o.value ? fmt(o.value) : '&mdash;') + '</td></tr>'; });
           h += '</tbody></table>' + (a.offerOpps.length ? '' : '<div style="padding:16px;color:#888;">No opportunities reached an offer stage in this period.</div>'); }
       } else {
         var rows = kind === 'closings' ? a.wonDeals : a.ucDeals;
@@ -3418,7 +3452,7 @@
       var lever = function (label, key, val, step, hint, fmtFn) { return '<div style="background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #2E75B6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><input id="scL_' + key + '" type="number" step="' + step + '" value="' + val + '" oninput="scRecalc()" style="' + numStyle + '">' + (hint ? '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div>' : '') + '</div>'; };
       var secT = function (title, color, right) { return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (right || '') + '</div>'; };
 
-      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-11-02 c</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from Leo; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
+      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-11-02 d</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from Leo; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
 
       // 1. levers
       h += secT('1. Model Levers', '#1B2A4A', '<span style="font-size:11px;color:#999;">Ad spend &times; ROAS = revenue; everything else flows from there. Saved in this browser.</span>');
@@ -3451,11 +3485,12 @@
       // 2. scoreboard: week + month
       var actW = scActuals(P.week), actM = scActuals(P.month);
       var fmtD = function (d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); };
-      var logNote = SC_OFFER_LOG ? '<span style="color:#548235;font-weight:700;">Leo offers loaded: ' + SC_OFFER_LOG.length + ' in the last 12 months</span>' + (SC_OFFER_LOG.truncated ? ' <span style="color:#C00000;">(report capped at 500 rows &mdash; older months may be missing)</span>' : '') + ' &middot; <a href="javascript:void(0)" onclick="scLoadOfferLog(true)" style="color:#2E75B6;font-weight:600;">&#8635;</a> &middot; ' : SC_OFFER_LOG_ERR ? '<span style="color:#C00000;">Leo offers error: ' + SC_OFFER_LOG_ERR + '</span> &middot; ' : 'Loading Leo offers&hellip; &middot; ';
+      var cutLbl = SC_LEO_CUTOFF.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      var logNote = SC_OFFER_LOG ? '<span style="color:#548235;font-weight:700;">Offers: ' + SC_OFFER_LOG.leoCount + ' from Leo since ' + cutLbl + '</span> <span style="color:#888;">+ ' + SC_OFFER_LOG.legacyCount + ' from the old offer log before that</span>' + (SC_OFFER_LOG.legacyErr ? ' <span style="color:#C00000;">(offer log sheet: ' + SC_OFFER_LOG.legacyErr + ')</span>' : '') + (SC_OFFER_LOG.truncated ? ' <span style="color:#C00000;">(Leo report capped at 500 rows)</span>' : '') + ' &middot; <a href="javascript:void(0)" onclick="scLoadOfferLog(true)" style="color:#2E75B6;font-weight:600;">&#8635;</a> &middot; ' : SC_OFFER_LOG_ERR ? '<span style="color:#C00000;">Leo offers error: ' + SC_OFFER_LOG_ERR + '</span> &middot; ' : 'Loading offers&hellip; &middot; ';
       var oppsNote = logNote + (SC_LOADING ? '<span style="color:#2E75B6;">Loading Leo leads&hellip;</span>' : SC_OPPS_ERR ? '<span style="color:#C00000;">Leo offers unavailable: ' + SC_OPPS_ERR + '</span> <a href="javascript:void(0)" onclick="scReloadOffers()" style="color:#2E75B6;font-weight:600;">retry</a>' : SC_OPPS ? 'Leo: ' + SC_STAGES.totalOpps.toLocaleString() + ' opportunities, ' + SC_OPPS.length.toLocaleString() + ' currently in an offer stage &middot; <a href="javascript:void(0)" onclick="scReloadOffers()" style="color:#2E75B6;font-weight:600;">&#8635; refresh</a>' : '');
       h += secT('2. Scoreboard', '#548235', '<span style="font-size:11px;color:#999;">' + oppsNote + '</span>');
       var rows = [
-        { key: 'offers', label: 'Offers Made', src: SC_OFFER_LOG ? 'Leo reports: offers made + contracts sent, dated when they happened (a lead counts once)' : 'Leo Offers Made stage + contracts signed (reports unavailable)', fmtv: r0, drill: true },
+        { key: 'offers', label: 'Offers Made', src: SC_OFFER_LOG ? 'Leo from ' + cutLbl + ' (offers made + contracts sent); the old offer log sheet before that. A lead counts once.' : 'Leo Offers Made stage + contracts signed (reports unavailable)', fmtv: r0, drill: true },
         { key: 'offersContract', label: SC_OFFER_LOG ? 'of which Contract Sent' : 'of which in Offers Made (unsigned)', src: SC_OFFER_LOG ? 'Leo: contract sent (wins over an earlier offer on the same lead)' : 'Leo stage: Offers Made', fmtv: r0, sub: true, drill: true },
         { key: 'offersVerbal', label: SC_OFFER_LOG ? 'of which Offer only (no contract sent yet)' : 'of which Verbal Offers (open)', src: SC_OFFER_LOG ? 'Leo: offer made, no contract sent' : 'Leo has no verbal stage', fmtv: r0, sub: true, drill: true },
         { key: 'contractRate', label: 'Contract-Sent Rate', src: 'contracts sent / offers made', fmtv: function (v) { return v === null || v === undefined ? '\u2014' : Math.round(v * 100) + '%'; }, sub: true, hideWhenNoLog: true },
