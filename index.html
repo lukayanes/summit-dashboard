@@ -3452,19 +3452,19 @@
       var lever = function (label, key, val, step, hint, fmtFn) { return '<div style="background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #2E75B6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><input id="scL_' + key + '" type="number" step="' + step + '" value="' + val + '" oninput="scRecalc()" style="' + numStyle + '">' + (hint ? '<div style="font-size:11px;color:#999;margin-top:4px;">' + hint + '</div>' : '') + '</div>'; };
       var secT = function (title, color, right) { return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (right || '') + '</div>'; };
 
-      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-11-02 d</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from Leo; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
+      var h = '<div style="background:linear-gradient(135deg,#1B2A4A,#2E4A7A);border-radius:12px;padding:20px;margin-bottom:8px;color:white;"><h2 style="margin:0 0 4px;font-size:22px;font-weight:700;">Scaling Model &mdash; Targets vs. Actuals <span style="font-size:10px;font-weight:600;opacity:0.55;margin-left:8px;">build 2026-11-11 a</span></h2><p style="margin:0;font-size:13px;opacity:0.75;">Set the model levers, get weekly and monthly targets, and see how the team is tracking against them in real time. Closings, contracts and revenue come from the Deal Ledger; offers from Leo; leads from the SM3 + Facebook lead sheets; ad spend from Tiller.</p></div>';
 
       // 1. levers
       h += secT('1. Model Levers', '#1B2A4A', '<span style="font-size:11px;color:#999;">Ad spend &times; ROAS = revenue; everything else flows from there. Saved in this browser.</span>');
       h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">';
-      var computedCard = function (label, val, sub) { return '<div style="background:#F3F8FD;border-radius:8px;border-left:4px solid #9DC3E6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><div style="font-size:18px;font-weight:800;color:#1B2A4A;text-align:center;padding:4px 0;">' + val + '</div><div style="font-size:11px;color:#999;margin-top:4px;">' + sub + '</div></div>'; };
+      var computedCard = function (label, val, sub, id) { return '<div style="background:#F3F8FD;border-radius:8px;border-left:4px solid #9DC3E6;padding:10px;"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">' + label + '</div><div' + (id ? ' id="' + id + '"' : '') + ' style="font-size:18px;font-weight:800;color:#1B2A4A;text-align:center;padding:4px 0;">' + val + '</div><div' + (id ? ' id="' + id + 'Sub"' : '') + ' style="font-size:11px;color:#999;margin-top:4px;">' + sub + '</div></div>'; };
       // Left: Ad Spend / mo (the main lever). Right: Target ROAS and Target Revenue. Whichever of ad spend / revenue is not the lever is shown computed.
       h += lever('Ad Spend / mo', 'adMo', t.adMo, 1000, 'what you are actually spending');
       h += lever('Avg Deal Size', 'deal', t.deal, 1000); h += lever('% Closed to Signed', 'close', t.close, 1, 'of contracts that close');
       h += lever('Offers per Contract', 'otc', t.otc, 0.5); h += lever('Avg Price per Lead', 'cpl', t.cpl, 5);
       h += lever('Rep Quota / mo', 'quota', t.quota, 5000, 'closed revenue per rep'); h += lever('Team Efficiency %', 'eff', t.eff, 5);
       h += lever('Target ROAS', 'roas', t.roas, 0.1);
-      h += computedCard('Target Revenue / yr', fmt(t.rev), fmt(t.adMo) + ' &times; 12 &times; ' + t.roas + 'x ROAS');
+      h += computedCard('Target Revenue / yr', fmt(t.rev), fmt(t.adMo) + ' &times; 12 &times; ' + t.roas + 'x ROAS', 'scRevCard');
       h += '</div><div id="scResults"></div>';
       c.innerHTML = h;
       scRecalc();
@@ -3474,6 +3474,10 @@
       var c = document.getElementById('scResults'); if (!c) return;
       var t = scTargets(), P = scPeriods(), r0 = function (n) { return Math.round(n || 0); };
       var secT = function (title, color, right) { return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin:22px 0 8px;"><div style="font-size:13px;font-weight:800;color:' + color + ';text-transform:uppercase;letter-spacing:1px;">' + title + '</div>' + (right || '') + '</div>'; };
+      // keep the Target Revenue card in step with the Ad Spend / ROAS levers
+      var rc = document.getElementById('scRevCard'), rcs = document.getElementById('scRevCardSub');
+      if (rc) rc.textContent = fmt(t.rev);
+      if (rcs) rcs.innerHTML = fmt(t.adMo) + ' &times; 12 &times; ' + t.roas + 'x ROAS';
       var h = '';
       // derived strip
       var d1 = function (label, val, sub) { return '<div><div style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.65);text-transform:uppercase;letter-spacing:1px;">' + label + '</div><div style="font-size:20px;font-weight:800;color:#FFD966;">' + val + '</div>' + (sub ? '<div style="font-size:11px;color:rgba(255,255,255,0.6);">' + sub + '</div>' : '') + '</div>'; };
